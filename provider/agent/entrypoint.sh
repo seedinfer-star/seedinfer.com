@@ -258,8 +258,17 @@ if [[ -n "$VLLM_EXTRA_ARGS" ]]; then
   VLLM_ARGS+=("${EXTRA[@]}")
 fi
 
+# Auto-check and hotfix compressed-tensors for vLLM 0.28+ NVFP4 compatibility
+if python3 -c "from compressed_tensors.compressors.pack_quantized.helpers import pack_to_int32" >/dev/null 2>&1; then
+  echo "[entrypoint] compressed-tensors OK"
+else
+  echo "[entrypoint] Hotfixing compressed-tensors==0.17.0 for vLLM 0.28+ compatibility..."
+  pip install --break-system-packages --no-cache-dir "compressed-tensors==0.17.0" >/dev/null 2>&1 || true
+fi
+
 echo "[entrypoint] HF_HOME=$HF_HOME (vLLM auto-download if missing)"
 echo "[entrypoint] starting vLLM: python -m vllm.entrypoints.openai.api_server ${VLLM_ARGS[*]}"
+
 echo "[entrypoint] To monitor HF download progress: docker exec seedinfer-provider du -sh $HF_HOME  ;  docker logs -f seedinfer-provider | grep -i download"
 
 python3 -m vllm.entrypoints.openai.api_server "${VLLM_ARGS[@]}" &
