@@ -52,9 +52,10 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     && pip install --break-system-packages --no-cache-dir --pre vllm --extra-index-url https://wheels.vllm.ai/nightly \
     # flashinfer-python dla CUDA 13 (jeśli cu13 wheel niedostępny, pip zbuduje lub fallback to cu12 PTX) — --no-build-isolation szybsze gdy torch już zainstalowany
     && pip install --break-system-packages --no-cache-dir --no-build-isolation flashinfer-python --extra-index-url https://flashinfer.ai/whl/cu13/torch2.8 2>/dev/null || pip install --break-system-packages --no-cache-dir flashinfer-python --extra-index-url https://flashinfer.ai/whl/cu12/torch2.8 2>/dev/null || echo "[docker] flashinfer not yet available — will use pytorch fallback" \
-    # compressed-tensors dla --quantization modelopt (NVFP4 ModelOpt) — --no-build-isolation gdzie można
-    && pip install --break-system-packages --no-cache-dir --no-build-isolation "compressed-tensors==0.17.0" 2>/dev/null || pip install --break-system-packages --no-cache-dir "compressed-tensors" 2>/dev/null || echo "[docker] compressed-tensors optional (vllm pull)" \
+    # compressed-tensors dla --quantization modelopt (NVFP4 ModelOpt) — musi być 0.17.0 dla vLLM 0.28+
+    && pip install --break-system-packages --no-cache-dir "compressed-tensors==0.17.0" \
     && rm -rf /root/.cache/pip && rm -rf /tmp/*
+
 
 # --- Assets: chat_template + tool_parser plugin (host 1:1, /qwen_setup) ---
 COPY provider/assets/nemotron_lightning_chat_template_nothink2.jinja /qwen_setup/nemotron_lightning_chat_template_nothink2.jinja
