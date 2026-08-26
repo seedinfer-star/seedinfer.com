@@ -175,4 +175,5 @@ volumes:
 networks:
   seedinfer-tailnet:
     name: seedinfer-tailnet
-    driver: bridge
+    external: true
+

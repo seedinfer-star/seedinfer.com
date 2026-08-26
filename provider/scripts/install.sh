@@ -394,17 +394,19 @@ else
   echo "-- Headscale health --"
   LAN_LOGIN_SERVER="http://192.168.1.15:8080"
   _headscale_http=$(curl -fsS --max-time 5 -o /dev/null -w "%{http_code}" "$LOGIN_SERVER/health" 2>/dev/null || echo "000")
-  if [[ "$_headscale_http" == "200" ]]; then
-    echo "Headscale OK ($LOGIN_SERVER/health HTTP $_headscale_http)"
+  _register_http=$(curl -fsS -X POST -H "Upgrade: TS2021" -H "Connection: Upgrade" --max-time 5 -o /dev/null -w "%{http_code}" "$LOGIN_SERVER/machine/register" 2>/dev/null || echo "000")
+  if [[ "$_headscale_http" == "200" && "$_register_http" != "500" ]]; then
+    echo "Headscale OK ($LOGIN_SERVER/health HTTP $_headscale_http, register HTTP $_register_http)"
   else
-    echo "WARN: $LOGIN_SERVER/health HTTP $_headscale_http (oczekiwano 200) — może Tunnel 500/No Upgrade header (Cloudflare -> http://localhost:8080 bez Upgrade)"
+    echo "WARN: $LOGIN_SERVER (health: $_headscale_http, register: $_register_http) — Cloudflare Proxy obcina nagłówek Upgrade: TS2021 na POST"
     if curl -fsS --max-time 5 "$LAN_LOGIN_SERVER/health" >/dev/null 2>&1; then
-      echo "INFO: LAN Headscale OK ($LAN_LOGIN_SERVER/health) — przełączam LOGIN_SERVER na LAN fallback (192.168.1.15 Orange Pi)"
+      echo "INFO: LAN Headscale OK ($LAN_LOGIN_SERVER) — przełączam LOGIN_SERVER na LAN fallback ($LAN_LOGIN_SERVER Orange Pi)"
       LOGIN_SERVER="$LAN_LOGIN_SERVER"
     else
-      echo "WARN: LAN $LAN_LOGIN_SERVER/health też nie odpowiada — kontynuuję z $LOGIN_SERVER (może Tunnel wróci)"
+      echo "WARN: LAN $LAN_LOGIN_SERVER/health też nie odpowiada — kontynuuję z $LOGIN_SERVER"
     fi
   fi
+
 
   echo "-- tailscale up (hostname sanitized: $HOSTNAME) --"
   if ! [[ "$HOSTNAME" =~ ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$ ]]; then
@@ -538,24 +540,42 @@ else
         --cap-add=NET_ADMIN --cap-add=NET_RAW --device /dev/net/tun \
         -v tailscale-seedinfer-state:/tailscale \
         -e TS_AUTHKEY="$AUTHKEY" -e TS_HOSTNAME="$HOSTNAME" -e TS_LOGIN_SERVER="$LOGIN_SERVER" \
-        -e TS_EXTRA_ARGS="--login-server=$LOGIN_SERVER --advertise-tags=tag:provider --accept-routes" \
+        -e TS_EXTRA_ARGS="--login-server=$LOGIN_SERVER --advertise-tags=tag:provider --accept-routes --reset" \
         -e TS_STATE_DIR=/tailscale \
         --health-cmd="tailscale status >/dev/null 2>&1 || exit 1" --health-interval=30s --health-timeout=5s --health-retries=3 \
         tailscale/tailscale:latest 2>&1 | tail -n 20; then
-        TAILSCALE_UP_OK=true
         echo "INFO: tailscale-seedinfer uruchomiony (persistent) — czekam 3s na status..." >&2
         sleep 3
         $DOCKER logs tailscale-seedinfer 2>&1 | tail -n 30 || true
-        if $DOCKER exec tailscale-seedinfer tailscale status 2>&1 | head -n 30; then
-          echo "tailscale (container) status OK"
+        _cont_ip=""
+        _cont_ip=$($DOCKER exec tailscale-seedinfer tailscale ip -4 2>/dev/null | head -n1 || true)
+        if [[ -n "$_cont_ip" && "$_cont_ip" =~ ^100\. ]]; then
+          TAILSCALE_UP_OK=true
+          echo "tailscale (container) status OK: IP $_cont_ip"
         else
-          echo "WARN: tailscale container status nie odpowiada — może startuje (sleep 3s retry)" >&2
-          sleep 3
-          $DOCKER exec tailscale-seedinfer tailscale status 2>&1 | head -n 30 || echo "WARN: container status nadal brak (docker logs tailscale-seedinfer)" >&2
+          echo "WARN: tailscale container brak IP — próbuję exec z --reset na $LOGIN_SERVER / LAN fallback..." >&2
+          $DOCKER exec tailscale-seedinfer tailscale up --reset --login-server "$LOGIN_SERVER" --authkey "$AUTHKEY" --hostname "$HOSTNAME" --advertise-tags tag:provider --accept-routes 2>&1 || true
+          sleep 2
+          _cont_ip=$($DOCKER exec tailscale-seedinfer tailscale ip -4 2>/dev/null | head -n1 || true)
+          if [[ -n "$_cont_ip" && "$_cont_ip" =~ ^100\. ]]; then
+            TAILSCALE_UP_OK=true
+            echo "tailscale (container) retry status OK: IP $_cont_ip"
+          else
+            echo "WARN: retry też bez IP — sprawdzam czy LAN Headscale (192.168.1.15) wyratuje..." >&2
+            $DOCKER exec tailscale-seedinfer tailscale up --reset --login-server "http://192.168.1.15:8080" --authkey "$AUTHKEY" --hostname "$HOSTNAME" --advertise-tags tag:provider --accept-routes 2>&1 || true
+            sleep 2
+            _cont_ip=$($DOCKER exec tailscale-seedinfer tailscale ip -4 2>/dev/null | head -n1 || true)
+            if [[ -n "$_cont_ip" && "$_cont_ip" =~ ^100\. ]]; then
+              TAILSCALE_UP_OK=true
+              echo "tailscale (container) LAN fallback status OK: IP $_cont_ip"
+            else
+              echo "BŁĄD: kontener tailscale nie zarejestrował się w Headscale" >&2
+            fi
+          fi
         fi
-        $DOCKER exec tailscale-seedinfer tailscale ip -4 2>&1 | head -n 5 || echo "WARN: container tailscale ip -4 brak" >&2
-        echo "INFO: Kontener tailscale-seedinfer (Headscale 100.64.x.x) działa obok hosta tailscale.com (${_existing_ips:-100.94.x.x}) — współistnienie, nie rozłącza." >&2
+        echo "INFO: Kontener tailscale-seedinfer (Headscale ${_cont_ip:-brak_IP}) działa obok hosta tailscale.com (${_existing_ips:-100.94.x.x}) — współistnienie, nie rozłącza." >&2
       else
+
         echo "WARN: docker tailscale persistent nie powiódł się — próbuję natywnie" >&2
       fi
     else
@@ -721,11 +741,22 @@ fi
 mkdir -p "$INSTALL_DIR"
 if [[ -d "$INSTALL_DIR/.git" ]]; then
   echo "-- aktualizuję repo w $INSTALL_DIR --"
-  git -C "$INSTALL_DIR" pull --ff-only || true
+  if command -v timeout >/dev/null 2>&1; then
+    GIT_TERMINAL_PROMPT=0 timeout 15 git -C "$INSTALL_DIR" pull --ff-only 2>/dev/null || true
+  else
+    GIT_TERMINAL_PROMPT=0 git -C "$INSTALL_DIR" pull --ff-only 2>/dev/null || true
+  fi
 else
   if command -v git >/dev/null 2>&1 && curl -fsS "$GATEWAY/install.sh" >/dev/null 2>&1; then
     # próbuj klon — jeśli prywatne, fallback do pobrania plików via gateway
-    if git clone --depth 1 --filter=blob:none --sparse "$REPO_URL" "$INSTALL_DIR.tmp" 2>/dev/null; then
+    # Fix: GIT_TERMINAL_PROMPT=0 + timeout 15 żeby nie wisiał na Username prompt (repo było prywatne/nieistniejące seedinfer/seedinfer.com, teraz public seedinfer-star/seedinfer.com, org seedinfer 404)
+    _clone_ok=false
+    if command -v timeout >/dev/null 2>&1; then
+      if GIT_TERMINAL_PROMPT=0 timeout 15 git clone --depth 1 --filter=blob:none --sparse "$REPO_URL" "$INSTALL_DIR.tmp" 2>/dev/null; then _clone_ok=true; fi
+    else
+      if GIT_TERMINAL_PROMPT=0 git clone --depth 1 --filter=blob:none --sparse "$REPO_URL" "$INSTALL_DIR.tmp" 2>/dev/null; then _clone_ok=true; fi
+    fi
+    if [[ "$_clone_ok" == true ]]; then
       git -C "$INSTALL_DIR.tmp" sparse-checkout set provider
       mkdir -p "$INSTALL_DIR"
       cp -a "$INSTALL_DIR.tmp/provider/." "$INSTALL_DIR/provider/" 2>/dev/null || cp -a "$INSTALL_DIR.tmp/provider" "$INSTALL_DIR/" 2>/dev/null || true
