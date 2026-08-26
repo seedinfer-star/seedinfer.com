@@ -25,16 +25,20 @@ services:
       NVIDIA_VISIBLE_DEVICES: all
       NVIDIA_DRIVER_CAPABILITIES: compute,utility
       # --- vLLM FLASHINFER / NVFP4 host envs (1:1 z hosta RTX 5090) ---
+      VLLM_USE_V1: ${VLLM_USE_V1:-0}
       VLLM_ATTENTION_BACKEND: ${VLLM_ATTENTION_BACKEND:-FLASHINFER}
       VLLM_NVFP4_GEMM_BACKEND: ${VLLM_NVFP4_GEMM_BACKEND:-flashinfer-cutlass}
       VLLM_USE_FLASHINFER_MOE_FP4: ${VLLM_USE_FLASHINFER_MOE_FP4:-1}
       VLLM_USE_FLASHINFER_SAMPLER: ${VLLM_USE_FLASHINFER_SAMPLER:-1}
-      # 16GB opt: expandable True for fragmentation, False default for 32GB (entrypoint auto switches)
-      PYTORCH_CUDA_ALLOC_CONF: ${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:False}
+      VLLM_USE_TRITON_FLASH_ATTN: ${VLLM_USE_TRITON_FLASH_ATTN:-0}
+      OMP_NUM_THREADS: ${OMP_NUM_THREADS:-4}
+      TORCHINDUCTOR_NUM_THREADS: ${TORCHINDUCTOR_NUM_THREADS:-4}
+      # NVFP4 CUDA Memory allocation: expandable_segments:True prevents fragmentation and host RAM/VRAM OOM
+      PYTORCH_CUDA_ALLOC_CONF: ${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}
       # PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True for 16GB guard — entrypoint sets True when free -m <16000
       VLLM_ALLOW_LONG_MAX_MODEL_LEN: ${VLLM_ALLOW_LONG_MAX_MODEL_LEN:-1}
-      VLLM_CPU_OFFLOAD_GB: ${VLLM_CPU_OFFLOAD_GB:-5}
-      VLLM_SWAP_SPACE: ${VLLM_SWAP_SPACE:-4}
+      VLLM_CPU_OFFLOAD_GB: ${VLLM_CPU_OFFLOAD_GB:-0}
+      VLLM_SWAP_SPACE: ${VLLM_SWAP_SPACE:-0}
       # HF: provider online (0), host offline test (1) — patrz komentarz
       HF_HUB_OFFLINE: ${HF_HUB_OFFLINE:-0} # host: HF_HUB_OFFLINE=1 (offline, /tmp/hf_home), provider: 0 (online, /root/.cache/huggingface)
       HF_HOME: ${HF_HOME:-/root/.cache/huggingface}
@@ -52,7 +56,7 @@ services:
       VLLM_MODEL: ${VLLM_MODEL:-nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4}
       HF_TOKEN: ${HF_TOKEN:-}
       VLLM_PORT: ${VLLM_PORT:-47900}
-      VLLM_GPU_MEMORY_UTILIZATION: ${VLLM_GPU_MEMORY_UTILIZATION:-0.93} # 16GB opt: entrypoint auto 0.80 (0.85 fallback) gdy free -m <16000 -> 131072
+      VLLM_GPU_MEMORY_UTILIZATION: ${VLLM_GPU_MEMORY_UTILIZATION:-0.94} # 16GB opt: entrypoint auto 0.80 (0.85 fallback) gdy free -m <16000 -> 131072
       VLLM_MAX_MODEL_LEN: ${VLLM_MAX_MODEL_LEN:-1048576} # 16GB opt: entrypoint auto 131072 gdy free -m <16000
       VLLM_DTYPE: ${VLLM_DTYPE:-bfloat16}
       VLLM_ENABLE_PREFIX_CACHING: ${VLLM_ENABLE_PREFIX_CACHING:-true}
@@ -75,14 +79,20 @@ services:
       PROVIDER_REGION: ${PROVIDER_REGION:-}
       VLLM_URL: http://127.0.0.1:8000  # wewnętrzny 8000, host mapping tylko — można nadpisać env VLLM_PORT/AGENT_PORT
     ports:
-      - "${VLLM_PORT:-47900}:8000"   # vLLM OpenAI API — host 47900 -> container 8000 (można nadpisać env)
-      - "${AGENT_PORT:-47901}:3001"  # agent health + proxy — host 47901 -> container 3001 (można nadpisać env)
+      - "${HOST_VLLM_PORT:-47900}:${VLLM_PORT:-8000}"   # vLLM OpenAI API — host 47900 -> container 8000
+      - "${HOST_AGENT_PORT:-47901}:${AGENT_PORT:-3001}"  # agent health + proxy — host 47901 -> container 3001
     volumes:
       - ${HF_CACHE_HOST:-./models/cache}:/root/.cache/huggingface
       - ${MODELS_HOST:-./models}:/models:ro
       - ./agent/entrypoint.sh:/app/agent/entrypoint.sh:ro
-      # Provider assets (chat_template + tool_parser plugin) — 1:1 z hostem /mnt/d/qwen_setup → fallback generic
-      - ./assets:/qwen_setup:ro
+      # CRITICAL: /mnt/d/qwen_setup contains patch_kv_cache.py, patch_vllm.py, patch_trtllm.py etc.
+      # Studio uses: -v /mnt/d/qwen_setup:/qwen_setup:ro — must match exactly.
+      # Fallback ./assets only has chat template + plugin (no patches = OOM).
+      - /mnt/d/qwen_setup:/qwen_setup:ro
+      - /mnt/d/hf_cache:/mnt/d/hf_cache:ro
+      # Persistent torch.compile cache: first run compiles kernels (13GB RAM spike),
+      # subsequent restarts load from cache (zero RAM spike). This is how Studio survives.
+      - vllm-torch-cache:/root/.cache/vllm
       # Host-specific (jakub-b550m WSL, tylko jeśli jesteś hostem — nie dla generycznego providera):
       # - /mnt/d/qwen_setup:/qwen_setup:ro
       # - /mnt/d:/mnt/d:ro
@@ -97,6 +107,8 @@ services:
     # devices: [/dev/net/tun]
     deploy:
       resources:
+        limits:
+          memory: 20g
         reservations:
           devices:
             - driver: nvidia
@@ -171,6 +183,9 @@ services:
 volumes:
   tailscale-seedinfer-state:
     name: tailscale-seedinfer-state
+    driver: local
+  vllm-torch-cache:
+    name: vllm-torch-cache
     driver: local
 
 networks:

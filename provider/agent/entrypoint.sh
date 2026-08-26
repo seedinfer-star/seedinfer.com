@@ -9,6 +9,28 @@ set -euo pipefail
 
 MODEL="${MODEL:-seedinfer/nemotron-lightning-1m}"
 VLLM_MODEL="${VLLM_MODEL:-nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4}"
+
+# Auto-detect local snapshot (generic — finds ANY snapshot in HF cache, not just one hash)
+# This is CRITICAL: loading via HF Hub identifier causes ~20GB RAM spike (Python buffers).
+# Loading via direct path uses zero-copy mmap (disk → VRAM), keeping RAM at ~3.5GB.
+_SNAP_FOUND=false
+for _cache_root in "/mnt/d/hf_cache" "/root/.cache/huggingface" "/tmp/hf_home"; do
+  _snap_parent="${_cache_root}/hub/models--nvidia--NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4/snapshots"
+  if [[ -d "$_snap_parent" ]]; then
+    # Find latest snapshot directory (any hash)
+    _snap=$(find "$_snap_parent" -maxdepth 1 -mindepth 1 -type d 2>/dev/null | head -n1)
+    if [[ -n "$_snap" && -d "$_snap" ]]; then
+      echo "[entrypoint] Found local model snapshot: $_snap — using mmap (zero-copy, no RAM spike)"
+      VLLM_MODEL="$_snap"
+      export HF_HUB_OFFLINE=1
+      _SNAP_FOUND=true
+      break
+    fi
+  fi
+done
+if [[ "$_SNAP_FOUND" != "true" ]]; then
+  echo "[entrypoint] No local snapshot found — will download via HF Hub (first run: ~30GB, RAM spike possible)"
+fi
 if [[ -z "$VLLM_MODEL" ]]; then
   VLLM_MODEL="nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4"
 fi
@@ -17,7 +39,11 @@ VLLM_PORT="${VLLM_PORT:-8000}" # wewnętrzny 8000, host 47900 via docker-compose
 AGENT_PORT="${AGENT_PORT:-3001}" # wewnętrzny 3001, host 47901 via docker-compose ports (można nadpisać env)
 # Alternatywnie jeśli chcesz zmienić wewnętrzny port: export VLLM_PORT=47900 AGENT_PORT=47901 i zaktualizuj VLLM_URL oraz compose right-side
 VLLM_MAX_MODEL_LEN="${VLLM_MAX_MODEL_LEN:-1048576}"
-VLLM_GPU_MEMORY_UTILIZATION="${VLLM_GPU_MEMORY_UTILIZATION:-0.93}"
+VLLM_GPU_MEMORY_UTILIZATION="${VLLM_GPU_MEMORY_UTILIZATION:-0.94}"
+# NOTE: --cpu-offload-gb and --swap-space are NOT used by working Studio config.
+# They cause additional RAM allocation during init. Disabled by default.
+VLLM_CPU_OFFLOAD_GB="${VLLM_CPU_OFFLOAD_GB:-0}"
+VLLM_SWAP_SPACE="${VLLM_SWAP_SPACE:-0}"
 VLLM_DTYPE="${VLLM_DTYPE:-bfloat16}"
 VLLM_ENABLE_PREFIX_CACHING="${VLLM_ENABLE_PREFIX_CACHING:-true}"
 VLLM_QUANTIZATION="${VLLM_QUANTIZATION:-modelopt}"
@@ -29,13 +55,19 @@ VLLM_MAMBA_CACHE_MODE="${VLLM_MAMBA_CACHE_MODE:-align}"
 VLLM_CHAT_TEMPLATE="${VLLM_CHAT_TEMPLATE:-/qwen_setup/nemotron_lightning_chat_template_nothink2.jinja}"
 VLLM_TOOL_PARSER_PLUGIN="${VLLM_TOOL_PARSER_PLUGIN:-/qwen_setup/nemotron3_tool_parser_plugin.py}"
 
-# --- Host env exports (1:1 z docker run -d hosta) ---
+# --- Host env exports (1:1 z docker run -d hosta / patch_and_run.sh) ---
+export VLLM_USE_V1="${VLLM_USE_V1:-0}"
 export VLLM_ATTENTION_BACKEND="${VLLM_ATTENTION_BACKEND:-FLASHINFER}"
 export VLLM_NVFP4_GEMM_BACKEND="${VLLM_NVFP4_GEMM_BACKEND:-flashinfer-cutlass}"
 export VLLM_USE_FLASHINFER_MOE_FP4="${VLLM_USE_FLASHINFER_MOE_FP4:-1}"
 export VLLM_USE_FLASHINFER_SAMPLER="${VLLM_USE_FLASHINFER_SAMPLER:-1}"
-export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:False}"
+export VLLM_USE_TRITON_FLASH_ATTN="${VLLM_USE_TRITON_FLASH_ATTN:-0}"
+export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
 export VLLM_ALLOW_LONG_MAX_MODEL_LEN="${VLLM_ALLOW_LONG_MAX_MODEL_LEN:-1}"
+# Limit PyTorch Inductor / Triton compilation parallelism (prevents 16-core RAM spike during Mamba2 compile)
+export OMP_NUM_THREADS="${OMP_NUM_THREADS:-4}"
+export TORCHINDUCTOR_NUM_THREADS="${TORCHINDUCTOR_NUM_THREADS:-4}"
+export MKL_NUM_THREADS="${MKL_NUM_THREADS:-4}"
 # HF: provider online (HF_HUB_OFFLINE=0, /root/.cache/huggingface) vs host offline (1, /tmp/hf_home)
 export HF_HUB_OFFLINE="${HF_HUB_OFFLINE:-0}"
 export HF_HOME="${HF_HOME:-/root/.cache/huggingface}"
@@ -68,9 +100,13 @@ if [[ -n "${TAILSCALE_AUTHKEY:-}" ]]; then
   fi
 fi
 
-# 2) Sprawdź CUDA + VRAM (NVFP4 wymaga >=16GB, minimum RTX 5090 32GB dla 1M ctx, 1M KV ~6GB)
+# 2) Sprawdź CUDA + VRAM + Host System RAM
 GPU_NAME=""
 VRAM_MB="0"
+SYS_RAM_AVAIL_MB=$(free -m 2>/dev/null | awk '/Mem:/ {print $7}' || echo "99999")
+SYS_RAM_TOTAL_MB=$(free -m 2>/dev/null | awk '/Mem:/ {print $2}' || echo "99999")
+echo "[entrypoint] Host System RAM total: ${SYS_RAM_TOTAL_MB}MB, available: ${SYS_RAM_AVAIL_MB}MB"
+
 if command -v nvidia-smi >/dev/null 2>&1; then
   echo "[entrypoint] nvidia-smi:"
   nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv || true
@@ -87,7 +123,7 @@ if command -v nvidia-smi >/dev/null 2>&1; then
       echo "[entrypoint] WARN: VRAM <24GB — dla 1M ctx konieczne VLLM_GPU_MEMORY_UTILIZATION=0.80 i VLLM_MAX_MODEL_LEN=131072 lub 32768." >&2
     fi
   else
-    echo "[entrypoint] VRAM OK >=32GB — NVFP4 1M ctx komfortowo (RTX 5090 32GB, A100/H100 etc)"
+    echo "[entrypoint] VRAM OK >=32GB (utilization limit: $VLLM_GPU_MEMORY_UTILIZATION, max model len: $VLLM_MAX_MODEL_LEN)"
   fi
   VER=$(nvidia-smi | grep -oP 'Driver Version: \K[0-9.]+' || echo "")
   if [[ -n "$VER" ]]; then
@@ -132,7 +168,7 @@ PY
 fi
 
 # 3) Profil detekcja: RTX 5090 / Blackwell 32GB (host) vs A100/H100 fallback (humming)
-# Host flags: marlin + fp8 + 0.93 + 128/4096 + flashinfer — dla 32GB GPUs (5090, Blackwell, L40S, 6000 Ada etc)
+# Host flags: marlin + fp8 + 0.88 + 128/4096 + flashinfer — dla 32GB GPUs (5090, Blackwell, L40S, 6000 Ada etc)
 # Fallback: A100/H100 (Ampere/Hopper) bez native FP4 → humming W4A16 emulation
 IS_32GB_HOST_PROFILE="true"
 if [[ -n "${GPU_NAME_LC:-}" ]]; then
@@ -141,7 +177,7 @@ if [[ -n "${GPU_NAME_LC:-}" ]]; then
     echo "[entrypoint] GPU $GPU_NAME detected as A100/H100 Ampere/Hopper → fallback profile (humming)"
   elif echo "$GPU_NAME_LC" | grep -qE "5090|blackwell|gb202|gb203|gb100|l40|rtx.*6000|rtx.*5000|rtx.*4500"; then
     IS_32GB_HOST_PROFILE="true"
-    echo "[entrypoint] GPU $GPU_NAME detected as Blackwell/5090/L40/6000 → host profile (marlin + fp8 0.93)"
+    echo "[entrypoint] GPU $GPU_NAME detected as Blackwell/5090/L40/6000 → host profile (marlin + fp8)"
   elif [[ "$VRAM_MB" != "0" && "$VRAM_MB" -lt 30000 ]]; then
     # <30GB (np. RTX 4090 24GB) — host 1M ctx tight, ale nadal host flags jeśli nie A100/H100
     IS_32GB_HOST_PROFILE="true"
@@ -157,7 +193,7 @@ if [[ "$VLLM_MOE_BACKEND" == "humming" ]]; then
   IS_32GB_HOST_PROFILE="false"
   echo "[entrypoint] VLLM_MOE_BACKEND=humming override → fallback humming profile"
 fi
-echo "[entrypoint] Selected profile: $([ "$IS_32GB_HOST_PROFILE" == "true" ] && echo "HOST (marlin fp8 0.93 128/4096)" || echo "FALLBACK (humming)")"
+echo "[entrypoint] Selected profile: $([ "$IS_32GB_HOST_PROFILE" == "true" ] && echo "HOST (marlin fp8 0.88 128/4096)" || echo "FALLBACK (humming)")"
 
 # 3b) Zbuduj vLLM args — host 1:1 dla 32GB path
 VLLM_ARGS=(
@@ -266,13 +302,49 @@ else
   pip install --break-system-packages --no-cache-dir "compressed-tensors==0.17.0" >/dev/null 2>&1 || true
 fi
 
+# Auto-apply Studio NVFP4 patches (patch_kv_cache, patch_trtllm, patch_cutlass, patch_vllm, tensorrt_llm)
+for patch_dir in "/qwen_setup" "/app/assets" "/mnt/d/qwen_setup"; do
+  if [[ -f "$patch_dir/patch_kv_cache.py" ]]; then
+    echo "[entrypoint] Applying Studio NVFP4 patches from $patch_dir..."
+    export PIP_CACHE_DIR="${PIP_CACHE_DIR:-$patch_dir/pip-cache}"
+    mkdir -p "$PIP_CACHE_DIR" 2>/dev/null || true
+    if ! python3 -c "import ninja" 2>/dev/null; then
+      pip install --no-cache-dir ninja --break-system-packages 2>/dev/null || true
+    fi
+    for script in "patch_trtllm.py" "patch_vllm.py" "patch_fix_nightly_0825.py" "patch_kv_cache.py" "patch_cutlass.py"; do
+      if [[ -f "$patch_dir/$script" ]]; then
+        echo "[entrypoint] Executing $script..."
+        python3 "$patch_dir/$script" 2>&1 || echo "[entrypoint] WARN: $script failed"
+      fi
+    done
+    if [[ -f "$patch_dir/trtllm_nvfp4_moe.py" ]]; then
+      mkdir -p /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/fused_moe/experts/ 2>/dev/null || true
+      cp "$patch_dir/trtllm_nvfp4_moe.py" /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/fused_moe/experts/trtllm_nvfp4_moe.py 2>/dev/null || true
+    fi
+    TRTLLM_WHL="$patch_dir/tensorrt_llm-1.3.0rc5.post2-cp312-cp312-linux_x86_64.whl"
+    if [[ -f "$TRTLLM_WHL" ]]; then
+      TRTLLM_HAVE=$(python3 -c "import tensorrt_llm; print(tensorrt_llm.__version__)" 2>/dev/null || echo "missing")
+      if [[ "$TRTLLM_HAVE" != "1.3.0rc5.post2" ]]; then
+        echo "[entrypoint] Installing TensorRT-LLM 1.3.0rc5.post2 from $TRTLLM_WHL..."
+        pip install --no-cache-dir --no-deps "$TRTLLM_WHL" --break-system-packages 2>/dev/null || true
+      fi
+    fi
+    break
+  fi
+done
+
 echo "[entrypoint] HF_HOME=$HF_HOME (vLLM auto-download if missing)"
-echo "[entrypoint] starting vLLM: python -m vllm.entrypoints.openai.api_server ${VLLM_ARGS[*]}"
 
-echo "[entrypoint] To monitor HF download progress: docker exec seedinfer-provider du -sh $HF_HOME  ;  docker logs -f seedinfer-provider | grep -i download"
-
-python3 -m vllm.entrypoints.openai.api_server "${VLLM_ARGS[@]}" &
-VLLM_PID=$!
+if [[ -f "/qwen_setup/patch_and_run.sh" ]]; then
+  echo "[entrypoint] Executing via Studio /qwen_setup/patch_and_run.sh: ${VLLM_ARGS[*]}"
+  chmod +x /qwen_setup/patch_and_run.sh 2>/dev/null || true
+  /qwen_setup/patch_and_run.sh "${VLLM_ARGS[@]}" &
+  VLLM_PID=$!
+else
+  echo "[entrypoint] starting vLLM directly: python -m vllm.entrypoints.openai.api_server ${VLLM_ARGS[*]}"
+  python3 -m vllm.entrypoints.openai.api_server "${VLLM_ARGS[@]}" &
+  VLLM_PID=$!
+fi
 
 # czekaj aż vLLM wstanie (max 900s — model duży + download ~30GB)
 echo "[entrypoint] waiting for vLLM on :$VLLM_PORT (timeout 900s, download ~30GB if first run) ..."
