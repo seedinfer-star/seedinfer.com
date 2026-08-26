@@ -1,0 +1,178 @@
+# SeedInfer Provider — docker-compose (CUDA 13.3, Faza 0) — host 1:1 RTX 5090 32GB (GB202, Blackwell sm_120)
+# Uruchomienie: docker compose -f provider/docker-compose.yml up -d
+# Wymaga: NVIDIA driver 580.65+ (CUDA 13.3, Blackwell), fallback 570+ (13.2) / 550.90+ (12.4 legacy), nvidia-container-toolkit, runtime nvidia
+# Host reference (jakub-b550m RTX 5090, docker run -d --gpus all --ipc=host):
+#   -e VLLM_ATTENTION_BACKEND=FLASHINFER -e VLLM_NVFP4_GEMM_BACKEND=flashinfer-cutlass -e VLLM_USE_FLASHINFER_MOE_FP4=1 -e VLLM_USE_FLASHINFER_SAMPLER=1 -e PYTORCH_CUDA_ALLOC_CONF=expandable_segments:False -e VLLM_ALLOW_LONG_MAX_MODEL_LEN=1 -e HF_HUB_OFFLINE=1 -e HF_HOME=/tmp/hf_home
+#   --model ... --served-model-name nemotron-3.5-lightning-30b-a3b-nvfp4 --quantization modelopt --dtype bfloat16 --kv-cache-dtype fp8 --max-model-len 1048576 --gpu-memory-utilization 0.93 --max-num-seqs 128 --max-num-batched-tokens 4096 --enable-chunked-prefill --enable-prefix-caching --moe-backend marlin --mamba-backend flashinfer --mamba-cache-mode align --chat-template /mnt/d/qwen_setup/... --enable-auto-tool-choice --tool-call-parser nemotron3 --tool-parser-plugin /mnt/d/qwen_setup/... --trust-remote-code --language-model-only
+services:
+  provider:
+    build:
+      context: ..
+      dockerfile: provider/Dockerfile.cuda
+      args:
+        BUILDKIT_INLINE_CACHE: 1
+        # 16GB opt: inline cache reduces rebuild 21GB, memory limit via --memory=12g in install.sh
+      cache_from:
+        - ghcr.io/seedinfer/provider:cuda13.3-nvfp4
+        - seedinfer/provider:cuda-0.1.0
+      # BuildKit cache mount already in Dockerfile: RUN --mount=type=cache,target=/root/.cache/pip
+    image: seedinfer/provider:cuda-0.1.0
+    container_name: seedinfer-provider
+    restart: unless-stopped
+    runtime: nvidia
+    ipc: host
+    environment:
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+      # --- vLLM FLASHINFER / NVFP4 host envs (1:1 z hosta RTX 5090) ---
+      VLLM_ATTENTION_BACKEND: ${VLLM_ATTENTION_BACKEND:-FLASHINFER}
+      VLLM_NVFP4_GEMM_BACKEND: ${VLLM_NVFP4_GEMM_BACKEND:-flashinfer-cutlass}
+      VLLM_USE_FLASHINFER_MOE_FP4: ${VLLM_USE_FLASHINFER_MOE_FP4:-1}
+      VLLM_USE_FLASHINFER_SAMPLER: ${VLLM_USE_FLASHINFER_SAMPLER:-1}
+      # 16GB opt: expandable True for fragmentation, False default for 32GB (entrypoint auto switches)
+      PYTORCH_CUDA_ALLOC_CONF: ${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:False}
+      # PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True for 16GB guard — entrypoint sets True when free -m <16000
+      VLLM_ALLOW_LONG_MAX_MODEL_LEN: ${VLLM_ALLOW_LONG_MAX_MODEL_LEN:-1}
+      VLLM_CPU_OFFLOAD_GB: ${VLLM_CPU_OFFLOAD_GB:-5}
+      VLLM_SWAP_SPACE: ${VLLM_SWAP_SPACE:-4}
+      # HF: provider online (0), host offline test (1) — patrz komentarz
+      HF_HUB_OFFLINE: ${HF_HUB_OFFLINE:-0} # host: HF_HUB_OFFLINE=1 (offline, /tmp/hf_home), provider: 0 (online, /root/.cache/huggingface)
+      HF_HOME: ${HF_HOME:-/root/.cache/huggingface}
+      # --- Headscale ---
+      TAILSCALE_AUTHKEY: ${TAILSCALE_AUTHKEY:-}
+      TAILSCALE_LOGIN_SERVER: ${TAILSCALE_LOGIN_SERVER:-https://tailnet.seedinfer.com}
+      TAILSCALE_HOSTNAME: ${TAILSCALE_HOSTNAME:-provider-5090}
+      TAILSCALE_EXTRA_ARGS: ${TAILSCALE_EXTRA_ARGS:-}
+      # --- Gateway ---
+      SEEDINFER_GATEWAY_URL: ${SEEDINFER_GATEWAY_URL:-https://seedinfer.com}
+      PROVIDER_API_KEY: ${PROVIDER_API_KEY:-}
+      SEEDINFER_API_KEY: ${SEEDINFER_API_KEY:-}
+      # --- Model / vLLM — NVFP4 defaults (plug-and-play) — host 1:1 dla RTX 5090 32GB ---
+      MODEL: ${MODEL:-seedinfer/nemotron-lightning-1m}
+      VLLM_MODEL: ${VLLM_MODEL:-nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4}
+      HF_TOKEN: ${HF_TOKEN:-}
+      VLLM_PORT: ${VLLM_PORT:-47900}
+      VLLM_GPU_MEMORY_UTILIZATION: ${VLLM_GPU_MEMORY_UTILIZATION:-0.93} # 16GB opt: entrypoint auto 0.80 (0.85 fallback) gdy free -m <16000 -> 131072
+      VLLM_MAX_MODEL_LEN: ${VLLM_MAX_MODEL_LEN:-1048576} # 16GB opt: entrypoint auto 131072 gdy free -m <16000
+      VLLM_DTYPE: ${VLLM_DTYPE:-bfloat16}
+      VLLM_ENABLE_PREFIX_CACHING: ${VLLM_ENABLE_PREFIX_CACHING:-true}
+      VLLM_QUANTIZATION: ${VLLM_QUANTIZATION:-modelopt}
+      VLLM_KV_CACHE_DTYPE: ${VLLM_KV_CACHE_DTYPE:-fp8}
+      # Dodatkowe flagi vLLM — host: nemotron3 (nie qwen3_coder). Entrypoint injects --tool-parser-plugin if 존재.
+      # Dla compat możesz nadpisać VLLM_EXTRA_ARGS; default puste = entrypoint użyje host defaults (nemotron3 + marlin).
+      VLLM_EXTRA_ARGS: ${VLLM_EXTRA_ARGS:-}
+      # MoE/Mamba overrides — entrypoint auto-detect GPU (5090/32GB → marlin/flashinfer, A100/H100 → humming fallback)
+      VLLM_MOE_BACKEND: ${VLLM_MOE_BACKEND:-marlin}
+      VLLM_MAMBA_BACKEND: ${VLLM_MAMBA_BACKEND:-flashinfer}
+      VLLM_MAMBA_CACHE_MODE: ${VLLM_MAMBA_CACHE_MODE:-align}
+      # Chat template / plugin — host path /mnt/d/qwen_setup/..., provider fallback /qwen_setup:ro (z ./provider/assets)
+      VLLM_CHAT_TEMPLATE: ${VLLM_CHAT_TEMPLATE:-/qwen_setup/nemotron_lightning_chat_template_nothink2.jinja}
+      VLLM_TOOL_PARSER_PLUGIN: ${VLLM_TOOL_PARSER_PLUGIN:-/qwen_setup/nemotron3_tool_parser_plugin.py}
+      # --- Agent ---
+      AGENT_PORT: ${AGENT_PORT:-47901}
+      AGENT_LOG_LEVEL: ${AGENT_LOG_LEVEL:-info}
+      PROVIDER_ID: ${PROVIDER_ID:-}
+      PROVIDER_REGION: ${PROVIDER_REGION:-}
+      VLLM_URL: http://127.0.0.1:8000  # wewnętrzny 8000, host mapping tylko — można nadpisać env VLLM_PORT/AGENT_PORT
+    ports:
+      - "${VLLM_PORT:-47900}:8000"   # vLLM OpenAI API — host 47900 -> container 8000 (można nadpisać env)
+      - "${AGENT_PORT:-47901}:3001"  # agent health + proxy — host 47901 -> container 3001 (można nadpisać env)
+    volumes:
+      - ${HF_CACHE_HOST:-./models/cache}:/root/.cache/huggingface
+      - ${MODELS_HOST:-./models}:/models:ro
+      # Provider assets (chat_template + tool_parser plugin) — 1:1 z hostem /mnt/d/qwen_setup → fallback generic
+      - ./assets:/qwen_setup:ro
+      # Host-specific (jakub-b550m WSL, tylko jeśli jesteś hostem — nie dla generycznego providera):
+      # - /mnt/d/qwen_setup:/qwen_setup:ro
+      # - /mnt/d:/mnt/d:ro
+      # - /mnt/d/hf_cache:/tmp/hf_home:ro
+      # Alternatywnie jeśli uruchamiasz z root repo: docker compose -f provider/docker-compose.yml up
+      # a volume ./assets nie działa, użyj: - ./provider/assets:/qwen_setup:ro  (fallback dla CWD=root)
+      # Tailscale state — jeśli tailscaled w kontenerze (opcjonalnie host mount):
+      # - /var/lib/tailscale:/var/lib/tailscale
+      # - /dev/net/tun:/dev/net/tun
+    # cap_add / devices tylko gdy tailscaled w kontenerze:
+    # cap_add: [NET_ADMIN, SYS_MODULE]
+    # devices: [/dev/net/tun]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:3001/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 90s
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
+    networks:
+      - seedinfer-tailnet
+    # network_mode: host # odkomentuj jeśli chcesz host network dla Tailscale UDP (wtedy usuń ports)
+    # tailscale sidecar: używany gdy TAILSCALE_USE_CONTAINER=1 (domyślny kontener gdy host już w tailscale.com 100.94.x.x)
+    # Provider dzieli tailnet 100.64.x.x (Headscale) — współistnienie z hostem 100.94.x.x (tailscale.com), nie rozłącza.
+    depends_on:
+      tailscale:
+        condition: service_healthy
+        required: false
+  # --- Tailscale sidecar (container mode) — izolowany Headscale 100.64.x.x obok hosta 100.94.x.x (tailscale.com) ---
+  # Domyślnie: kontener (bezpieczne, nie rusza hosta). --force-host-tailscale przełącza hosta (opt-in, --reset).
+  # Uruchom: docker compose --profile tailscale up -d  (sidecar)  lub install.sh auto docker run -d --name tailscale-seedinfer ...
+  # Provider agent używa tego tailnetu (DNS 100.64.x.x) — gdy sidecar aktywny, provider dzieli network via service:tailscale (healthcheck).
+  # Instalacja raw (install.sh): docker volume create tailscale-seedinfer-state; docker network create seedinfer-tailnet; docker run -d --name tailscale-seedinfer ...
+  tailscale:
+    image: tailscale/tailscale:latest
+    container_name: tailscale-seedinfer
+    hostname: ${TAILSCALE_HOSTNAME:-provider-5090}
+    restart: unless-stopped
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    environment:
+      TS_AUTHKEY: ${TAILSCALE_AUTHKEY:-}
+      TS_HOSTNAME: ${TAILSCALE_HOSTNAME:-provider-5090}
+      TS_LOGIN_SERVER: ${TAILSCALE_LOGIN_SERVER:-https://tailnet.seedinfer.com}
+      TS_EXTRA_ARGS: --advertise-tags=tag:provider --accept-routes
+      TS_STATE_DIR: /tailscale
+      TS_SOCKET: /tmp/tailscaled.sock
+      TS_USERSPACE: "false"
+    volumes:
+      - tailscale-seedinfer-state:/tailscale
+      - /dev/net/tun:/dev/net/tun
+    networks:
+      - seedinfer-tailnet
+    # network_mode host nie jest używany — izolacja od host tailscale.com (100.94.x.x vs 100.64.x.x)
+    # Dla udostępnienia tailnet providerowi użyj na hoście: docker run --network=container:tailscale-seedinfer
+    # lub w compose: provider.network_mode: service:tailscale (odkomentuj poniżej gdy używasz profil tailscale)
+    # network_mode: service:tailscale  # <- odkomentuj w provider jeśli chcesz dzielić TUN (wymaga profil tailscale)
+    healthcheck:
+      test: ["CMD", "tailscale", "status"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    profiles:
+      - tailscale
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  tailscale-seedinfer-state:
+    name: tailscale-seedinfer-state
+    driver: local
+
+networks:
+  seedinfer-tailnet:
+    name: seedinfer-tailnet
+    driver: bridge

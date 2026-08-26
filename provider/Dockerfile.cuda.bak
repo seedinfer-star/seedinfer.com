@@ -1,0 +1,74 @@
+# SeedInfer Provider — CUDA only (Faza 0)
+# Base: CUDA 13.3.0 + cuDNN (Ubuntu 24.04 noble) — Blackwell native (sm_120 / GB202) + vLLM nightly PTX JIT
+# Fallback: jeśli tag 13.3.0 niedostępny, użyj 13.3.1-devel-ubuntu24.04 lub 13.2.1-devel-ubuntu24.04 (driver 570+)
+# CUDA 13.3 wymaga driver >=580.65.06 (Blackwell). Fallback 12.4.1-cudnn-devel-ubuntu22.04 dla driver 550+.
+FROM nvidia/cuda:13.3.0-cudnn-devel-ubuntu24.04
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_BREAK_SYSTEM_PACKAGES=1 \
+    HF_HOME=/root/.cache/huggingface \
+    VLLM_USE_V1=1 \
+    VLLM_ATTENTION_BACKEND=FLASHINFER \
+    VLLM_NVFP4_GEMM_BACKEND=flashinfer-cutlass \
+    VLLM_USE_FLASHINFER_MOE_FP4=1 \
+    VLLM_USE_FLASHINFER_SAMPLER=1 \
+    PYTORCH_CUDA_ALLOC_CONF=expandable_segments:False \
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN=1 \
+    HF_HUB_OFFLINE=0
+
+# --- system deps + Python 3.12 (noble) + Tailscale ---
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        software-properties-common curl wget git ca-certificates gnupg lsb-release \
+        build-essential pkg-config libssl-dev libffi-dev \
+        htop iproute2 iptables kmod \
+    && add-apt-repository -y ppa:deadsnakes/ppa \
+    && apt-get update && apt-get install -y --no-install-recommends \
+        python3.12 python3.12-venv python3.12-dev python3-pip \
+    && update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.12 1 \
+    && update-alternatives --install /usr/bin/python python /usr/bin/python3.12 1 \
+    && curl -fsSL https://bootstrap.pypa.io/get-pip.py | python3.12 --break-system-packages --ignore-installed 2>/dev/null || curl -fsSL https://bootstrap.pypa.io/get-pip.py | python3.12 --break-system-packages 2>/dev/null || true \
+    && python3 --version; pip3 --version 2>/dev/null || pip --version 2>/dev/null || true \
+    # Tailscale (dla rejestracji w Headscale; w kontenerze opcjonalny — host tailscaled jest preferowany)
+    && curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/noble.noarmor.gpg | tee /usr/share/keyrings/tailscale-archive-keyring.gpg >/dev/null \
+    && curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/noble.tailscale-keyring.list | tee /etc/apt/sources.list.d/tailscale.list >/dev/null \
+    && apt-get update && apt-get install -y --no-install-recommends tailscale \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# --- Python deps ---
+COPY provider/agent/requirements.txt /app/requirements.txt
+RUN pip install --upgrade --break-system-packages --ignore-installed pip setuptools wheel 2>/dev/null || pip install --break-system-packages -r /app/requirements.txt 2>/dev/null || true \
+    && pip install --break-system-packages -r /app/requirements.txt \
+    # vLLM nightly — wheels są wciąż cu12 (cu121/cu128, heavy ~2GB) ale działa na CUDA 13.3 via PTX JIT / compat.
+    # Na driver 580+ CUDA forward-compat pozwala uruchomić cu12 wheels na CUDA 13 runtime. Native cu13 wheels gdy dostępne.
+    # --pre + extra-index wymagane per spec. Dla Blackwell native buduj z source lub poczekaj na cu13 nightly.
+    # Zawiera marlin FP4 kernels dla --moe-backend marlin (Blackwell native), oraz flashinfer dla --mamba-backend flashinfer.
+    && pip install --break-system-packages --pre vllm --extra-index-url https://wheels.vllm.ai/nightly \
+    # flashinfer-python dla CUDA 13 (jeśli cu13 wheel niedostępny, pip zbuduje lub fallback to cu12 PTX)
+    && pip install --break-system-packages flashinfer-python --extra-index-url https://flashinfer.ai/whl/cu13/torch2.8 2>/dev/null || pip install --break-system-packages flashinfer-python --extra-index-url https://flashinfer.ai/whl/cu12/torch2.8 2>/dev/null || echo "[docker] flashinfer not yet available — will use pytorch fallback" \
+    # compressed-tensors dla --quantization modelopt (NVFP4 ModelOpt)
+    && pip install --break-system-packages "compressed-tensors==0.11.0" 2>/dev/null || echo "[docker] compressed-tensors optional (vllm pull)"
+
+# --- Assets: chat_template + tool_parser plugin (host 1:1, /qwen_setup) ---
+COPY provider/assets/nemotron_lightning_chat_template_nothink2.jinja /qwen_setup/nemotron_lightning_chat_template_nothink2.jinja
+COPY provider/assets/nemotron3_tool_parser_plugin.py /qwen_setup/nemotron3_tool_parser_plugin.py
+
+# --- Agent code ---
+COPY provider/agent /app/agent
+RUN chmod +x /app/agent/entrypoint.sh 2>/dev/null || true
+# fallback copy if assets also needed under /app for debugging
+RUN mkdir -p /app/assets && cp /qwen_setup/nemotron_lightning_chat_template_nothink2.jinja /app/assets/ 2>/dev/null || true; cp /qwen_setup/nemotron3_tool_parser_plugin.py /app/assets/ 2>/dev/null || true
+
+# HF cache + models
+VOLUME ["/root/.cache/huggingface", "/models"]
+
+EXPOSE 8000 3001
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+    CMD curl -fsS http://127.0.0.1:3001/health | grep -q '"status":"ok"' || exit 1
+
+# Entrypoint uruchamia vLLM (bg) + FastAPI agent (fg) z graceful shutdown
+CMD ["/bin/bash", "/app/agent/entrypoint.sh"]

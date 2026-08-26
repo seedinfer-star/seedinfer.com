@@ -1,0 +1,9 @@
+fastapi==0.110.3
+uvicorn[standard]==0.30.6
+httpx==0.27.2
+pydantic==2.9.2
+pynvml==12.0.0
+psutil==6.1.0
+python-dotenv==1.0.1
+# vLLM nightly instalowany w Dockerfile.cuda (nie tu — heavy CUDA wheels):
+# pip install --pre vllm --extra-index-url https://wheels.vllm.ai/nightly
