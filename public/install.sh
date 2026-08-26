@@ -393,19 +393,15 @@ else
   fi
   echo "-- Headscale health --"
   LAN_LOGIN_SERVER="http://192.168.1.15:8080"
-  _headscale_http=$(curl -fsS --max-time 5 -o /dev/null -w "%{http_code}" "$LOGIN_SERVER/health" 2>/dev/null || echo "000")
-  _register_http=$(curl -fsS -X POST -H "Upgrade: TS2021" -H "Connection: Upgrade" --max-time 5 -o /dev/null -w "%{http_code}" "$LOGIN_SERVER/machine/register" 2>/dev/null || echo "000")
-  if [[ "$_headscale_http" == "200" && "$_register_http" != "500" ]]; then
-    echo "Headscale OK ($LOGIN_SERVER/health HTTP $_headscale_http, register HTTP $_register_http)"
+  if curl -fsS --max-time 3 "$LAN_LOGIN_SERVER/health" >/dev/null 2>&1; then
+    echo "INFO: Wykryto serwer Headscale w LAN ($LAN_LOGIN_SERVER) — używam połączenia bezpośredniego (omija Cloudflare Proxy TS2021)"
+    LOGIN_SERVER="$LAN_LOGIN_SERVER"
   else
-    echo "WARN: $LOGIN_SERVER (health: $_headscale_http, register: $_register_http) — Cloudflare Proxy obcina nagłówek Upgrade: TS2021 na POST"
-    if curl -fsS --max-time 5 "$LAN_LOGIN_SERVER/health" >/dev/null 2>&1; then
-      echo "INFO: LAN Headscale OK ($LAN_LOGIN_SERVER) — przełączam LOGIN_SERVER na LAN fallback ($LAN_LOGIN_SERVER Orange Pi)"
-      LOGIN_SERVER="$LAN_LOGIN_SERVER"
-    else
-      echo "WARN: LAN $LAN_LOGIN_SERVER/health też nie odpowiada — kontynuuję z $LOGIN_SERVER"
-    fi
+    _headscale_http=$(curl -s --max-time 5 -o /dev/null -w "%{http_code}" "$LOGIN_SERVER/health" 2>/dev/null || echo "000")
+    echo "Headscale public URL: $LOGIN_SERVER (health HTTP $_headscale_http)"
   fi
+
+
 
 
   echo "-- tailscale up (hostname sanitized: $HOSTNAME) --"
@@ -1012,13 +1008,28 @@ if [[ -n "$COMPOSE_FILE" && -f "$COMPOSE_FILE" ]]; then
   echo "Health: curl -fsS http://127.0.0.1:${AGENT_PORT}/health | jq"
   echo "vLLM:   curl -fsS http://127.0.0.1:${VLLM_PORT}/v1/models | jq"
   echo "Chat:   curl http://127.0.0.1:${AGENT_PORT}/v1/chat/completions -H 'Content-Type: application/json' -d '{\"model\":\"$MODEL\",\"messages\":[{\"role\":\"user\",\"content\":\"Hello\"}]}'"
-  # wait health
-  echo "-- czekam na agenta (max 120s) --"
-  for i in $(seq 1 24); do
-    if curl -fsS "http://127.0.0.1:${AGENT_PORT}/health" >/dev/null 2>&1; then echo "Agent OK"; break; fi
-    sleep 5
+  # wait health — vLLM 30GB model download on first run can take 5-15 minutes
+  echo "-- czekam na agenta i inicjalizację vLLM (max 15 min / 900s przy pierwszym starcie) --"
+  _agent_ready=false
+  for i in $(seq 1 60); do
+    if curl -fsS "http://127.0.0.1:${AGENT_PORT}/health" >/dev/null 2>&1; then
+      echo "Agent OK: http://127.0.0.1:${AGENT_PORT}/health odpowiada 200 OK"
+      _agent_ready=true
+      break
+    fi
+    if (( i % 3 == 0 )); then
+      echo "   [$(($i * 15))s / 900s] Czekam na vLLM... (pobieranie wag modelu ~30GB / alokacja VRAM)"
+    fi
+    sleep 15
   done
-  curl -fsS "http://127.0.0.1:${AGENT_PORT}/health" | head -c 800; echo
+  if [[ "$_agent_ready" == "true" ]]; then
+    curl -fsS "http://127.0.0.1:${AGENT_PORT}/health" 2>/dev/null | head -c 800 || true
+    echo ""
+  else
+    echo "INFO: Agent jeszcze startuje w tle (vLLM pobiera model/alokuje GPU VRAM)."
+    echo "      Sprawdź postęp logów: docker logs -f seedinfer-provider"
+  fi
+
 else
   echo "== Instalacja zakończona bez uruchomienia Dockera =="
   echo "Sklonuj repo i uruchom:"
