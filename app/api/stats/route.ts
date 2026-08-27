@@ -6,13 +6,6 @@ export const dynamic = "force-dynamic"
 // Primary upstream — SeedInfer Network Statistics (configurable via env).
 // Legacy fallback is kept for backward compatibility but not exposed in UI or docs.
 const UPSTREAM = process.env.SEEDINFER_STATS_UPSTREAM || process.env.STATS_UPSTREAM_URL || "https://api.seedinfer.com/v1/stats"
-const LEGACY_UPSTREAM = (() => {
-  try {
-    return Buffer.from("aHR0cHM6Ly9hcGkuZGFya2Jsb29tLmRldi92MS9zdGF0cw==", "base64").toString()
-  } catch {
-    return ""
-  }
-})()
 const FAZA0_ID = "seedinfer/nemotron-lightning-1m"
 
 function isFaza0Model(id: string): boolean {

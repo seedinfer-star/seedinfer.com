@@ -78,7 +78,7 @@ seedinfer.com, www.seedinfer.com {
 		X-Content-Type-Options "nosniff"
 		Referrer-Policy "strict-origin-when-cross-origin"
 		# CSP dostosuj jeśli używasz inline MapLibre/Recharts
-		# Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://basemaps.cartocdn.com; img-src 'self' data: https://*.cartocdn.com https://api.maptiler.com; connect-src 'self' https://api.darkbloom.dev https://basemaps.cartocdn.com"
+		# Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://basemaps.cartocdn.com; img-src 'self' data: https://*.cartocdn.com https://api.maptiler.com; connect-src 'self' https://basemaps.cartocdn.com"
 	}
 
 	# /api/stats — cache 60s (Next revalidate=60)
