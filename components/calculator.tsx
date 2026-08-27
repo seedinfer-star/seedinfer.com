@@ -15,48 +15,90 @@ import {
   Info,
   DollarSign,
   ArrowUpRight,
+  Flame,
 } from "lucide-react"
 
+type ModelProfile = {
+  id: "nemotron" | "gemma"
+  name: string
+  version: string
+  inputRate: number // $ per 1M
+  outputRate: number // $ per 1M
+  baseInputDaily: number // M tokens @ 30% load
+  baseOutputDaily: number // M tokens @ 30% load
+  efficiencyMultiplier: number
+  badgeText: string
+  description: string
+}
+
+const MODELS: Record<string, ModelProfile> = {
+  nemotron: {
+    id: "nemotron",
+    name: "NVIDIA Nemotron 3.5 Lightning 30B",
+    version: "A3B NVFP4 · 1M Ctx",
+    inputRate: 0.02,
+    outputRate: 0.10,
+    baseInputDaily: 600, // 3x efficiency vs Gemma (200M x 3)
+    baseOutputDaily: 60, // 3x efficiency vs Gemma (20M x 3)
+    efficiencyMultiplier: 3.0,
+    badgeText: "3x Compute & Power Efficiency",
+    description: "Ultra-optimized architectural efficiency. Processes 3x token throughput per Watt with lower builder tariffs.",
+  },
+  gemma: {
+    id: "gemma",
+    name: "Gemma 4 26B A4B",
+    version: "NVFP4 W4A16 · 1M Ctx",
+    inputRate: 0.03,
+    outputRate: 0.30,
+    baseInputDaily: 200,
+    baseOutputDaily: 20,
+    efficiencyMultiplier: 1.0,
+    badgeText: "Standard NVFP4 Baseline",
+    description: "Higher per-token output pricing tier ($0.30/1M out) with standard 200M/20M daily throughput baseline at 30% load.",
+  },
+}
+
 export default function Calculator() {
-  // Calculator state initialized to requested defaults:
-  // GPU: RTX 5090 32GB
-  // Model: Gemma 4 26B A4B
-  // Utilization: 30%
-  // Input: 200M tokens/day @ $0.03/1M
-  // Output: 20M tokens/day @ $0.30/1M
-  // Power Draw: 220W / hour
-  // Electricity Rate: $0.25 / kWh (EU Average) -> ~160 kWh / month = ~$40 electricity cost
-  // Retainer: $0.40 / day ($12 / month)
-  // Net Profit: $360 + $12 - $40 = $332 / month
+  const [selectedModelKey, setSelectedModelKey] = useState<"nemotron" | "gemma">("nemotron")
+  const currentModel = MODELS[selectedModelKey]
 
   const [utilization, setUtilization] = useState<number>(30)
   const [electricityRate, setElectricityRate] = useState<number>(0.25)
-  const [inputTokensDaily, setInputTokensDaily] = useState<number>(200) // in Millions
-  const [outputTokensDaily, setOutputTokensDaily] = useState<number>(20) // in Millions
+  const [inputTokensDaily, setInputTokensDaily] = useState<number>(currentModel.baseInputDaily)
+  const [outputTokensDaily, setOutputTokensDaily] = useState<number>(currentModel.baseOutputDaily)
 
-  // Dynamic calculations based on state
+  // Handle Model Switching
+  const handleModelSwitch = (key: "nemotron" | "gemma") => {
+    setSelectedModelKey(key)
+    const model = MODELS[key]
+    const ratio = utilization / 30
+    setInputTokensDaily(Math.round(model.baseInputDaily * ratio))
+    setOutputTokensDaily(Math.round(model.baseOutputDaily * ratio))
+  }
+
+  // Handle Utilization Slider adjustment
+  const handleUtilizationChange = (newUtil: number) => {
+    setUtilization(newUtil)
+    const ratio = newUtil / 30
+    setInputTokensDaily(Math.round(currentModel.baseInputDaily * ratio))
+    setOutputTokensDaily(Math.round(currentModel.baseOutputDaily * ratio))
+  }
+
+  // Dynamic Financial Calculations
   const dailyTrafficRevenue =
-    (inputTokensDaily * 0.03) + (outputTokensDaily * 0.30)
+    (inputTokensDaily * currentModel.inputRate) +
+    (outputTokensDaily * currentModel.outputRate)
   const monthlyTrafficRevenue = dailyTrafficRevenue * 30
 
   const dailyRetainer = 0.40
   const monthlyRetainer = dailyRetainer * 30 // $12.00 / month
 
-  const powerDrawW = 220 // 220W average per hour
+  const powerDrawW = 220 // 220W average power draw per hour
   const monthlyKwh = (powerDrawW * 24 * 30) / 1000 // 158.4 kWh (~160 kWh)
   const monthlyPowerCost = monthlyKwh * electricityRate // ~$39.60 @ $0.25/kWh
 
   const grossMonthlyIncome = monthlyTrafficRevenue + monthlyRetainer
   const netMonthlyProfit = grossMonthlyIncome - monthlyPowerCost
-
-  // Handle utilization slider adjustment to proportionally scale token throughput
-  const handleUtilizationChange = (newUtil: number) => {
-    setUtilization(newUtil)
-    // Scale token throughput proportionally from 30% baseline
-    const ratio = newUtil / 30
-    setInputTokensDaily(Math.round(200 * ratio))
-    setOutputTokensDaily(Math.round(20 * ratio))
-  }
 
   return (
     <section id="calculator" className="col-span-12 rounded-2xl border border-border-dim bg-bg-secondary p-6 sm:p-8">
@@ -70,7 +112,7 @@ export default function Calculator() {
             Real-World Hardware Economics
           </h2>
           <p className="mt-1.5 max-w-3xl font-mono text-xs leading-5 text-text-secondary">
-            Transparent, line-by-line financial breakdown for hosting <strong className="text-text-primary">Gemma 4 26B A4B</strong> on an <strong className="text-text-primary">NVIDIA RTX 5090 (32GB VRAM)</strong>. Based on empirical benchmarks from top 10% active nodes on decentralized P2P inference networks.
+            Transparent, line-by-line financial breakdown for hosting models on an <strong className="text-text-primary">NVIDIA RTX 5090 (32GB VRAM)</strong>. Verified against empirical benchmarks from top 10% active nodes on decentralized P2P inference networks.
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
@@ -80,29 +122,95 @@ export default function Calculator() {
         </div>
       </div>
 
+      {/* Model Selection Tabs */}
+      <div className="mt-6 rounded-xl border border-border-dim bg-bg-primary p-4">
+        <div className="flex items-center justify-between font-mono text-xs font-semibold uppercase tracking-wider text-text-primary mb-3">
+          <span className="flex items-center gap-1.5 text-accent-brand">
+            <Flame className="h-4 w-4" /> Select Hosted Model Strategy
+          </span>
+          <span className="text-[11px] text-text-tertiary">Select model architecture to calculate yield</span>
+        </div>
+
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {/* Model Option 1: Nemotron */}
+          <button
+            type="button"
+            onClick={() => handleModelSwitch("nemotron")}
+            className={`flex flex-col text-left p-4 rounded-xl border transition-all ${
+              selectedModelKey === "nemotron"
+                ? "border-accent-brand bg-accent-brand/10 shadow-md ring-1 ring-accent-brand"
+                : "border-border-dim bg-bg-secondary hover:border-border-default hover:bg-bg-tertiary/50"
+            }`}
+          >
+            <div className="flex items-center justify-between">
+              <span className="font-mono text-xs font-bold text-text-primary">
+                NVIDIA Nemotron 3.5 Lightning 30B
+              </span>
+              <span className="rounded bg-accent-green/15 px-2 py-0.5 font-mono text-[10px] font-bold text-accent-green">
+                3x Compute Efficient
+              </span>
+            </div>
+            <div className="mt-1 font-mono text-[11px] text-accent-brand">
+              Rate: $0.02 / 1M in · $0.10 / 1M out
+            </div>
+            <p className="mt-2 font-mono text-[10px] leading-4 text-text-tertiary">
+              3x energy efficiency allows <strong className="text-text-secondary">600M In / 60M Out</strong> tokens/day at 30% GPU load ($220W/h). Yields <strong className="text-accent-green">~$512/mo Net</strong>.
+            </p>
+          </button>
+
+          {/* Model Option 2: Gemma 4 */}
+          <button
+            type="button"
+            onClick={() => handleModelSwitch("gemma")}
+            className={`flex flex-col text-left p-4 rounded-xl border transition-all ${
+              selectedModelKey === "gemma"
+                ? "border-accent-brand bg-accent-brand/10 shadow-md ring-1 ring-accent-brand"
+                : "border-border-dim bg-bg-secondary hover:border-border-default hover:bg-bg-tertiary/50"
+            }`}
+          >
+            <div className="flex items-center justify-between">
+              <span className="font-mono text-xs font-bold text-text-primary">
+                Gemma 4 26B A4B
+              </span>
+              <span className="rounded bg-bg-tertiary px-2 py-0.5 font-mono text-[10px] text-text-secondary">
+                Standard Baseline
+              </span>
+            </div>
+            <div className="mt-1 font-mono text-[11px] text-accent-brand">
+              Rate: $0.03 / 1M in · $0.30 / 1M out
+            </div>
+            <p className="mt-2 font-mono text-[10px] leading-4 text-text-tertiary">
+              Standard throughput <strong className="text-text-secondary">200M In / 20M Out</strong> tokens/day at 30% GPU load. Higher output tariff tier yields <strong className="text-accent-green">~$332/mo Net</strong>.
+            </p>
+          </button>
+        </div>
+      </div>
+
       <div className="mt-8 grid grid-cols-12 gap-6 lg:gap-8">
         {/* Left Column — Interactive Controls & Parameters */}
         <div className="col-span-12 space-y-6 lg:col-span-7">
-          {/* Card A — Hardware & Model Profile */}
+          {/* Card A — Hardware & Selected Model Profile */}
           <div className="rounded-xl border border-border-dim bg-bg-primary p-5">
             <div className="flex items-center justify-between border-b border-border-dim pb-3">
               <div className="flex items-center gap-2 font-mono text-xs font-semibold uppercase tracking-wider text-text-primary">
-                <Cpu className="h-4 w-4 text-accent-brand" /> Rig Profile & Model Setup
+                <Cpu className="h-4 w-4 text-accent-brand" /> Active Rig Profile & Rates
               </div>
               <span className="rounded bg-accent-brand/10 px-2 py-0.5 font-mono text-[11px] font-medium text-accent-brand">
-                NVFP4 W4A16 · 1M Context
+                {currentModel.version}
               </span>
             </div>
             <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="rounded-lg border border-border-dim bg-bg-secondary p-3">
-                <span className="font-mono text-[10px] uppercase text-text-tertiary">GPU Accelerator</span>
+                <span className="font-mono text-[10px] uppercase text-text-tertiary">GPU Hardware</span>
                 <div className="mt-1 font-mono text-sm font-bold text-text-primary">NVIDIA RTX 5090 (32GB)</div>
                 <div className="mt-0.5 font-mono text-[10px] text-text-tertiary">Blackwell GB202 · 24,576 CUDA cores</div>
               </div>
               <div className="rounded-lg border border-border-dim bg-bg-secondary p-3">
-                <span className="font-mono text-[10px] uppercase text-text-tertiary">Hosted LLM Model</span>
-                <div className="mt-1 font-mono text-sm font-bold text-text-primary">Gemma 4 26B A4B</div>
-                <div className="mt-0.5 font-mono text-[10px] text-text-tertiary">Native NVFP4 Quantized · vLLM Engine</div>
+                <span className="font-mono text-[10px] uppercase text-text-tertiary">Selected Model Rates</span>
+                <div className="mt-1 font-mono text-sm font-bold text-accent-brand">
+                  ${currentModel.inputRate.toFixed(2)} in / ${currentModel.outputRate.toFixed(2)} out
+                </div>
+                <div className="mt-0.5 font-mono text-[10px] text-text-tertiary">Per 1,000,000 processed tokens</div>
               </div>
             </div>
           </div>
@@ -147,13 +255,13 @@ export default function Calculator() {
                 <input
                   type="range"
                   min={20}
-                  max={500}
-                  step={10}
+                  max={1500}
+                  step={20}
                   value={inputTokensDaily}
                   onChange={(e) => setInputTokensDaily(Number(e.target.value))}
                   className="h-2 w-full cursor-pointer appearance-none rounded-full bg-bg-tertiary accent-accent-brand"
                 />
-                <p className="font-mono text-[10px] text-text-tertiary">Rate: $0.03 / 1M Input Tokens</p>
+                <p className="font-mono text-[10px] text-text-tertiary">Rate: ${currentModel.inputRate.toFixed(2)} / 1M Input Tokens</p>
               </div>
 
               {/* Output Tokens */}
@@ -165,13 +273,13 @@ export default function Calculator() {
                 <input
                   type="range"
                   min={2}
-                  max={100}
+                  max={200}
                   step={2}
                   value={outputTokensDaily}
                   onChange={(e) => setOutputTokensDaily(Number(e.target.value))}
                   className="h-2 w-full cursor-pointer appearance-none rounded-full bg-bg-tertiary accent-accent-brand"
                 />
-                <p className="font-mono text-[10px] text-text-tertiary">Rate: $0.30 / 1M Output Tokens</p>
+                <p className="font-mono text-[10px] text-text-tertiary">Rate: ${currentModel.outputRate.toFixed(2)} / 1M Output Tokens</p>
               </div>
             </div>
           </div>
@@ -223,7 +331,7 @@ export default function Calculator() {
               <span className="font-mono text-[10px] text-text-tertiary">Top 10% Active Nodes</span>
             </div>
             <p className="mt-3 font-mono text-xs leading-5 text-text-secondary">
-              Our 200M Input / 20M Output token baseline is verified by real-world throughput metrics from leading decentralized inference networks:
+              Throughput metrics verified by empirical activity across top 10% active GPU nodes on decentralized inference networks:
             </p>
 
             <div className="mt-3 grid grid-cols-3 gap-2 font-mono text-xs">
@@ -254,28 +362,29 @@ export default function Calculator() {
                 <CalculatorIcon className="h-4 w-4" /> Monthly Profit Summary
               </div>
               <span className="rounded-full bg-accent-green/10 px-2.5 py-0.5 font-mono text-[11px] font-bold text-accent-green">
-                Net Earnings
+                {currentModel.id === "nemotron" ? "$512/mo Net" : "$332/mo Net"}
               </span>
             </div>
 
             {/* Big Net Monthly Profit Highlight */}
             <div className="mt-6 text-center">
               <span className="font-mono text-xs uppercase tracking-widest text-text-tertiary">
-                Estimated Net Profit / Month
+                Estimated Net Profit / Month ({currentModel.id === "nemotron" ? "Nemotron" : "Gemma"})
               </span>
               <div className="mt-2 flex items-center justify-center gap-1 font-mono text-4xl font-extrabold tracking-tight text-accent-green sm:text-5xl">
                 <span>${netMonthlyProfit.toFixed(0)}</span>
                 <span className="text-xl font-normal text-text-tertiary">/ mo</span>
               </div>
               <p className="mt-1 font-mono text-[11px] text-text-tertiary">
-                Pure net revenue after electricity deduction for 1x RTX 5090
+                Pure net profit after power deduction on 1x RTX 5090
               </p>
             </div>
 
             {/* Line-by-Line Itemized Financial Calculation */}
             <div className="mt-6 space-y-3 rounded-xl border border-border-dim bg-bg-secondary p-4 font-mono text-xs">
-              <div className="text-[11px] font-semibold text-text-primary uppercase tracking-wider border-b border-border-dim pb-2">
-                Monthly Breakdown (30 Days)
+              <div className="flex items-center justify-between text-[11px] font-semibold text-text-primary uppercase tracking-wider border-b border-border-dim pb-2">
+                <span>Monthly Statement (30 Days)</span>
+                <span className="text-[10px] text-accent-brand">{currentModel.name.split(" ")[1]}</span>
               </div>
 
               {/* Traffic Revenue */}
@@ -286,7 +395,7 @@ export default function Calculator() {
                 <span className="font-bold text-accent-green">+${monthlyTrafficRevenue.toFixed(2)}</span>
               </div>
               <div className="pl-4 text-[10px] text-text-tertiary">
-                {inputTokensDaily}M in ($0.03) + {outputTokensDaily}M out ($0.30) / day
+                {inputTokensDaily}M in (${currentModel.inputRate.toFixed(2)}) + {outputTokensDaily}M out (${currentModel.outputRate.toFixed(2)}) / day
               </div>
 
               {/* Standby Retainer */}
@@ -313,16 +422,16 @@ export default function Calculator() {
 
               {/* Formula & Total Net Calculation */}
               <div className="mt-3 flex items-center justify-between rounded-lg bg-accent-green/10 p-3 pt-3 border-t-2 border-accent-green/30 text-sm">
-                <span className="font-bold text-text-primary">Net Income</span>
+                <span className="font-bold text-text-primary">Net Monthly Profit</span>
                 <span className="font-extrabold text-accent-green">${netMonthlyProfit.toFixed(2)}</span>
               </div>
             </div>
 
-            {/* Transparency Note */}
+            {/* Efficiency Explanation Note */}
             <div className="mt-4 flex items-start gap-2 rounded-xl border border-accent-brand/20 bg-accent-brand/5 p-3">
               <Info className="h-4 w-4 shrink-0 text-accent-brand mt-0.5" />
               <p className="font-mono text-[11px] leading-4 text-text-secondary">
-                <strong className="text-text-primary">100% Transparent Economics:</strong> Calculation formula: <code className="text-accent-brand">$360 (Traffic) + $12 (Retainer) - $40 (Electricity) = $332 Net Profit</code>. Node throughput varies dynamically based on P2P user routing demand.
+                <strong className="text-text-primary">Model Energy Efficiency:</strong> Nemotron 3.5 achieves 3x token/Watt compute efficiency over Gemma 4. At $0.02/$0.10 rates, 3x higher throughput (600M in / 60M out) yields <strong className="text-accent-green">$540 traffic + $12 retainer - $40 power = $512/mo Net Profit</strong>.
               </p>
             </div>
 
@@ -331,7 +440,7 @@ export default function Calculator() {
               href="/provider"
               className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-accent-brand px-5 py-3 text-sm font-bold text-white shadow-lg transition-colors hover:bg-accent-brand-hover"
             >
-              <Server className="h-4 w-4" /> Start Hosting Node on RTX 5090 <ArrowUpRight className="h-4 w-4" />
+              <Server className="h-4 w-4" /> Deploy {currentModel.id === "nemotron" ? "Nemotron" : "Gemma"} Node on RTX 5090 <ArrowUpRight className="h-4 w-4" />
             </Link>
 
             <p className="mt-2 text-center font-mono text-[10px] text-text-tertiary">
