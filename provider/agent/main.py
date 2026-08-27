@@ -162,22 +162,43 @@ def _tailscale_ip() -> str:
             return ip
     except Exception:
         pass
-    # 3) try host network interfaces via tailnet hostname DNS?
+    # 3) try resolving TAILSCALE_HOSTNAME or MagicDNS
+    hn = TAILSCALE_HOSTNAME or ""
+    if hn:
+        for candidate in [f"{hn}.seedinfer.ts.net", hn]:
+            try:
+                ip = socket.gethostbyname(candidate)
+                if ip and ip.startswith("100."):
+                    return ip
+            except Exception:
+                pass
     return ""
 
+def _agent_port_external() -> int:
+    """Return external host port exposed on Tailscale/network (e.g. 47901)."""
+    p = os.getenv("HOST_AGENT_PORT") or os.getenv("EXTERNAL_AGENT_PORT") or os.getenv("HOST_PORT")
+    if p:
+        try:
+            return int(p)
+        except ValueError:
+            pass
+    # default host mapping is 47901
+    return 47901
+
 def _agent_url() -> str:
+    ext_port = _agent_port_external()
     ip = _tailscale_ip()
     if ip:
-        return f"http://{ip}:{AGENT_PORT}"
+        return f"http://{ip}:{ext_port}"
     hn = TAILSCALE_HOSTNAME or ""
     if hn:
         # MagicDNS candidate
-        return f"http://{hn}.seedinfer.ts.net:{AGENT_PORT}"
+        return f"http://{hn}.seedinfer.ts.net:{ext_port}"
     # fallback: hostname
     try:
-        return f"http://{socket.gethostname()}:{AGENT_PORT}"
+        return f"http://{socket.gethostname()}:{ext_port}"
     except Exception:
-        return f"http://127.0.0.1:{AGENT_PORT}"
+        return f"http://127.0.0.1:{ext_port}"
 
 async def vllm_health() -> dict[str, Any]:
     try:
@@ -456,13 +477,27 @@ async def chat_completions(request: Request):
     is_stream = bool(j.get("stream"))
     # count request
     _requests_served += 1
-    # Translate logical SeedInfer model to actual vLLM served name (nemotron container serves nemotron-3.5-lightning-30b-a3b-nvfp4)
     _orig_model = j.get("model")
     _model_aliased = False
-    if _orig_model == "seedinfer/nemotron-lightning-1m":
-        j["model"] = "nemotron-3.5-lightning-30b-a3b-nvfp4"
-        body = json.dumps(j).encode()
-        _model_aliased = True
+
+    # Dynamic model resolution: check what model vLLM is actually serving
+    vllm_target_model = _orig_model
+    try:
+        async with httpx.AsyncClient(timeout=2) as c:
+            r = await c.get(f"{VLLM_URL}/v1/models")
+            if r.status_code == 200:
+                vllm_models = [m.get("id") for m in r.json().get("data", []) if isinstance(m, dict)]
+                if vllm_models and _orig_model not in vllm_models:
+                    # If exact logical model name not served, pick first served model (e.g. snapshot path or alias)
+                    if "seedinfer/nemotron-lightning-1m" in vllm_models:
+                        vllm_target_model = "seedinfer/nemotron-lightning-1m"
+                    else:
+                        vllm_target_model = vllm_models[0]
+                    j["model"] = vllm_target_model
+                    body = json.dumps(j).encode()
+                    _model_aliased = True
+    except Exception as e:
+        log.debug("vLLM model lookup check: %s", e)
 
     # proxy to vLLM
     try:
@@ -487,7 +522,6 @@ async def chat_completions(request: Request):
                             return
                         async for chunk in r.aiter_bytes():
                             if chunk:
-                                # rough tokens estimate
                                 yield chunk
             return StreamingResponse(gen(), media_type="text/event-stream",
                                      headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"})
@@ -503,13 +537,14 @@ async def chat_completions(request: Request):
                     resp_j = r.json()
                     usage = resp_j.get("usage", {})
                     _tokens_generated += int(usage.get("completion_tokens", 0) or 0)
-                    if _model_aliased and isinstance(resp_j, dict) and resp_j.get("model") == "nemotron-3.5-lightning-30b-a3b-nvfp4":
+                    if _model_aliased and isinstance(resp_j, dict) and _orig_model:
                         resp_j["model"] = _orig_model
                         return JSONResponse(content=resp_j, status_code=r.status_code)
                 except Exception:
                     pass
                 return Response(content=r.content, status_code=r.status_code, media_type=ct,
                                 headers={"Cache-Control": "no-store"})
+
     except httpx.ConnectError as e:
         log.error("vLLM connect failed: %s", e)
         return JSONResponse({

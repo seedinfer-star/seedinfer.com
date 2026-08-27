@@ -798,8 +798,13 @@ if [[ -n "$COMPOSE_FILE" ]]; then
   # nadpisz kluczowe wartości
   mkdir -p "$(dirname "$ENV_FILE")"
   touch "$ENV_FILE"
+  # detect Tailscale IP if available
+  _detected_ts_ip=""
+  if command -v tailscale >/dev/null 2>&1; then
+    _detected_ts_ip=$(tailscale ip -4 2>/dev/null | head -n1 || true)
+  fi
   # usuń stare wpisy i dopisz (NVFP4 defaults)
-  grep -v -E "^(TAILSCALE_AUTHKEY|MODEL|VLLM_MODEL|SEEDINFER_GATEWAY_URL|TAILSCALE_LOGIN_SERVER|TAILSCALE_HOSTNAME|HF_TOKEN|PYTORCH_CUDA_ALLOC_CONF|VLLM_GPU_MEMORY_UTILIZATION|HF_CACHE_HOST)=" "$ENV_FILE" > "$ENV_FILE.tmp" 2>/dev/null || cp "$ENV_FILE" "$ENV_FILE.tmp"
+  grep -v -E "^(TAILSCALE_AUTHKEY|MODEL|VLLM_MODEL|SEEDINFER_GATEWAY_URL|TAILSCALE_LOGIN_SERVER|TAILSCALE_HOSTNAME|TAILSCALE_IP|HOST_AGENT_PORT|HF_TOKEN|PYTORCH_CUDA_ALLOC_CONF|VLLM_GPU_MEMORY_UTILIZATION|HF_CACHE_HOST)=" "$ENV_FILE" > "$ENV_FILE.tmp" 2>/dev/null || cp "$ENV_FILE" "$ENV_FILE.tmp"
   cat >> "$ENV_FILE.tmp" <<EOF
 TAILSCALE_AUTHKEY=$AUTHKEY
 MODEL=$MODEL
@@ -807,6 +812,8 @@ VLLM_MODEL=$VLLM_MODEL
 SEEDINFER_GATEWAY_URL=$GATEWAY
 TAILSCALE_LOGIN_SERVER=$LOGIN_SERVER
 TAILSCALE_HOSTNAME=$HOSTNAME
+TAILSCALE_IP=${_detected_ts_ip}
+HOST_AGENT_PORT=${AGENT_PORT:-47901}
 PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 VLLM_GPU_MEMORY_UTILIZATION=0.94
 HF_CACHE_HOST=/mnt/d/hf_cache

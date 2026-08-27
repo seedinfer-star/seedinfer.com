@@ -83,7 +83,22 @@ echo "[entrypoint] ENV VLLM_ATTENTION_BACKEND=$VLLM_ATTENTION_BACKEND VLLM_NVFP4
 echo "[entrypoint] MODEL=$MODEL  VLLM_MODEL=$VLLM_MODEL"
 mkdir -p "$HF_HOME" 2>/dev/null || true
 
-# 1) Tailscale rejestracja (opcjonalna — preferowany host tailscaled)
+# 1) Tailscale IP & host port export
+export HOST_AGENT_PORT="${HOST_AGENT_PORT:-47901}"
+if [[ -z "${TAILSCALE_IP:-}" ]]; then
+  _ts_ip=""
+  if command -v tailscale >/dev/null 2>&1; then
+    _ts_ip=$(tailscale ip -4 2>/dev/null | head -n1 || true)
+  fi
+  if [[ -z "$_ts_ip" ]] && command -v ip >/dev/null 2>&1; then
+    _ts_ip=$(ip -4 addr show tailscale0 2>/dev/null | grep -oP 'inet \K[0-9.]+' | head -n1 || true)
+  fi
+  if [[ -n "$_ts_ip" && "$_ts_ip" =~ ^100\. ]]; then
+    export TAILSCALE_IP="$_ts_ip"
+    echo "[entrypoint] Detected TAILSCALE_IP=$_ts_ip"
+  fi
+fi
+
 if [[ -n "${TAILSCALE_AUTHKEY:-}" ]]; then
   echo "[entrypoint] TAILSCALE_AUTHKEY set — attempting tailscale up..."
   if command -v tailscale >/dev/null 2>&1; then

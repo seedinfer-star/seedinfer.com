@@ -73,7 +73,9 @@ services:
       VLLM_CHAT_TEMPLATE: ${VLLM_CHAT_TEMPLATE:-/qwen_setup/nemotron_lightning_chat_template_nothink2.jinja}
       VLLM_TOOL_PARSER_PLUGIN: ${VLLM_TOOL_PARSER_PLUGIN:-/qwen_setup/nemotron3_tool_parser_plugin.py}
       # --- Agent ---
-      AGENT_PORT: ${AGENT_PORT:-47901}
+      AGENT_PORT: ${AGENT_PORT:-3001}
+      HOST_AGENT_PORT: ${HOST_AGENT_PORT:-47901}
+      TAILSCALE_IP: ${TAILSCALE_IP:-}
       AGENT_LOG_LEVEL: ${AGENT_LOG_LEVEL:-info}
       PROVIDER_ID: ${PROVIDER_ID:-}
       PROVIDER_REGION: ${PROVIDER_REGION:-}
@@ -85,6 +87,7 @@ services:
       - ${HF_CACHE_HOST:-./models/cache}:/root/.cache/huggingface
       - ${MODELS_HOST:-./models}:/models:ro
       - ./agent/entrypoint.sh:/app/agent/entrypoint.sh:ro
+      - ./agent/main.py:/app/agent/main.py:ro
       # CRITICAL: /mnt/d/qwen_setup contains patch_kv_cache.py, patch_vllm.py, patch_trtllm.py etc.
       # Studio uses: -v /mnt/d/qwen_setup:/qwen_setup:ro — must match exactly.
       # Fallback ./assets only has chat template + plugin (no patches = OOM).
@@ -153,7 +156,7 @@ services:
       TS_AUTHKEY: ${TAILSCALE_AUTHKEY:-}
       TS_HOSTNAME: ${TAILSCALE_HOSTNAME:-provider-5090}
       TS_LOGIN_SERVER: ${TAILSCALE_LOGIN_SERVER:-https://tailnet.seedinfer.com}
-      TS_EXTRA_ARGS: --advertise-tags=tag:provider --accept-routes
+      TS_EXTRA_ARGS: --login-server=${TAILSCALE_LOGIN_SERVER:-https://tailnet.seedinfer.com} --advertise-tags=tag:provider --accept-routes
       TS_STATE_DIR: /tailscale
       TS_SOCKET: /tmp/tailscaled.sock
       TS_USERSPACE: "false"
