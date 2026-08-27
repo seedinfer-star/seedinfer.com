@@ -46,6 +46,7 @@ export type StoredProvider = Provider & {
   ewmaTtft?: number | null
   ewmaLatency?: number | null
   concurrentRequests?: number
+  maxConcurrency?: number
   totalRequests?: number
   successCount?: number
   // denormalized routing weight dla observability (podgląd w listProviders, nie źródło prawdy — źródło w lib/routing/selector)

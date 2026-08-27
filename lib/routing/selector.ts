@@ -257,6 +257,30 @@ function hydrateFromProvider(p: StoredProvider): void {
   syncWeight(s, false)
 }
 
+/** Dynamic per-node max concurrency limit based on GPU profile, vLLM max_num_seqs & model specs */
+export function getMaxConcurrency(p: any): number {
+  if (typeof p?.maxConcurrency === "number" && p.maxConcurrency > 0) return p.maxConcurrency
+  if (typeof p?.max_concurrency === "number" && p.max_concurrency > 0) return p.max_concurrency
+  if (typeof p?.raw?.max_concurrency === "number" && p.raw.max_concurrency > 0) return p.raw.max_concurrency
+  if (typeof p?.raw?.max_num_seqs === "number" && p.raw.max_num_seqs > 0) return p.raw.max_num_seqs
+
+  // Dynamic hardware heuristics fallback
+  const name = String(p?.gpu?.name || p?.raw?.gpu?.name || "").toUpperCase()
+  const vram = Number(p?.gpu?.vram_gb || p?.raw?.gpu?.vram_gb || 24)
+  const count = Number(p?.gpu?.count || p?.raw?.gpu?.count || 1)
+
+  if (name.includes("A100") || name.includes("H100") || name.includes("H200") || name.includes("B200")) {
+    return Math.max(16, count * 16)
+  }
+  if (name.includes("5090")) {
+    return Math.max(8, count * 8)
+  }
+  if (name.includes("4090") || name.includes("3090")) {
+    return Math.max(4, count * 4)
+  }
+  return Math.max(2, Math.floor(vram / 4))
+}
+
 /** Główny selector: wybiera best provider via WRR ważony odwrotnie do TTFT i load
  * Akceptuje Provider[] (spec) lub StoredProvider[] — jeśli brak verification field, traktuje wszystkich jako selectable (cold start test)
  */
@@ -326,7 +350,6 @@ export function selectProvider(
       const aSucc = a.stat.totalRequests ? a.stat.successCount / a.stat.totalRequests : 1
       const bSucc = b.stat.totalRequests ? b.stat.successCount / b.stat.totalRequests : 1
       if (aSucc !== bSucc) return bSucc - aSucc
-      // tie: recent heartbeat
       return new Date(b.provider.last_heartbeat).getTime() - new Date(a.provider.last_heartbeat).getTime()
     })
     return sorted[0].provider
@@ -336,13 +359,17 @@ export function selectProvider(
   // Eliminates thundering herd behavior & avoids active polling overhead at 1000s of nodes
   const useP2C = process.env.ROUTING_ALGORITHM !== "wrr"
   if (useP2C) {
-    const idx1 = Math.floor(Math.random() * pool.length)
-    let idx2 = Math.floor(Math.random() * pool.length)
-    if (pool.length > 1 && idx1 === idx2) {
-      idx2 = (idx1 + 1) % pool.length
+    // Dynamic Per-Node Concurrency Cap: Filter out saturated nodes (concurrentRequests >= maxConcurrency)
+    const unsaturated = pool.filter((c) => c.stat.concurrentRequests < getMaxConcurrency(c.provider))
+    const selectPool = unsaturated.length > 0 ? unsaturated : pool
+
+    const idx1 = Math.floor(Math.random() * selectPool.length)
+    let idx2 = Math.floor(Math.random() * selectPool.length)
+    if (selectPool.length > 1 && idx1 === idx2) {
+      idx2 = (idx1 + 1) % selectPool.length
     }
-    const candA = pool[idx1]
-    const candB = pool[idx2]
+    const candA = selectPool[idx1]
+    const candB = selectPool[idx2]
 
     // 1. Compare in-memory concurrent active requests (Least Outstanding Requests)
     if (candA.stat.concurrentRequests < candB.stat.concurrentRequests) return candA.provider
