@@ -1,0 +1,165 @@
+@import 'maplibre-gl/dist/maplibre-gl.css';
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Louize display – fallback Georgia (licenced font not bundled) */
+@font-face {
+  font-family: "Louize";
+  src: local("Georgia");
+  font-display: swap;
+}
+
+:root {
+  --bg-primary: #f2f2f2;
+  --bg-secondary: #e8e8e8;
+  --bg-tertiary: #dedede;
+  --bg-elevated: #d8dce5;
+  --bg-hover: #e0e0e4;
+  --bg-white: #fff;
+  --ink: #000;
+  --ink-light: #666f7c;
+  --ink-faint: #acb1bc;
+  --text-primary: #000;
+  --text-secondary: #666f7c;
+  --text-tertiary: #acb1bc;
+  --border-dim: #d8dce5;
+  --border-subtle: #acb1bc;
+  --border-default: #d8dce5;
+  --coral: #1a0c6d;
+  --coral-light: #1a0c6d0f;
+  --teal: #2d9e7a;
+  --teal-light: #d1fae5;
+  --blue: #95bfff;
+  --blue-light: #dbeafe;
+  --purple: #7c3aed;
+  --accent-brand: #1a0c6d;
+  --accent-brand-dim: #1a0c6d0f;
+  --accent-brand-hover: #130952;
+  --accent-green: #2d9e7a;
+  --accent-green-dim: #d1fae5;
+  --accent-amber: #d97706;
+  --accent-amber-dim: #fef3c7;
+  --accent-red: #dc2626;
+  --accent-red-dim: #fee2e2;
+  --danger: #dc2626;
+  --radius: 0.75rem;
+  --shadow-sm: 0 1px 2px #0000000a;
+  --shadow-md: 0 2px 4px #0000000f;
+  --shadow-lg: 0 4px 12px #00000014;
+}
+
+.dark {
+  --bg-primary: #0f0f14;
+  --bg-secondary: #16161f;
+  --bg-tertiary: #1e1e2a;
+  --bg-elevated: #262636;
+  --bg-hover: #2a2a3c;
+  --bg-white: #1e1e2a;
+  --ink: #e8e8ec;
+  --ink-light: #9ca3af;
+  --ink-faint: #6b7280;
+  --text-primary: #e8e8ec;
+  --text-secondary: #9ca3af;
+  --text-tertiary: #6b7280;
+  --border-dim: #262636;
+  --border-subtle: #363648;
+  --border-default: #363648;
+  --coral: #818cf8;
+  --coral-light: #818cf81a;
+  --teal: #34d399;
+  --teal-light: #34d3991f;
+  --blue: #93c5fd;
+  --blue-light: #93c5fd1f;
+  --purple: #a78bfa;
+  --accent-brand: #818cf8;
+  --accent-brand-dim: #818cf81a;
+  --accent-brand-hover: #6366f1;
+  --accent-green: #34d399;
+  --accent-green-dim: #34d3991f;
+  --accent-amber: #fbbf24;
+  --accent-amber-dim: #fbbf241f;
+  --accent-red: #f87171;
+  --accent-red-dim: #f871711f;
+  --danger: #f87171;
+  --shadow-sm: 0 1px 2px #0000004d;
+  --shadow-md: 0 2px 6px #00000059;
+  --shadow-lg: 0 4px 12px #0006;
+}
+
+@layer base {
+  * {
+    border-color: var(--border-default);
+  }
+  html, body {
+    height: 100%;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  body {
+    font-family: var(--font-inter), "ABC Repro", -apple-system, BlinkMacSystemFont, sans-serif;
+    letter-spacing: 0.02em;
+    line-height: 1.4;
+  }
+  h1, h2, h3 {
+    letter-spacing: -0.02em;
+  }
+  ::selection {
+    background: color-mix(in oklab, var(--accent-brand) 18%, transparent);
+  }
+  *:focus-visible {
+    outline: 2px solid var(--accent-brand);
+    outline-offset: 2px;
+  }
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--border-subtle);
+    border-radius: 9999px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
+
+/* sidebar animation */
+.sidebar-animate {
+  transition: transform 0.2s ease;
+}
+
+/* maplibre polish */
+.maplibregl-ctrl-group {
+  border: 1px solid var(--border-default) !important;
+  box-shadow: var(--shadow-md) !important;
+  border-radius: 10px !important;
+  overflow: hidden;
+  background: var(--bg-secondary) !important;
+}
+.maplibregl-ctrl-group button {
+  background: transparent !important;
+}
+.maplibregl-ctrl-attrib {
+  font-family: var(--font-mono), monospace !important;
+  font-size: 10px !important;
+  background: color-mix(in oklab, var(--bg-primary) 85%, transparent) !important;
+}
+
+/* recharts */
+.recharts-tooltip-wrapper {
+  z-index: 10;
+}
+.recharts-cartesian-grid-horizontal line,
+.recharts-cartesian-grid-vertical line {
+  stroke: var(--border-dim);
+}
+
+/* glass */
+.panel-glass {
+  background: color-mix(in oklab, var(--bg-secondary) 92%, transparent);
+  backdrop-filter: blur(12px) saturate(1.2);
+  border: 1px solid var(--border-dim);
+}

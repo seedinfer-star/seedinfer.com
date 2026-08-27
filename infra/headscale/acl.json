@@ -1,0 +1,96 @@
+{
+  // SeedInfer.com — Headscale ACL (HuJSON — JSON z komentarzami)
+  // Faza 0: gateway (Orange Pi 4 Pro) + provider (RTX 5090 Nemotron) + seeder (przyszli)
+  // Zasady:
+  //   - tag:gateway = Orange Pi (Caddy :80, Next :3000, Postgres :5432, Redis :6379, API :8000, Headscale :8080)
+  //   - tag:provider = RTX 5090 provider — EMPEREAL? preauth reusable — tylko do gateway na 3000,5432,6379,8000 (+ health 80,443 via Caddy jeśli potrzeba)
+  //   - tag:seeder = przyszli seederzy — tymczasowo brak dostępu do providera, tylko do gateway (jak provider ale bez DB)
+  //   - user seedinfer = owner, może wszędzie
+  //   - autoApprovers: gateway może ogłaszać routes/exit-node (jeśli kiedyś subnet router)
+  //
+  // Test: headscale policy check -f /etc/headscale/acl.json  (na Pi po zmianie)
+  // Reload: headscale policy reload  lub restart kontenera
+
+  "acls": [
+    // Owner (seedinfer user) — full mesh
+    {
+      "action": "accept",
+      "src": ["seedinfer"],
+      "dst": ["*:*"]
+    },
+    // Autogroup members (każdy zalogowany user) — mogą się pingować, ale serwisy limitowane tagami poniżej
+    {
+      "action": "accept",
+      "src": ["seedinfer"],
+      "dst": ["seedinfer:*"]
+    },
+    // Gateway — może wszędzie (jest serwerem)
+    {
+      "action": "accept",
+      "src": ["tag:gateway"],
+      "dst": ["*:*"]
+    },
+    // Provider -> Gateway — TYLKO porty Faza 0 (zgodnie z zadaniem)
+    {
+      "action": "accept",
+      "src": ["tag:provider"],
+      "dst": ["tag:gateway:3000,5432,6379,8000"]
+    },
+    // Seeder -> Gateway — węższy zestaw (tylko HTTP/API, bez DB)
+    // Jeśli seeder ma dostać DB, rozszerz o 5432,6379 — na start blokujemy.
+    {
+      "action": "accept",
+      "src": ["tag:seeder"],
+      "dst": ["tag:gateway:3000,8000,443,80"]
+    },
+    // Seeder <-> Seeder oraz Provider <-> Provider — pozwól na diagnostykę (opcjonalnie zakomentuj dla izolacji)
+    // {
+    //   "action": "accept",
+    //   "src": ["tag:seeder"],
+    //   "dst": ["tag:seeder:*"]
+    // },
+    // {
+    //   "action": "accept",
+    //   "src": ["tag:provider"],
+    //   "dst": ["tag:provider:*"]
+    // },
+
+    // Health / Headscale API — każdy członek może sprawdzić health tailnetu
+    {
+      "action": "accept",
+      "src": ["seedinfer"],
+      "dst": ["tag:gateway:8080"]
+    }
+  ],
+
+  "tagOwners": {
+    "tag:gateway": ["seedinfer"],
+    "tag:provider": ["seedinfer"],
+    "tag:seeder": ["seedinfer"]
+  },
+
+  // Auto-approve dla preauth keys z tagami — nie wymaga ręcznego `headscale nodes register`
+  "autoApprovers": {
+    "routes": {
+      "100.64.0.0/10": ["tag:gateway"],
+      "0.0.0.0/0": ["tag:gateway"]
+    },
+    "exitNode": ["tag:gateway"]
+  },
+
+  // Hosts aliases — ułatwia ACL (opcjonalnie)
+  "hosts": {
+    "gateway": "100.64.0.1"
+  },
+
+  // Groups — Faza 0: jedna grupa seedinfer (owner)
+  "groups": {
+    "group:seedinfer": ["seedinfer"]
+  },
+
+  // SSH — OFF w Fazie 0 (używamy normalnego SSH via Tailnet, bez Tailscale SSH)
+  "ssh": [],
+
+  // NodeAttrs — opcjonalnie auto-approve jako exit node itp. (puste w Fazie 0)
+  "nodeAttrs": []
+}

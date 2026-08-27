@@ -1,0 +1,46 @@
+{
+  "name": "seedinfer-frontend",
+  "version": "0.1.0",
+  "private": true,
+  "description": "SeedInfer.com — SeedInfer Network Statistics — private inference stats on Orange Pi",
+  "scripts": {
+    "dev": "next dev -H 0.0.0.0 -p 3002",
+    "build": "next build",
+    "start": "next start -H 0.0.0.0 -p 3002",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "@solana/web3.js": "^1.98.0",
+    "bcrypt": "^5.1.1",
+    "bcryptjs": "^3.0.3",
+    "better-sqlite3": "^9.2.2",
+    "clsx": "^2.1.1",
+    "jose": "^5.9.6",
+    "lucide-react": "^0.468.0",
+    "maplibre-gl": "4.7.1",
+    "next": "15.1.6",
+    "qrcode.react": "^4.2.0",
+    "react": "19.0.0",
+    "react-dom": "19.0.0",
+    "recharts": "^2.13.0",
+    "tailwind-merge": "^3.6.0",
+    "uuid": "^11.0.3",
+    "viem": "^2.23.0"
+  },
+  "devDependencies": {
+    "@types/bcrypt": "^5.0.2",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/maplibre-gl": "^1.14.0",
+    "@types/node": "22.10.5",
+    "@types/react": "19.0.2",
+    "@types/react-dom": "19.0.3",
+    "@types/uuid": "^10.0.0",
+    "autoprefixer": "10.4.20",
+    "eslint": "9.18.0",
+    "eslint-config-next": "15.1.6",
+    "postcss": "8.4.49",
+    "tailwindcss": "3.4.17",
+    "tsx": "^4.19.1",
+    "typescript": "5.7.3"
+  }
+}

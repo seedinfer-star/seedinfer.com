@@ -1,0 +1,44 @@
+[Unit]
+Description=SeedInfer.com — Multi-chain Payments Worker (watch-only, 7 chains)
+Documentation=https://seedinfer.com
+After=network.target network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=seedinfer
+Group=seedinfer
+WorkingDirectory=/opt/seedinfer
+# Watch-only worker — no PRIVATE_KEY, polls every WORKER_POLL_MS (default 15000ms)
+# Requires Node 20+ and tsx (npm i -D tsx). RPC keys via /opt/seedinfer/.env
+Environment=NODE_ENV=production
+EnvironmentFile=-/opt/seedinfer/.env
+# Prefer tsx via npx or node --loader tsx — adjust path if node installed via nvm/nodesource
+# Option A: npx tsx
+ExecStart=/usr/bin/npx tsx lib/payments/worker.ts
+# Option B (alternative): node with --loader tsx (uncomment if tsx loader needed)
+# ExecStart=/usr/bin/node --loader tsx lib/payments/worker.ts
+Restart=always
+RestartSec=5
+KillMode=mixed
+TimeoutStopSec=30
+
+# Hardening (bare-metal Orange Pi)
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/opt/seedinfer /mnt/nvme /mnt/nvme/seedinfer /dev/shm
+# Allow DB tmpfs + snapshot NVMe (tmpfs /dev/shm/seedinfer.db + NVMe snapshot /mnt/nvme/seedinfer/snapshot.db)
+
+# Resource limits — worker is light (poll only)
+MemoryMax=512M
+CPUWeight=100
+
+# Logging -> journalctl
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=seedinfer-payments
+
+[Install]
+WantedBy=multi-user.target

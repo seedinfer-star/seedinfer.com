@@ -1,0 +1,67 @@
+# SeedInfer.com — cloudflared config.yml — Orange Pi 4 Pro (PROD)
+# Tunnel: seedinfer — seedinfer.com + www -> Caddy na localhost:80 -> Next.js :3000
+#           tailnet.seedinfer.com -> http://localhost:8080 (Headscale)
+# Docs: docs/cloudflare.md , scripts/cloudflare-setup.sh
+# Dev lokalnie (Next :3002): użyj infra/cloudflared/config.dev.yml
+# Instalacja: patrz README.md "Deploy na Orange Pi — Cloudflare Tunnel"
+#
+# Dwa tryby:
+#   1) Token (zalecane, najprostsze):  cloudflared tunnel run --token $CLOUDFLARE_TUNNEL_TOKEN
+#      Wtedy ten plik nie jest potrzebny — token zawiera wszystko.
+#   2) Credentials file (ten plik + JSON z `cloudflared tunnel create seedinfer`):
+#      credentials-file: /etc/cloudflared/<TUNNEL_ID>.json
+
+tunnel: seedinfer
+credentials-file: /etc/cloudflared/credentials.json
+# Jeśli używasz tokena, zakomentuj linię credentials-file i uruchom z --token
+
+# Warp routing / metrics (opcjonalnie)
+# warp-routing:
+#   enabled: true
+
+ingress:
+  # Prod — główna domena
+  - hostname: seedinfer.com
+    service: http://localhost:80
+    originRequest:
+      connectTimeout: 10s
+      noTLSVerify: false
+      httpHostHeader: seedinfer.com
+
+  - hostname: www.seedinfer.com
+    service: http://localhost:80
+    originRequest:
+      connectTimeout: 10s
+      httpHostHeader: www.seedinfer.com
+
+  # Tailnet Headscale — Faza 0 (Cloudflare jako backup dla Tailnet)
+  # Publiczny login-server dla providerów/seederów: https://tailnet.seedinfer.com
+  # Na Pi: Headscale słucha na 127.0.0.1:8080, Caddy proxy tailnet.seedinfer.com -> 127.0.0.1:8080 (gdy bez Tunnel)
+  # Tunnel jest backupem gdy bezpośredni WireGuard UDP zawiedzie — HTTP API Headscale idzie przez Tunnel.
+  # Zgodnie z Faza 0 spec: cloudflared -> http://localhost:8080 (direct do Headscale, bypass Caddy)
+  # Alternatywa via Caddy (gdy chcesz unified headers): service: http://localhost:80 + httpHostHeader
+  - hostname: tailnet.seedinfer.com
+    service: http://localhost:80
+    originRequest:
+      connectTimeout: 10s
+      noTLSVerify: true
+      httpHostHeader: tailnet.seedinfer.com
+      # Via Caddy: cloudflared -> Caddy :80 -> Headscale 127.0.0.1:8080 z header_up Upgrade/Connection (Caddyfile tailnet.seedinfer.com)
+      # Poprawia "No Upgrade header in TS2021 request" — Caddy jawnie forwarduje Upgrade dla Noise handshake
+    # Direct alternatywa (bypass Caddy):
+    # service: http://localhost:8080
+    # originRequest:
+    #   connectTimeout: 10s
+    #   noTLSVerify: true
+    #   httpHostHeader: tailnet.seedinfer.com
+
+  # Opcjonalnie: subdomeny / NextCloud (5TB) — odkomentuj jeśli chcesz
+  # - hostname: cloud.seedinfer.com
+  #   service: http://localhost:8080
+
+  # Healthcheck bezpośrednio do Next (z pominięciem Caddy) — awaryjnie
+  # - hostname: direct.seedinfer.com
+  #   service: http://localhost:3000
+
+  # Catch-all — musi być ostatni
+  - service: http_status:404

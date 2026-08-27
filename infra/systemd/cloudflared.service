@@ -1,0 +1,31 @@
+[Unit]
+Description=Cloudflare Tunnel — SeedInfer.com (Orange Pi 4 Pro)
+After=network.target network-online.target
+Wants=network-online.target
+BindsTo=seedinfer.service
+After=seedinfer.service
+
+[Service]
+Type=simple
+User=root
+# Token pobrany z Cloudflare Dashboard -> Zero Trust -> Tunnels -> seedinfer -> Install
+# Wklej token do /etc/cloudflared/token lub ustaw jako env
+ExecStart=/usr/bin/cloudflared tunnel --no-autoupdate run --config /etc/cloudflared/config.yml
+# Alternatywa token-only (bez config.yml):
+# ExecStart=/usr/bin/cloudflared tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN}
+Restart=always
+RestartSec=5
+EnvironmentFile=-/etc/cloudflared/env
+
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/etc/cloudflared /var/log/cloudflared
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=cloudflared
+
+[Install]
+WantedBy=multi-user.target

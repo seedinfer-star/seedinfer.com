@@ -1,0 +1,137 @@
+# SeedInfer.com — Headscale config.yaml — Orange Pi 4 Pro (RK3588, ARM64)
+# Faza 0: tylko Nemotron Lightning (1M context, 2M KV) na RTX 5090 providerze,
+# bez OpenRouter/Qwen/Gemma. Tailnet spina Pi (gateway) + providerzy/seederzy.
+# Server URL: https://tailnet.seedinfer.com (via Cloudflare Tunnel -> Caddy :80 -> 127.0.0.1:8080)
+# DB: SQLite na NVMe (/mnt/nvme/headscale/db.sqlite) — szybki I/O, backup na NextCloud
+# DERP: disabled (Faza 0 — tylko direct WireGuard via Tailnet, Cloudflare backup dla HTTP)
+# DNS: MagicDNS seedinfer.ts.net, baseDomain seedinfer.ts.net
+#
+# Deploy: docker compose -f infra/headscale/docker-compose.headscale.yml up -d
+#   lub bare-metal: /usr/bin/headscale serve (systemd infra/systemd/headscale.service)
+# Weryfikacja: curl -fsSL https://tailnet.seedinfer.com/health  # via Tunnel+Caddy
+#             curl -fsSL http://127.0.0.1:8080/health            # lokalnie na Pi
+
+server_url: https://tailnet.seedinfer.com
+listen_addr: 0.0.0.0:8080
+grpc_listen_addr: 0.0.0.0:50443
+grpc_allow_insecure: false
+
+# Metrics (opcjonalnie, tylko localhost)
+metrics_listen_addr: 0.0.0.0:9090
+
+# Noise — klucze generowane przy pierwszym starcie; persist na NVMe
+noise:
+  private_key_path: /etc/headscale/noise_private.key
+
+# IP prefixy Tailscale (CGNAT + ULA) — nowy format prefixes: (headscale 0.25+)
+prefixes:
+  v4: 100.64.0.0/10
+  v6: fd7a:115c:a1e0::/48
+  allocation: sequential
+
+# DERP — OFF w Fazie 0 (direct connection only, bez relay)
+# Jeśli potrzebujesz relay za NAT, włącz embedded DERP lub użyj oficjalnych DERP.
+derp:
+  server:
+    enabled: false
+    region_id: 999
+    region_code: seedinfer
+    region_name: SeedInfer DERP (disabled Faza 0)
+    stun_listen_addr: 0.0.0.0:3478
+    private_key_path: /etc/headscale/derp_server_private.key
+  urls:
+    - https://controlplane.tailscale.com/derpmap/default
+  paths: []
+  auto_update_enabled: true
+  update_frequency: 24h
+
+# DB — SQLite na NVMe (wydajny na RK3588, 200GB) — nowy format database: (headscale 0.25+)
+# Faza 0 spec: DB sqlite na /mnt/nvme/headscale/db.sqlite
+# Zachowano też legacy db_type/db_path dla kompatybilności wstecznej
+db_type: sqlite3
+db_path: /mnt/nvme/headscale/db.sqlite
+database:
+  type: sqlite
+  debug: false
+  gorm:
+    prepare_stmt: true
+    parameterized_queries: true
+    skip_err_record_not_found: true
+    slow_threshold: 1000
+  sqlite:
+    path: /mnt/nvme/headscale/db.sqlite
+    write_ahead_log: true
+    wal_autocheckpoint: 1000
+# W Dockerze mount: /mnt/nvme/headscale:/mnt/nvme/headscale  + config na /etc/headscale
+# Fallback (gdy NVMe nie istnieje): db_path fallback to /etc/headscale/db.sqlite (volume headscale_data)
+
+# ACL — HuJSON (JSON z komentarzami) — definiuje tagi i reguły
+# Tag: gateway (Orange Pi), provider (RTX 5090), seeder (przyszli)
+# Provider może tylko do gateway:3000,5432,6379,8000 (Faza 0: Next 3000, Postgres 5432, Redis 6379, API 8000)
+policy:
+  mode: file
+  path: /etc/headscale/acl.json  # file (watch) lub database
+
+# DNS — MagicDNS (migracja do nowego formatu dns: z headscale 0.25+)
+dns:
+  magic_dns: true
+  base_domain: seedinfer.ts.net
+  nameservers:
+    global:
+      - 1.1.1.1
+      - 8.8.8.8
+  search_domains: []
+  extra_records: []
+  # Opcjonalnie: wewnętrzne rekordy
+  # extra_records:
+  #   - name: gateway.seedinfer.ts.net
+  #     type: A
+  #     value: 100.64.0.1
+
+# Log — nowy format log: (headscale 0.25+)
+log:
+  level: info
+  format: text
+disable_check_updates: true
+# Legacy (deprecated) — pozostawione dla fallbacku, ale nowy parser używa log:
+log_level: info
+log_format: text
+
+# Ephemeral / offline
+ephemeral_node_inactivity_timeout: 30m
+node_update_check_interval: 10s
+
+# TLS — terminowany w Cloudflare + Caddy, Headscale słucha plain HTTP na 127.0.0.1:8080
+# Nie używamy Let's Encrypt w Headscale (Caddy/Cloudflare go robią).
+tls_letsencrypt_hostname: ""
+tls_letsencrypt_cache_dir: /etc/headscale/cache
+tls_letsencrypt_challenge_type: HTTP-01
+tls_letsencrypt_listen: ":http"
+
+tls_cert_path: ""
+tls_key_path: ""
+
+# ACME (niewykorzystane — placeholder wymagany przez parser)
+acme_url: https://acme-v02.api.letsencrypt.org/directory
+acme_email: admin@seedinfer.com
+
+unix_socket: /var/run/headscale/headscale.sock
+unix_socket_permission: "0770"
+
+# OIDC — OFF w Fazie 0 (preauth keys, bez SSO)
+oidc:
+  only_start_if_oidc_is_available: false
+  issuer: ""
+  client_id: ""
+  client_secret: ""
+  scope: ["openid", "profile", "email"]
+  strip_email_domain: true
+
+# Tuning dla Orange Pi RK3588 (8GB RAM)
+# SQLite busy_timeout 5s — NVMe jest szybki
+db_timeout: 5s
+
+logtail:
+  enabled: false
+
+randomize_client_port: false

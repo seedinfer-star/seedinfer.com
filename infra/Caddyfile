@@ -1,0 +1,163 @@
+# SeedInfer.com — Caddyfile — Orange Pi 4 Pro + Cloudflare Tunnel
+# Cloudflare Tunnel (cloudflared) terminuje TLS (SSL Full Strict na CF) i łączy się do Caddy na localhost:80
+# Dlatego Caddy słucha na :80 (HTTP). Gdybyś używał DNS Proxy bez Tunnela, Caddy może obsłużyć TLS via Let's Encrypt (zakomentowana sekcja :443).
+#
+# Cache: /api/stats — 60s (zgodnie z Next revalidate=60). Caddy stawia nagłówki Cache-Control;
+# właściwy cache to Next.js (s-maxage) + Cloudflare Edge (CDN-Cache-Control).
+
+{
+	admin off
+	# global options
+	# acme_ca https://acme-v02.api.letsencrypt.org/directory
+	email admin@seedinfer.com
+}
+
+# --- Tailnet Headscale — Faza 0 (Orange Pi gateway + RTX 5090 provider) ---
+# Publiczny login-server: https://tailnet.seedinfer.com
+# Cloudflare Tunnel tailnet.seedinfer.com -> http://localhost:80 (ten Caddy) -> 127.0.0.1:8080 (Headscale)
+# Docker: jeśli Headscale w osobnym compose, Caddy musi widzieć host: dodaj extra_hosts: ["host.docker.internal:host-gateway"] i zmień 127.0.0.1:8080 na host.docker.internal:8080
+# Bare-metal: zostaw 127.0.0.1:8080
+# Szczegóły zadzwoń: infra/headscale/Caddy.tailnet.snippet
+tailnet.seedinfer.com {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+		X-Frame-Options "SAMEORIGIN"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+	}
+
+	@healthTailnet path /health /healthz
+	handle @healthTailnet {
+		respond "ok" 200
+	}
+
+	handle {
+		reverse_proxy 127.0.0.1:8080 {
+			# Docker bridge alternatywa (odkomentuj gdy headscale i caddy w jednym network):
+			# to headscale:8080
+			# Docker host-gateway alternatywa (gdy osobne compose):
+			# to host.docker.internal:8080
+
+			header_up Host {host}
+			header_up X-Real-IP {remote}
+			header_up X-Forwarded-For {remote}
+			header_up X-Forwarded-Proto {scheme}
+			header_up X-Forwarded-Host {host}
+			header_up Upgrade {http.request.header.Upgrade}
+			header_up Connection {http.request.header.Connection}
+
+			transport http {
+				dial_timeout 5s
+				response_header_timeout 30s
+			}
+
+			health_uri /health
+			health_interval 30s
+			health_timeout 5s
+		}
+	}
+
+	log {
+		output stdout
+		format json
+		level INFO
+	}
+}
+
+# --- Prod: Cloudflare Tunnel -> localhost:80 ---
+# Tunnel kieruje seedinfer.com -> http://localhost:80, więc ten blok obsługuje obie domeny
+seedinfer.com, www.seedinfer.com {
+	encode zstd gzip
+
+	# Security headers
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+		X-Frame-Options "SAMEORIGIN"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		# CSP dostosuj jeśli używasz inline MapLibre/Recharts
+		# Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://basemaps.cartocdn.com; img-src 'self' data: https://*.cartocdn.com https://api.maptiler.com; connect-src 'self' https://api.darkbloom.dev https://basemaps.cartocdn.com"
+	}
+
+	# /api/stats — cache 60s (Next revalidate=60)
+	@apiStats path /api/stats /api/stats/*
+	header @apiStats Cache-Control "public, max-age=60, s-maxage=60, stale-while-revalidate=30"
+	header @apiStats CDN-Cache-Control "public, max-age=60"
+	header @apiStats Cloudflare-CDN-Cache-Control "public, max-age=60"
+
+	# Healthcheck bez logów
+	@health path /health /healthz
+	handle @health {
+		respond "ok" 200
+	}
+
+	# Reverse proxy do Next.js (service 'app' w compose, lub 127.0.0.1:3000 bare-metal)
+	# W Dockerze: app:3000 ; bare-metal/host network: 127.0.0.1:3000
+	handle {
+		reverse_proxy app:3000 {
+			# fallback dla bare-metal (gdy Caddy poza Dockerem):
+			# to 127.0.0.1:3000
+
+			header_up Host {host}
+			header_up X-Real-IP {remote}
+			header_up X-Forwarded-For {remote}
+			header_up X-Forwarded-Proto {scheme}
+			header_up X-Forwarded-Host {host}
+			header_up Upgrade {http.request.header.Upgrade}
+			header_up Connection {http.request.header.Connection}
+
+			# Timeouts dla Orange Pi (RK3588 jest szybki, ale NVMe 200GB)
+			transport http {
+				dial_timeout 5s
+				response_header_timeout 10s
+			}
+		}
+	}
+
+	log {
+		output stdout
+		format json
+		level INFO
+	}
+}
+
+# Lokalne / health — gdy Tunnel nieaktywny, bezpośredni dostęp po IP/LAN
+:80 {
+	encode zstd gzip
+
+	@apiStats path /api/stats /api/stats/*
+	header @apiStats Cache-Control "public, max-age=60, s-maxage=60, stale-while-revalidate=30"
+
+	@health path /health /healthz
+	handle @health {
+		respond "ok" 200
+	}
+
+	handle {
+		reverse_proxy app:3000 {
+			# bare-metal:
+			# to 127.0.0.1:3000
+			header_up Host {host}
+			header_up X-Real-IP {remote}
+			header_up X-Forwarded-For {remote}
+		}
+	}
+	log {
+		output stdout
+		format json
+	}
+}
+
+# --- Alternatywa bez Tunnela: Caddy z automatycznym TLS (Let's Encrypt) ---
+# Odkomentuj jeśli używasz Cloudflare DNS Proxy (orange cloud) BEZ Tunnela
+# i chcesz by Caddy terminował TLS na Pi (wymaga otwartych 80/443 i DNS A -> IP Pi):
+#
+# seedinfer.com, www.seedinfer.com {
+# 	tls {
+# 		# dns cloudflare {env.CLOUDFLARE_API_TOKEN}  # wymaga caddy build z pluginem cloudflare
+# 	}
+# 	encode zstd gzip
+# 	reverse_proxy app:3000
+# }

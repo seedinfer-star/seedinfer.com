@@ -1,0 +1,47 @@
+[Unit]
+Description=SeedInfer.com — Next.js 15 Frontend (Orange Pi 4 Pro RK3588)
+Documentation=https://seedinfer.com
+After=network.target network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=seedinfer
+Group=seedinfer
+WorkingDirectory=/opt/seedinfer
+# Node 20 — jeśli instalujesz via nodesource, ścieżka to /usr/bin/node ; via nvm dostosuj
+ExecStart=/usr/bin/npm run start
+Restart=always
+RestartSec=5
+KillMode=mixed
+TimeoutStopSec=30
+
+# Env — produkcja (NVMe 200GB ma dużo I/O, ale Next cache w RAM)
+Environment=NODE_ENV=production
+Environment=PORT=3000
+Environment=HOSTNAME=0.0.0.0
+# Podmień lub użyj EnvironmentFile:
+EnvironmentFile=-/opt/seedinfer/.env
+# Jeśli nie masz .env, odkomentuj:
+# Environment=NEXT_PUBLIC_API_URL=https://seedinfer.com/api/stats
+
+# Hardening (Orange Pi — bare-metal)
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/opt/seedinfer
+# Jeśli Next zapisuje .next/cache na NVMe 200GB:
+# ReadWritePaths=/opt/seedinfer /mnt/nvme
+
+# Limity — RK3588 8GB RAM, nie potrzeba swapu dla Node
+MemoryMax=2G
+CPUWeight=200
+
+# Logi -> journalctl
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=seedinfer
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,106 @@
+# infra/registry/docker-compose.registry.yml — Pi registry:2 mirror dla provider CUDA image
+# Orange Pi 4 Pro (RK3588, ARM64) — registry:2 jest multi-arch (ARM64+AMD64), hostuje blob CUDA image jako cache.
+# Pi NIE buduje CUDA image — tylko hostuje tar i registry dla fallback gdy ghcr.io offline/rate-limit.
+# Host 5090 buduje `ghcr.io/seedinfer/provider:cuda13.3-nvfp4` i pushuje:
+#   ./scripts/publish-provider-image.sh --push --rsync-pi --registry
+# User install.sh próbuje w kolejności: ghcr.io pull -> Pi registry pull -> Pi tar curl | docker load -> local build
+#
+# Uruchomienie na Pi:
+#   docker compose -f infra/registry/docker-compose.registry.yml up -d
+#   curl -fsS http://127.0.0.1:5000/v2/_catalog | jq
+#   curl -fsS http://127.0.0.1:5000/v2/seedinfer/provider/tags/list | jq
+#   # via Headscale Tailnet (gateway.seedinfer.ts.net:5000 lub 100.64.x.x:5000):
+#   SEEDINFER_REGISTRY=gateway.seedinfer.ts.net:5000 curl -fsSL https://seedinfer.com/install.sh | bash
+#
+# Volume: /mnt/nvme/registry (Pi NVMe 200GB) — przechowuje bloby (10-28GB na tag)
+# Port: 127.0.0.1:5000 (tylko localhost + Headscale via Caddy/extra_hosts; nie publiczny bez auth)
+# Opcjonalnie: zabezpiecz via htpasswd lub wystaw tylko przez Tailnet (ACL tag:gateway tag:provider)
+#
+# Caddy: nie proxy registry publicznie (duży transfer). Dostęp via Tailnet IP lub Headscale hostname.
+# Jeśli chcesz public pull przez seedinfer.com, dodaj reverse_proxy do :5000 pod /registry/ z auth.
+
+services:
+  registry:
+    image: registry:2.8.3
+    container_name: seedinfer-registry
+    restart: unless-stopped
+    ports:
+      # Tylko localhost + Tailnet (Headscale). Publiczny dostęp via Cloudflare Tunnel niezalecany (duży blob).
+      - "127.0.0.1:5000:5000"
+      # Jeśli chcesz wystawić przez Tailnet hostname (gateway.seedinfer.ts.net:5000), użyj network_mode: host lub dodatkowy port:
+      # - "100.64.0.1:5000:5000" # przykładowy Tailnet IP gateway — dostosuj po `tailscale ip -4`
+    volumes:
+      # Persist na Pi NVMe (szybki I/O, 200GB). Upewnij się: sudo mkdir -p /mnt/nvme/registry && sudo chown 1000:1000 /mnt/nvme/registry
+      - /mnt/nvme/registry:/var/lib/registry
+      # Alternatywa: named volume gdy brak NVMe (dev)
+      # - registry_data:/var/lib/registry
+    environment:
+      # Log level
+      - REGISTRY_LOG_LEVEL=info
+      # Storage: filesystem (NVMe)
+      - REGISTRY_STORAGE_FILESYSTEM_ROOTDIRECTORY=/var/lib/registry
+      # Health check
+      - REGISTRY_HEALTH_STORAGEDRIVER_ENABLED=true
+      # Optional: delete enabled (allow cleanup old tags)
+      - REGISTRY_STORAGE_DELETE_ENABLED=true
+      # Optional: http secret dla notify (jeśli dodasz webhook)
+      # - REGISTRY_HTTP_SECRET=change-me-in-prod
+      # Optional: auth (htpasswd) — odkomentuj jeśli wystawiasz publicznie
+      # - REGISTRY_AUTH=htpasswd
+      # - REGISTRY_AUTH_HTPASSWD_REALM=SeedInfer Registry
+      # - REGISTRY_AUTH_HTPASSWD_PATH=/auth/htpasswd
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:5000/v2/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    # Limit RAM (registry lekki, blob streaming)
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 128M
+    # Extra hosts dla Caddy (jeśli registry i Caddy w osobnych compose)
+    # extra_hosts:
+    #   - "host.docker.internal:host-gateway"
+
+  # Optional: registry UI (browse tags) — włącz via --profile ui
+  registry-ui:
+    image: joxit/docker-registry-ui:2.5.8
+    container_name: seedinfer-registry-ui
+    restart: unless-stopped
+    profiles: ["ui"]
+    ports:
+      - "127.0.0.1:6000:80"
+    environment:
+      - SINGLE_REGISTRY=true
+      - REGISTRY_TITLE=SeedInfer Registry (Pi)
+      - REGISTRY_URL=http://registry:5000
+      - DELETE_IMAGES=true
+      - SHOW_CONTENT_DIGEST=true
+      - NGINX_PROXY_PASS_URL=http://registry:5000
+    depends_on:
+      registry:
+        condition: service_healthy
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+volumes:
+  registry_data:
+    # fallback named volume gdy /mnt/nvme nie istnieje (dev x64)
+    driver: local
+
+# Network: domyślny bridge — registry osiągalny via 127.0.0.1:5000 (host) i via Tailnet IP gdy tailscaled na Pi binduje 0.0.0.0.
+# Jeśli Pi tailscaled w host network, Tailnet IP automatycznie forwarduje 127.0.0.1:5000 (test: curl http://100.64.x.x:5000/v2/_catalog).
+# Dla host network registry (bezpośrednio na Tailnet IP), odkomentuj:
+#   network_mode: host  # wtedy usuń ports

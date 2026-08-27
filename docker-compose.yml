@@ -1,0 +1,98 @@
+# SeedInfer.com — Orange Pi 4 Pro (RK3588, ARM64)
+# Stack: Next.js 15 (3000) + Caddy 2 (80/443) — Caddy reverse-proxy + cache header
+# + Headscale Tailnet (Faza 0) — patrz infra/headscale/docker-compose.headscale.yml
+# Cloudflare Tunnel (cloudflared) działa OUTSIDE compose jako usługa systemd i kieruje:
+#   seedinfer.com + www.seedinfer.com -> localhost:80 (Caddy -> app:3000)
+#   tailnet.seedinfer.com              -> localhost:80 (Caddy -> 127.0.0.1:8080 Headscale) — backup gdy WireGuard UDP zawiedzie
+# Wybierz: docker compose up -d  OR  bare-metal systemd (infra/systemd/seedinfer.service)
+# Tailnet stack osobno: docker compose -f infra/headscale/docker-compose.headscale.yml up -d
+#
+# Sieć: bridge (domyślnie). Jeśli chcesz network_mode: host na OPi, odkomentuj sekcję poniżej
+# i usuń sekcję ports z caddy (host nie pozwala mapować portów).
+# Opcjonalnie możesz scalić compose: include: [infra/headscale/docker-compose.headscale.yml]
+
+# include:
+#   - infra/headscale/docker-compose.headscale.yml
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-}
+    image: seedinfer:opi
+    container_name: seedinfer-app
+    restart: unless-stopped
+    expose:
+      - "3000"
+    # ports:  # odkryj tylko jeśli chcesz testować bez Caddy
+    #   - "127.0.0.1:3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-}
+    # network_mode: "host"  # <— alternatywa: host (wtedy app na :3000 hosta, usuń expose/ports)
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/api/stats"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  caddy:
+    image: caddy:2.8-alpine
+    container_name: seedinfer-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp" # HTTP/3
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    # Tailnet: Caddy proxy tailnet.seedinfer.com -> 127.0.0.1:8080 (Headscale).
+    # Gdy Headscale w osobnym compose na bridge, Caddy musi widzieć host:
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      app:
+        condition: service_healthy
+    # network_mode: "host"  # <— jeśli używasz host, zakomentuj ports i volumes pozostają
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Opcjonalnie: cloudflared jako kontener ZAMIAST systemd
+  # Odkomentuj jeśli wolisz Tunnel w Dockerze (wymaga CLOUDFLARE_TUNNEL_TOKEN):
+  # cloudflared:
+  #   image: cloudflare/cloudflared:2024.8.2
+  #   container_name: seedinfer-cloudflared
+  #   restart: unless-stopped
+  #   command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN}
+  #   # dla config.yml zamiast tokena:
+  #   # volumes:
+  #   #   - ./infra/cloudflared/config.yml:/etc/cloudflared/config.yml:ro
+  #   #   - ./infra/cloudflared/creds.json:/etc/cloudflared/creds.json:ro
+  #   # command: tunnel --config /etc/cloudflared/config.yml run
+
+  # Tailnet Headscale — Faza 0 (alternatywnie uruchom jako osobny stack):
+  # ZALECANE: docker compose -f infra/headscale/docker-compose.headscale.yml up -d
+  # (osobny compose keeps concerns separated — app+caddy vs headscale)
+  # Jeśli wolisz wszystko w jednym compose, odkomentuj poniżej (wymaga wolumenów NVMe):
+  # headscale:
+  #   extends:
+  #     file: ./infra/headscale/docker-compose.headscale.yml
+  #     service: headscale
+
+volumes:
+  caddy_data:
+  caddy_config:

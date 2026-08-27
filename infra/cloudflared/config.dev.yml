@@ -1,0 +1,48 @@
+# SeedInfer.com — cloudflared config DEV — lokalny test przed Orange Pi
+# Użycie: npm run dev (Next na :3002) + cloudflared tunnel --config infra/cloudflared/config.dev.yml run
+# Nadpisuje prod ingress (Caddy :80 -> Next :3000) na direct Next :3002, żeby przetestować DNS/TLS bez Pi.
+# Po teście wróć na prod: infra/cloudflared/config.yml (Caddy :80) + deploy na Pi.
+#
+# Dwa tryby uruchomienia dev:
+#   1) Token z Dashboard: CLOUDFLARE_TUNNEL_TOKEN=eyJ... cloudflared tunnel --config infra/cloudflared/config.dev.yml run --token $CLOUDFLARE_TUNNEL_TOKEN
+#   2) Credentials file: cloudflared tunnel --config infra/cloudflared/config.dev.yml run
+#      (wymaga ~/.cloudflared/<TUNNEL_ID>.json skopiowanego lub credentials-file jak poniżej)
+# Quick test bez tunelu nazwanego: cloudflared tunnel --url http://localhost:3002
+#
+# UWAGA: ten plik jest tylko do lokalnego deva. Na Orange Pi używaj infra/cloudflared/config.yml
+
+tunnel: seedinfer
+# Credentials file — gdy używasz `cloudflared tunnel create` (ścieżka do JSON z ID):
+# Podmień na swoją ścieżkę: ~/.cloudflared/<TUNNEL_ID>.json
+# credentials-file: /home/jakub/.cloudflared/<TUNNEL_ID>.json
+# Na Orange Pi: credentials-file: /etc/cloudflared/credentials.json
+# Gdy używasz tokena (zalecane, z Dashboard) — zostaw zakomentowane i uruchom z --token:
+# credentials-file: /etc/cloudflared/credentials.json
+# Alternatywa: odkomentuj gdy masz JSON z `cloudflared tunnel create`:
+# credentials-file: /home/jakub/.cloudflared/<TUNNEL_ID>.json
+
+ingress:
+  # Dev — bezpośrednio do Next.js na :3002 (package.json: next dev -p 3002)
+  - hostname: seedinfer.com
+    service: http://localhost:3002
+    originRequest:
+      connectTimeout: 10s
+      noTLSVerify: false
+      httpHostHeader: seedinfer.com
+
+  - hostname: www.seedinfer.com
+    service: http://localhost:3002
+    originRequest:
+      connectTimeout: 10s
+      httpHostHeader: www.seedinfer.com
+
+  # Tailnet w dev też na :3002 (Headscale nie działa lokalnie bez Pi, ale mapujemy żeby nie było 404)
+  # Gdy testujesz Headscale lokalnie, zmień na http://localhost:8080
+  - hostname: tailnet.seedinfer.com
+    service: http://localhost:3002
+    originRequest:
+      connectTimeout: 10s
+      noTLSVerify: false
+
+  # Catch-all — musi być ostatni
+  - service: http_status:404

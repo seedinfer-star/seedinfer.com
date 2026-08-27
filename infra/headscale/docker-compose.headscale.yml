@@ -1,0 +1,115 @@
+# SeedInfer.com — Headscale stack — Orange Pi 4 Pro (RK3588, ARM64)
+# Faza 0: Headscale + Headscale-UI (opcjonalnie) — ARM64 native
+# Network: host-side SQLite na NVMe (/mnt/nvme/headscale -> /etc/headscale in container)
+# Caddy i Cloudflared kierują tailnet.seedinfer.com -> 127.0.0.1:8080 (ten compose)
+# Uruchomienie: docker compose -f infra/headscale/docker-compose.headscale.yml up -d
+#   lub z roota: docker compose -f infra/headscale/docker-compose.headscale.yml --env-file .env up -d
+# Weryfikacja: curl -sf http://127.0.0.1:8080/health && curl -fsSL https://tailnet.seedinfer.com/health
+
+services:
+  headscale:
+    image: headscale/headscale:0.25.1
+    # alternatywy: headscale/headscale:latest, ghcr.io/juanfont/headscale:latest
+    # 0.25.1 = ostatnia stabilna z ARM64 manifest (linux/arm64 + amd64)
+    container_name: seedinfer-headscale
+    restart: unless-stopped
+    command: serve
+    ports:
+      # Publiczny dostęp via Caddy (443 -> :80 -> :8080) i Cloudflare Tunnel + LAN 192.168.1.15:8080 fallback dla providerów gdy Tunnel 500/No Upgrade
+      - "0.0.0.0:8080:8080"
+      - "0.0.0.0:50443:50443" # gRPC (opcjonalnie dla CLI remote, 0.0.0.0 aby LAN działał)
+      # LAN fallback explicit (gdy chcesz ograniczyć do LAN + localhost):
+      # - "192.168.1.15:8080:8080"
+      # Metrics opcjonalnie (pozostaw localhost):
+      - "127.0.0.1:9090:9090"
+    volumes:
+      # Persist — NVMe (host) -> container
+      # Na Pi musi istnieć: sudo mkdir -p /mnt/nvme/headscale && sudo chown 1000:1000 /mnt/nvme/headscale
+      # Faza 0 spec: DB na /mnt/nvme/headscale/db.sqlite (więc mount NVMe na /mnt/nvme/headscale wewnątrz)
+      # + osobny mount dla /etc/headscale (klucze noise/derp) — ten sam host dir na dwa container paths
+      # Kolejność: najpierw NVMe jako katalog, potem nadpisz config/acl plikami (file mount musi być PO katalogu, inaczej katalog zasłoni pliki)
+      - /mnt/nvme/headscale:/mnt/nvme/headscale
+      - /mnt/nvme/headscale:/etc/headscale
+      # Config + ACL — mount read-only z repo (na Pi skopiowane do /opt/seedinfer/infra/headscale/) — MUSI być po /etc/headscale aby nadpisać
+      - ./config.yaml:/etc/headscale/config.yaml:ro
+      - ./acl.json:/etc/headscale/acl.json:ro
+      # Alternatywa: named volume gdy brak NVMe (dev x64):
+      # - headscale_data:/etc/headscale
+      # - headscale_data:/mnt/nvme/headscale
+    environment:
+      # TZ dla logów
+      - TZ=Europe/Warsaw
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    # Dla ARM64 RK3588 — limit RAM (Headscale lekki, ~50MB)
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 64M
+    # network_mode: "bridge"  # domyślnie; jeśli Caddy poza Dockerem używa 127.0.0.1:8080, zostaw bridge + ports 127.0.0.1
+    # Jeśli chcesz by Headscale widział host network (DERP STUN), odkomentuj:
+    # network_mode: host  # wtedy usuń sekcję ports
+
+  # Opcjonalnie: Headscale-UI — webowy dashboard do zarządzania nodes/keys (ARM64)
+  # Włącz odkomentowując i dodając HEADSCALE_UI_ env. UI łączy się do Headscale API via 8080.
+  # Dostęp: http://127.0.0.1:3001 (tylko localhost) lub via Caddy subpath /admin (patrz Caddy.tailnet.snippet)
+  headscale-ui:
+    image: ghcr.io/gurucomputing/headscale-ui:0.4.18
+    # Pin ARM64-compatible tag; :latest też działa (multi-arch)
+    container_name: seedinfer-headscale-ui
+    restart: unless-stopped
+    profiles: ["ui", "tools"] # domyślnie OFF — uruchom z: docker compose --profile ui up -d
+    ports:
+      - "127.0.0.1:3001:80"
+    environment:
+      # UI wymaga API URL — wskazuje na Headscale (via Caddy public lub direct)
+      - TZ=Europe/Warsaw
+    depends_on:
+      headscale:
+        condition: service_healthy
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "2"
+
+  # Opcjonalnie: Tailscale sidecar na Pi (gateway node) — jeśli chcesz by sam Pi był w Tailnecie jako tag:gateway
+  # Zamiast instalować tailscaled bare-metal, możesz uruchomić jako kontener:
+  # tailscale-gateway:
+  #   image: tailscale/tailscale:v1.82.0
+  #   container_name: seedinfer-tailscale-gateway
+  #   restart: unless-stopped
+  #   profiles: ["gateway-container"]
+  #   hostname: gateway
+  #   environment:
+  #     - TS_AUTHKEY=${HEADSCALE_GATEWAY_KEY:-}
+  #     - TS_LOGIN_SERVER=https://tailnet.seedinfer.com
+  #     - TS_EXTRA_ARGS=--advertise-tags=tag:gateway --hostname=gateway --advertise-routes=100.64.0.0/10
+  #     - TS_STATE_DIR=/var/lib/tailscale
+  #   volumes:
+  #     - /dev/net/tun:/dev/net/tun
+  #     - tailscale_state:/var/lib/tailscale
+  #   cap_add:
+  #     - NET_ADMIN
+  #     - SYS_MODULE
+  #   network_mode: host
+  #   privileged: true
+
+volumes:
+  # Fallback gdy /mnt/nvme nie istnieje (np. dev na x64)
+  headscale_data:
+  tailscale_state:
+
+# Network — domyślny bridge wystarczy; headscale + ui komunikują się via localhost:8080 (host port)
+# Jeśli dodasz tailscale-gateway jako kontener, musi być host network.
