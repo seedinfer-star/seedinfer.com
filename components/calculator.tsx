@@ -16,6 +16,14 @@ import {
   DollarSign,
   ArrowUpRight,
   Flame,
+  ShieldAlert,
+  ShieldCheck,
+  Check,
+  X,
+  Scale,
+  Wifi,
+  Unlock,
+  Lock,
 } from "lucide-react"
 
 type ModelProfile = {
@@ -119,6 +127,33 @@ export default function Calculator() {
           <span className="inline-flex items-center gap-1.5 rounded-full border border-accent-green/30 bg-accent-green/10 px-3 py-1 font-mono text-xs font-semibold text-accent-green">
             <CheckCircle2 className="h-3.5 w-3.5" /> 100% Transparent Billing
           </span>
+        </div>
+      </div>
+
+      {/* Realistic Expectations Banner: Expected Median Earnings (~$120/mo Net) */}
+      <div className="mt-6 rounded-xl border border-accent-brand/30 bg-gradient-to-r from-accent-brand/10 via-bg-primary to-bg-primary p-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-start gap-3">
+            <Scale className="h-5 w-5 shrink-0 text-accent-brand mt-0.5" />
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-xs font-bold text-text-primary uppercase tracking-wider">
+                  Realistic Earnings Expectation
+                </span>
+                <span className="rounded-full bg-accent-brand/20 px-2 py-0.5 font-mono text-[10px] font-bold text-accent-brand">
+                  Network Median: ~$120/mo Net
+                </span>
+              </div>
+              <p className="mt-1 font-mono text-xs leading-5 text-text-secondary">
+                While high-utilization top-tier nodes earn <strong className="text-accent-green">$330–$512/mo net</strong> during peak traffic, the <strong className="text-text-primary">expected network median for average RTX 5090 nodes settles realistically around ~$120 USD/month net profit</strong> after deducting electricity costs. We believe in complete honesty over hyped promises.
+              </p>
+            </div>
+          </div>
+          <div className="shrink-0 font-mono text-right sm:text-right text-left">
+            <div className="text-[10px] uppercase text-text-tertiary">Network Median Net</div>
+            <div className="text-xl font-extrabold text-accent-brand">~$120 / mo</div>
+            <div className="text-[9px] text-text-tertiary">after power deduction</div>
+          </div>
         </div>
       </div>
 
@@ -447,6 +482,100 @@ export default function Calculator() {
               NVIDIA RTX 5090 (32GB VRAM) required · Ubuntu 24.04 LTS · vLLM + Docker
             </p>
           </div>
+        </div>
+      </div>
+
+      {/* Direct Comparison: Vast.ai vs SeedInfer P2P Freedom Matrix */}
+      <div className="mt-10 rounded-xl border border-border-dim bg-bg-primary p-6">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between border-b border-border-dim pb-4">
+          <div>
+            <div className="flex items-center gap-2 font-mono text-xs font-bold uppercase tracking-wider text-accent-brand">
+              <ShieldCheck className="h-4 w-4" /> Platform Comparison: Vast.ai vs SeedInfer Freedom
+            </div>
+            <h3 className="mt-1 text-lg font-bold text-text-primary">
+              Why P2P Inference Beats Traditional Rental Platforms
+            </h3>
+          </div>
+          <span className="rounded-full bg-accent-green/10 px-3 py-1 font-mono text-xs font-semibold text-accent-green">
+            Full GPU Ownership & Flexibility
+          </span>
+        </div>
+
+        <p className="mt-4 font-mono text-xs leading-5 text-text-secondary">
+          Traditional platforms like <strong className="text-text-primary">Vast.ai</strong> lock down your host system, demand 24/7 continuous availability, and grant tenant root/kernel access. SeedInfer runs as an isolated user-space container—giving you complete freedom to pause or use your GPU anytime without penalty.
+        </p>
+
+        {/* Comparison Table Grid */}
+        <div className="mt-6 overflow-x-auto">
+          <table className="w-full text-left font-mono text-xs">
+            <thead>
+              <tr className="border-b border-border-dim bg-bg-secondary text-[11px] text-text-tertiary uppercase">
+                <th className="p-3">Feature / Parameter</th>
+                <th className="p-3 text-red-400 bg-red-500/5">Vast.ai (Traditional Rental)</th>
+                <th className="p-3 text-accent-green bg-accent-green/5">SeedInfer P2P Network</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border-dim">
+              <tr>
+                <td className="p-3 font-semibold text-text-primary">Max Net Monthly Income (RTX 5090)</td>
+                <td className="p-3 text-text-secondary bg-red-500/5">
+                  <span className="font-bold text-red-400">$152 / mo Max Net</span> ($252 gross - $100 power @ 100% 24/7 occupancy)
+                </td>
+                <td className="p-3 font-bold text-accent-green bg-accent-green/5">
+                  $330 – $512 / mo Net Profit (up to 3x higher yield)
+                </td>
+              </tr>
+              <tr>
+                <td className="p-3 font-semibold text-text-primary">Expected Network Median Net</td>
+                <td className="p-3 text-text-secondary bg-red-500/5">
+                  ~$50 – $90 / mo (frequent empty unrented slots)
+                </td>
+                <td className="p-3 font-bold text-accent-brand bg-accent-green/5">
+                  ~$120 / mo Net (plus $0.40/day standby cover)
+                </td>
+              </tr>
+              <tr>
+                <td className="p-3 font-semibold text-text-primary">GPU Owner Freedom & Flexibility</td>
+                <td className="p-3 text-red-400 bg-red-500/5 flex items-center gap-1.5">
+                  <X className="h-4 w-4 shrink-0" /> <strong>0% Freedom</strong> (Requires 24/7 non-stop availability or rating drops)
+                </td>
+                <td className="p-3 text-accent-green bg-accent-green/5 flex items-center gap-1.5">
+                  <Check className="h-4 w-4 shrink-0" /> <strong>100% Freedom</strong> (Pause, game, render, or work anytime)
+                </td>
+              </tr>
+              <tr>
+                <td className="p-3 font-semibold text-text-primary">Host System & Privacy Security</td>
+                <td className="p-3 text-red-400 bg-red-500/5">
+                  <div className="flex items-center gap-1.5">
+                    <Lock className="h-4 w-4 shrink-0" /> <strong>Kernel / Root Access</strong> (Strangers get SSH access to host system)
+                  </div>
+                </td>
+                <td className="p-3 text-accent-green bg-accent-green/5">
+                  <div className="flex items-center gap-1.5">
+                    <Unlock className="h-4 w-4 shrink-0" /> <strong>Zero Kernel Access</strong> (Isolated Docker + Tailscale user-space)
+                  </div>
+                </td>
+              </tr>
+              <tr>
+                <td className="p-3 font-semibold text-text-primary">Network Bandwidth Requirements</td>
+                <td className="p-3 text-text-secondary bg-red-500/5 flex items-center gap-1.5">
+                  <Wifi className="h-4 w-4 shrink-0 text-red-400" /> <strong>Min 1 Gbps Symmetric Fiber</strong> mandatory
+                </td>
+                <td className="p-3 text-accent-green bg-accent-green/5 flex items-center gap-1.5">
+                  <Wifi className="h-4 w-4 shrink-0" /> <strong>Standard Consumer Broadband</strong> (Smart Prefix Caching)
+                </td>
+              </tr>
+              <tr>
+                <td className="p-3 font-semibold text-text-primary">Power Consumption & Heat Strain</td>
+                <td className="p-3 text-text-secondary bg-red-500/5">
+                  <strong>500W+ Continuous Heavy Load</strong> (~$100/mo electricity bill @ $0.25/kWh)
+                </td>
+                <td className="p-3 text-accent-green bg-accent-green/5">
+                  <strong>~220W Average Load</strong> (~$40/mo electricity bill @ $0.25/kWh)
+                </td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </div>
     </section>
