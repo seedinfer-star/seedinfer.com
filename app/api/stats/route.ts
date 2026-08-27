@@ -239,7 +239,7 @@ export async function GET(request: Request) {
     })
   }
 
-  // If local providers exist in memory, serve local stats directly
+  // 1. If local providers exist in memory, serve live local stats
   const localProviders = listProviders()
   if (localProviders.length > 0) {
     const localStats = buildLocalStats()
@@ -254,48 +254,35 @@ export async function GET(request: Request) {
     })
   }
 
-  // Try primary upstream first, then legacy fallback for backward compatibility (not exposed in UI).
-  const tryFetch = async (url: string) => {
-    const r = await fetch(url, { next: { revalidate: 15 } as any } as any)
-    if (!r.ok) throw new Error(`upstream ${r.status} ${r.statusText}`)
-    return r.json()
-  }
-  try {
-    let data: any
+  // 2. Only try custom upstream IF explicitly configured in environment
+  const customUpstream = process.env.SEEDINFER_STATS_UPSTREAM || process.env.STATS_UPSTREAM_URL
+  if (customUpstream) {
     try {
-      data = await tryFetch(UPSTREAM)
-    } catch (primaryErr: any) {
-      if (LEGACY_UPSTREAM && LEGACY_UPSTREAM !== UPSTREAM) {
-        try {
-          data = await tryFetch(LEGACY_UPSTREAM)
-        } catch {
-          throw primaryErr
-        }
-      } else {
-        throw primaryErr
+      const r = await fetch(customUpstream, { next: { revalidate: 15 } as any } as any)
+      if (r.ok) {
+        const data = await r.json()
+        const payload = useFaza0 ? filterToFaza0(data) : data
+        return NextResponse.json(payload, {
+          headers: {
+            "Cache-Control": "public, s-maxage=15, stale-while-revalidate=30",
+            "X-SeedInfer-Faza": useFaza0 ? "0-nemotron-only" : "parity",
+            ...CORS_HEADERS,
+          },
+        })
       }
+    } catch (e: any) {
+      console.warn(`[api/stats] Custom upstream ${customUpstream} failed: ${e?.message}`)
     }
-    const payload = useFaza0 ? filterToFaza0(data) : data
-    return NextResponse.json(payload, {
-      headers: {
-        "Cache-Control": "public, s-maxage=15, stale-while-revalidate=30",
-        "X-SeedInfer-Faza": useFaza0 ? "0-nemotron-only" : "parity",
-        "X-SeedInfer-Zero": "0",
-        "X-SeedInfer-ForceZero": "0",
-        ...CORS_HEADERS,
-      },
-    })
-  } catch (e: any) {
-    // Fallback to local store stats if fetch fails or return zeroStats
-    const localStats = buildLocalStats()
-    const payload = useFaza0 ? filterToFaza0(localStats) : localStats
-    return NextResponse.json(payload, {
-      headers: {
-        "Cache-Control": "no-store, max-age=0",
-        "X-SeedInfer-Faza": useFaza0 ? "0-nemotron-only" : "parity",
-        "X-SeedInfer-Fallback": "local_store",
-        ...CORS_HEADERS,
-      },
-    })
   }
+
+  // 3. Clean Zero State: When 0 local nodes are connected, return zeroStats() (0 nodes, 0 tokens, 0 GPUs)
+  const payload = zeroStats()
+  return NextResponse.json(payload, {
+    headers: {
+      "Cache-Control": "no-store, max-age=0",
+      "X-SeedInfer-Faza": useFaza0 ? "0-nemotron-only" : "parity",
+      "X-SeedInfer-Zero": "1",
+      ...CORS_HEADERS,
+    },
+  })
 }
