@@ -86,43 +86,43 @@ export default function EarnPage() {
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2 text-[13px]">
                     <Coins className="h-4 w-4 text-accent-green" />
-                    Najbardziej sprawiedliwy model rozliczeń dla wszystkich (Fair Waterfall Settlement)
+                    Fair Waterfall Settlement Engine
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4 text-sm leading-5 text-text-secondary">
                   <p>
-                    W SeedInfer zysk sieci dzielony jest w najbardziej sprawiedliwy sposób. Wszelkie przychody ze sprzedaży tokenów spływają do <strong className="text-text-primary">Globalnej Puli Przychodów</strong> i są rozliczane raz w miesiącu w modelu kaskadowym (waterfall):
+                    SeedInfer distributes network revenue through a transparent, fair waterfall engine. 100% of user token sales and subscription revenues flow directly into the <strong className="text-text-primary">Global Revenue Pool</strong> and are settled monthly:
                   </p>
                   <div className="grid gap-3 sm:grid-cols-3">
                     <div className="rounded-xl border border-border-dim bg-bg-tertiary/60 p-3">
                       <div className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wide text-text-tertiary">
-                        <Clock className="h-3 w-3 text-accent-brand" /> 1. Pokrycie prądu ($0.40/d)
+                        <Clock className="h-3 w-3 text-accent-brand" /> 1. Power Baseline ($0.40/d)
                       </div>
-                      <div className="mt-1 text-xs font-medium text-text-primary">Base Retainer na start</div>
-                      <div className="mt-1 font-mono text-[11px] text-text-secondary">$0.01667/h (naliczane po pełnej godzinie) za standby. Wymagany uptime ≥50% od momentu dołączenia.</div>
+                      <div className="mt-1 text-xs font-medium text-text-primary">Base Standby Retainer</div>
+                      <div className="mt-1 font-mono text-[11px] text-text-secondary">$0.01667/h accrued after each completed hour on standby. Requires ≥50% uptime since node registration.</div>
                     </div>
                     <div className="rounded-xl border border-border-dim bg-bg-tertiary/60 p-3">
                       <div className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wide text-text-tertiary">
-                        <Coins className="h-3 w-3 text-accent-green" /> 2. Podział Zysku
+                        <Coins className="h-3 w-3 text-accent-green" /> 2. Profit Share
                       </div>
-                      <div className="mt-1 text-xs font-medium text-text-primary">Surplus za realny ruch</div>
-                      <div className="mt-1 font-mono text-[11px] text-text-secondary">Pozostała nadwyżka zysku po pokryciu retainerów trafia proporcjonalnie do nodów wg obsłużonego ruchu i stawki modelu.</div>
+                      <div className="mt-1 text-xs font-medium text-text-primary">Surplus Traffic Dividend</div>
+                      <div className="mt-1 font-mono text-[11px] text-text-secondary">Remaining surplus after baseline retainers is distributed proportionally based on processed token volume and model weight.</div>
                     </div>
                     <div className="rounded-xl border border-border-dim bg-bg-tertiary/60 p-3">
                       <div className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wide text-text-tertiary">
-                        <CreditCard className="h-3 w-3 text-accent-brand" /> 3. Wypłata USDC (Base)
+                        <CreditCard className="h-3 w-3 text-accent-brand" /> 3. USDC Payouts (Base)
                       </div>
-                      <div className="mt-1 text-xs font-medium text-text-primary">Wypłaty miesięczne</div>
-                      <div className="mt-1 font-mono text-[11px] text-text-secondary">Wypłata w USDC na sieci Base. Minimum $1.00 USD (saldo &lt; $1.00 przechodzi na kolejny miesiąc).</div>
+                      <div className="mt-1 text-xs font-medium text-text-primary">Monthly Settlements</div>
+                      <div className="mt-1 font-mono text-[11px] text-text-secondary">Automated payouts in USDC on Base. Minimum $1.00 USD (balances under $1.00 carry over to next month).</div>
                     </div>
                   </div>
                   <ol className="list-decimal space-y-1.5 pl-5 text-xs">
                     <li>
-                      Dołącz do sieci z 1 komendy: <code className="rounded bg-bg-tertiary px-1">curl -fsSL https://seedinfer.com/install.sh | bash</code> (RTX 5090 32GB, CUDA 13.3).
+                      Join the network with 1 command: <code className="rounded bg-bg-tertiary px-1">curl -fsSL https://seedinfer.com/install.sh | bash</code> (RTX 5090 32GB, CUDA 13.3).
                     </li>
-                    <li>Naliczanie hourly uptime startuje od momentu przyłączenia się węzła.</li>
-                    <li>Utrzymuj uptime ≥50% w danym miesiącu, aby zakwalifikować się do stałego zwrotu kosztów prądu ($0.40/dzień).</li>
-                    <li>Odbieraj miesięczne automatyczne wypłaty w USDC (Base) na podany portfel wallet address.</li>
+                    <li>Hourly uptime metering begins immediately upon node connection.</li>
+                    <li>Maintain ≥50% uptime during the cycle to qualify for the electricity coverage retainer ($0.40/day).</li>
+                    <li>Receive automated monthly USDC payouts on Base network straight to your node's public key address.</li>
                   </ol>
                 </CardContent>
               </Card>

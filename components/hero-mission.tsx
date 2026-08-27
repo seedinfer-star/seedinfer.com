@@ -16,13 +16,7 @@ export default function HeroMission() {
           </h1>
 
           <p className="mt-3 max-w-2xl text-sm leading-6 text-text-secondary sm:text-[15px]">
-            Inferencja w cenie prądu. Optymalizujemy zdecentralizowaną inferencję P2P do kosztu energii. Builderzy dostają prywatne LLM-y
-            za $0.02/$0.05 za 1M tokenów. Inżynierowie i entuzjaści edge monetyzują bezczynne GPU — z podziałem zysków.
-          </p>
-
-          <p className="mt-4 max-w-2xl border-l-2 border-accent-brand/20 pl-3 text-sm leading-5 text-text-secondary">
-            We optimize decentralized P2P AI inference to electricity cost for builders, sharing profits with engineers and edge enthusiasts
-            monetizing idle GPUs.
+            We optimize decentralized P2P AI inference down to the cost of electricity. Builders get private, ultra-fast LLMs at $0.02 / $0.05 per 1M tokens, while engineers and edge enthusiasts monetize idle GPUs with transparent revenue sharing.
           </p>
 
           <div className="mt-6 flex flex-wrap items-center gap-3">

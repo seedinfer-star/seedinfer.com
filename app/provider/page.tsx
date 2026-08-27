@@ -136,22 +136,22 @@ export default function ProviderPage() {
                       Serve{" "}
                       <code className="rounded bg-bg-tertiary px-1 font-mono text-xs">seedinfer/nemotron-lightning-1m</code>{" "}
                       (NVIDIA Nemotron 3.5 Lightning 30B A3B NVFP4) on your RTX 5090 32GB (GB202 Blackwell).
-                      Rozliczenie w najbardziej sprawiedliwym modelu miesięcznym: <strong className="text-text-primary">$0.40/dzień za standby</strong> (przy uptime ≥50% od dołączenia) na pokrycie prądu + <strong className="text-text-primary">udział w zysku sieci z ruchu</strong>. Wypłaty w USDC na Base (min. $1.00 USD / miesiąc).
+                      Fair monthly settlement model: <strong className="text-text-primary">$0.40/day standby coverage</strong> (for ≥50% uptime since joining) to cover electricity + <strong className="text-text-primary">network surplus profit share from processed traffic</strong>. Automated USDC payouts on Base network (min. $1.00 USD / month).
                     </p>
                     <div className="mt-4 grid gap-2 sm:grid-cols-3">
                       <div className="rounded-xl border border-border-dim bg-bg-tertiary/60 p-3">
                         <div className="font-mono text-[10px] uppercase tracking-wide text-text-tertiary flex items-center gap-1">
                           <Clock className="h-3 w-3 text-accent-brand" /> Standby Electricity Cover
                         </div>
-                        <div className="mt-1 font-mono text-sm font-semibold text-text-primary">$0.40 / dzień</div>
-                        <div className="font-mono text-[10px] text-text-tertiary">$0.01667/h (od pełnej godziny, uptime ≥50%)</div>
+                        <div className="mt-1 font-mono text-sm font-semibold text-text-primary">$0.40 / day</div>
+                        <div className="font-mono text-[10px] text-text-tertiary">$0.01667/h (after completed hour, uptime ≥50%)</div>
                       </div>
                       <div className="rounded-xl border border-border-dim bg-bg-tertiary/60 p-3">
                         <div className="font-mono text-[10px] uppercase tracking-wide text-text-tertiary flex items-center gap-1">
                           <Coins className="h-3 w-3 text-accent-green" /> Profit Sharing
                         </div>
-                        <div className="mt-1 font-mono text-sm font-semibold text-text-primary">Proporcjonalnie</div>
-                        <div className="font-mono text-[10px] text-text-tertiary">z zysku wg obsłużonego ruchu i stawek modeli</div>
+                        <div className="mt-1 font-mono text-sm font-semibold text-text-primary">Proportional Share</div>
+                        <div className="font-mono text-[10px] text-text-tertiary">from net revenue based on processed volume and model rates</div>
                       </div>
                       <div className="rounded-xl border border-border-dim bg-bg-tertiary/60 p-3">
                         <div className="font-mono text-[10px] uppercase tracking-wide text-text-tertiary flex items-center gap-1">
@@ -457,11 +457,10 @@ export default function ProviderPage() {
                     <div className="flex h-7 w-7 items-center justify-center rounded-full bg-accent-brand text-xs font-bold text-white">
                       2
                     </div>
-                    <div className="mt-2 text-sm font-medium text-text-primary">tailscale (domyślnie kontener)</div>
+                    <div className="mt-2 text-sm font-medium text-text-primary">tailscale (Container by default)</div>
                     <div className="mt-1 font-mono text-xs leading-4 text-text-secondary">
-                      <span className="inline-flex items-center rounded bg-accent-green/10 px-1.5 py-0.5 text-[10px] font-medium text-accent-green">Domyślnie: kontener (bezpieczne)</span> — jeśli host już w <code className="rounded bg-bg-tertiary px-1">tailscale.com</code> (100.94.x.x <code>tail*.ts.net</code>) → <code className="rounded bg-bg-tertiary px-1">install.sh</code> auto-wykrywa (<code>tailscale status --json</code> <code>CurrentTailnet.BaseDomain</code>/<code>Self.ControlURL</code>/<code>MagicDNSSuffix</code> + <code>BackendState Running</code>) i uruchamia <code className="rounded bg-bg-tertiary px-1">tailscale-seedinfer</code> jako{" "}
-                      <code className="rounded bg-bg-tertiary px-1">docker run -d --name tailscale-seedinfer --restart unless-stopped --cap-add=NET_ADMIN --cap-add=NET_RAW --device /dev/net/tun -v tailscale-seedinfer-state:/tailscale -e TS_AUTHKEY -e TS_HOSTNAME -e TS_LOGIN_SERVER -e TS_EXTRA_ARGS="--advertise-tags=tag:provider --accept-routes" tailscale/tailscale:latest</code> (healthcheck, volume, network <code>seedinfer-tailnet</code>). Współistnienie: host <code>100.94.x.x</code> (dom, tailscale.com) + kontener <code>100.64.x.x</code> (Headscale) — nie rozłącza domowego tailnetu. Provider agent używa kontenera (DNS <code>100.64.x.x</code>, <code>gateway.seedinfer.ts.net</code>).<br />
-                      <span className="text-text-tertiary">Alternatywa compose:</span> <code className="rounded bg-bg-tertiary px-1">docker compose --profile tailscale up -d</code> (sidecar <code>tailscale</code> w <code>provider/docker-compose.yml</code>, volume <code>tailscale-seedinfer-state:/tailscale</code>, healthcheck). Opt-in host: <code className="rounded bg-bg-tertiary px-1">--force-host-tailscale</code> (przełącza hosta <code>--reset</code>, rozłączy tailscale.com) lub <code>TAILSCALE_USE_CONTAINER=0</code> (advanced). Check: <code className="rounded bg-bg-tertiary px-1">docker exec tailscale-seedinfer tailscale status</code> (kontener 100.64.x.x) + <code className="rounded bg-bg-tertiary px-1">tailscale status</code> (host 100.94.x.x — nienaruszony).
+                      <span className="inline-flex items-center rounded bg-accent-green/10 px-1.5 py-0.5 text-[10px] font-medium text-accent-green">Default: Isolated Container</span> — if host is already connected to <code className="rounded bg-bg-tertiary px-1">tailscale.com</code> (100.94.x.x <code className="rounded bg-bg-tertiary px-1">tail*.ts.net</code>), <code className="rounded bg-bg-tertiary px-1">install.sh</code> automatically detects it (<code className="rounded bg-bg-tertiary px-1">tailscale status --json</code>) and launches <code className="rounded bg-bg-tertiary px-1">tailscale-seedinfer</code> as an isolated container (<code className="rounded bg-bg-tertiary px-1">docker run -d --name tailscale-seedinfer ...</code>). Coexistence: Host <code className="rounded bg-bg-tertiary px-1">100.94.x.x</code> (Personal Tailscale) + Container <code className="rounded bg-bg-tertiary px-1">100.64.x.x</code> (Headscale mesh) — will never disconnect your home tailnet. The provider agent uses the container interface.<br />
+                      <span className="text-text-tertiary">Compose Alternative:</span> <code className="rounded bg-bg-tertiary px-1">docker compose --profile tailscale up -d</code>. Opt-in host mode: <code className="rounded bg-bg-tertiary px-1">--force-host-tailscale</code> or <code className="rounded bg-bg-tertiary px-1">TAILSCALE_USE_CONTAINER=0</code>. Verification: <code className="rounded bg-bg-tertiary px-1">docker exec tailscale-seedinfer tailscale status</code> (container 100.64.x.x) + <code className="rounded bg-bg-tertiary px-1">tailscale status</code> (host 100.94.x.x intact).
                     </div>
                     <pre className="mt-2 rounded-lg bg-bg-tertiary p-2 font-mono text-[11px] text-text-tertiary">docker exec tailscale-seedinfer tailscale status  # kontener 100.64.x.x
 tailscale status  # host 100.94.x.x (nienaruszony)

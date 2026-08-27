@@ -154,7 +154,7 @@ export default function BillingPage() {
                   <div>
                     <div className="mb-2 flex items-center justify-between">
                       <span className="font-mono text-xs font-semibold uppercase tracking-wide text-text-primary">
-                        Plany Subskrypcyjne (Monthly Subscription Tiers)
+                        Monthly Subscription Tiers
                       </span>
                       <Badge variant="outline" className="font-mono text-[10px] border-accent-brand/30 text-accent-brand">
                         Boosted API Usage
@@ -164,30 +164,30 @@ export default function BillingPage() {
                       {[
                         {
                           label: "GO",
-                          price: "$1 / mies.",
+                          price: "$1 / mo",
                           multiplier: "3x Value",
                           quota: "$3.00 API usage",
-                          h5Limit: "max 40% w 5h ($1.20)",
-                          weekLimit: "max 70% w 1 wk ($2.10)",
-                          note: "Dla entuzjastów i protych botów",
+                          h5Limit: "max 40% per 5h ($1.20)",
+                          weekLimit: "max 70% per 7d ($2.10)",
+                          note: "For hobbyists and lightweight bots",
                         },
                         {
                           label: "GOAT",
-                          price: "$5 / mies.",
+                          price: "$5 / mo",
                           multiplier: "4x Value",
                           quota: "$20.00 API usage",
-                          h5Limit: "max 15% w 5h ($3.00)",
-                          weekLimit: "max 50% w 1 wk ($10.00)",
-                          note: "Dla deweloperów i mikro-saas",
+                          h5Limit: "max 15% per 5h ($3.00)",
+                          weekLimit: "max 50% per 7d ($10.00)",
+                          note: "For developers and micro-SaaS apps",
                         },
                         {
                           label: "PRO",
-                          price: "$10 / mies.",
+                          price: "$10 / mo",
                           multiplier: "5x Value",
                           quota: "$50.00 API usage",
-                          h5Limit: "max 10% w 5h ($5.00)",
-                          weekLimit: "max 40% w 1 wk ($20.00)",
-                          note: "Dla profesjonalistów & high-volume",
+                          h5Limit: "max 10% per 5h ($5.00)",
+                          weekLimit: "max 40% per 7d ($20.00)",
+                          note: "For professionals & high-volume scale",
                         },
                       ].map((p) => (
                         <div key={p.label} className="rounded-xl border border-border-dim bg-bg-tertiary/60 p-3.5 space-y-1.5">
@@ -209,7 +209,7 @@ export default function BillingPage() {
                     </div>
                   </div>
                   <p className="font-mono text-[10px] text-text-tertiary">
-                    Całość wpłat z subskrypcji trafia do Globalnej Puli Przychodów i jest rozliczana z dostawcami GPU w miesięcznym modelu Waterfall.
+                    100% of subscription payments feed the Global Revenue Pool and are settled with GPU providers via the Monthly Waterfall Model.
                   </p>
                 </CardContent>
               </Card>

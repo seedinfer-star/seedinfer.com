@@ -71,7 +71,7 @@ export default function DocsPage() {
                 <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
-                      <Badge variant="success" className="gap-1"><ShieldCheck className="h-3 w-3" /> Faza 0 · NVFP4</Badge>
+                      <Badge variant="success" className="gap-1"><ShieldCheck className="h-3 w-3" /> Phase 0 · NVFP4</Badge>
                       <Badge variant="outline" className="font-mono text-[10px]">seedinfer/nemotron-lightning-1m</Badge>
                       <Badge variant="outline" className="font-mono text-[10px]">1M ctx · 2M KV</Badge>
                       <Badge variant="outline" className="font-mono text-[10px] border-accent-brand/30 text-accent-brand">CUDA 13.3 · driver 580.65+</Badge>
@@ -124,13 +124,13 @@ export default function DocsPage() {
 
             {/* VRAM math */}
             <Card id="hardware" className="border border-border-dim bg-bg-secondary">
-              <CardHeader className="pb-3"><CardTitle className="flex items-center gap-2 text-[13px]"><HardDrive className="h-4 w-4 text-accent-brand" /> VRAM math — dlaczego 32GB</CardTitle></CardHeader>
+              <CardHeader className="pb-3"><CardTitle className="flex items-center gap-2 text-[13px]"><HardDrive className="h-4 w-4 text-accent-brand" /> VRAM Math — Why 32GB is Required</CardTitle></CardHeader>
               <CardContent className="space-y-3">
                 <div className="grid gap-3 sm:grid-cols-3">
                   <div className="rounded-xl border border-border-dim bg-bg-primary p-4">
-                    <div className="font-mono text-[10px] uppercase tracking-wide text-text-tertiary">Wagi NVFP4</div>
+                    <div className="font-mono text-[10px] uppercase tracking-wide text-text-tertiary">NVFP4 Weights</div>
                     <div className="mt-1 font-mono text-lg font-semibold text-text-primary">16-22 GB</div>
-                    <div className="mt-1 font-mono text-xs text-text-secondary">W4A16 + FP8 via ModelOpt (vs 66GB BF16). On-disk ~20-30GB download z HF.</div>
+                    <div className="mt-1 font-mono text-xs text-text-secondary">W4A16 + FP8 via ModelOpt (vs 66GB BF16). On-disk ~20-30GB download from HF.</div>
                   </div>
                   <div className="rounded-xl border border-border-dim bg-bg-primary p-4">
                     <div className="font-mono text-[10px] uppercase tracking-wide text-text-tertiary">KV cache 1M</div>
@@ -140,7 +140,7 @@ export default function DocsPage() {
                   <div className="rounded-xl border border-accent-brand/20 bg-accent-brand/10 p-4">
                     <div className="font-mono text-[10px] uppercase tracking-wide text-accent-brand">Total + headroom</div>
                     <div className="mt-1 font-mono text-lg font-semibold text-text-primary">22-28 GB</div>
-                    <div className="mt-1 font-mono text-xs text-text-secondary">+ <code>--gpu-memory-utilization 0.93</code> + <code>--max-num-batched-tokens 4096</code> → 32GB daje ~4-10GB zapasu. Na 24GB OOM bez downscale.</div>
+                    <div className="mt-1 font-mono text-xs text-text-secondary">+ <code>--gpu-memory-utilization 0.93</code> + <code>--max-num-batched-tokens 4096</code> → 32GB provides ~4-10GB headroom. 24GB will OOM without downscaling.</div>
                   </div>
                 </div>
                 <div className="rounded-lg border border-dashed border-border-default bg-bg-primary p-3 font-mono text-[11px] leading-4 text-text-secondary">
@@ -178,7 +178,7 @@ export default function DocsPage() {
                 </div>
                 <div className="rounded-lg border border-dashed border-border-default bg-bg-primary p-3 font-mono text-[11px] leading-4 text-text-secondary">
                   * Est. tput single-user prefill+decode for Nemotron 30B NVFP4 (W4A16+FP8 KV), batch 1, 1k in / 256 out, no prefix cache. Real throughput depends on marlin (Blackwell FP4 + flashinfer-cutlass) / humming (A100 W4A16) + KV hit.<br />
-                  <strong className="text-text-primary">Eventually 3090/4090 (24GB)</strong> — planned as &quot;community&quot; tier z auto-downscale <code className="rounded bg-bg-tertiary px-1">VLLM_MAX_MODEL_LEN=131072</code> + <code className="rounded bg-bg-tertiary px-1">VLLM_GPU_MEMORY_UTILIZATION=0.85</code>. Currently welcome for testing, but the official minimum is 32GB.
+                  <strong className="text-text-primary">Eventually 3090/4090 (24GB)</strong> — planned as &quot;community&quot; tier with auto-downscale <code className="rounded bg-bg-tertiary px-1">VLLM_MAX_MODEL_LEN=131072</code> + <code className="rounded bg-bg-tertiary px-1">VLLM_GPU_MEMORY_UTILIZATION=0.85</code>. Currently welcome for testing, but the official minimum is 32GB.
                 </div>
               </CardContent>
             </Card>
@@ -190,7 +190,7 @@ export default function DocsPage() {
                 <div className="overflow-x-auto rounded-xl border border-border-dim">
                   <table className="w-full text-left font-mono text-xs">
                     <thead className="bg-bg-tertiary text-[10px] uppercase tracking-wide text-text-tertiary">
-                      <tr><th className="px-3 py-2">Stack</th><th className="px-3 py-2">Wersja wymagana</th><th className="px-3 py-2">Blackwell GB202</th><th className="px-3 py-2">Fallback</th><th className="px-3 py-2">Status</th></tr>
+                      <tr><th className="px-3 py-2">Stack</th><th className="px-3 py-2">Required Version</th><th className="px-3 py-2">Blackwell GB202</th><th className="px-3 py-2">Fallback</th><th className="px-3 py-2">Status</th></tr>
                     </thead>
                     <tbody className="divide-y divide-border-dim text-text-secondary">
                       <tr className="bg-accent-brand/5"><td className="px-3 py-2 font-medium text-text-primary">OS</td><td className="px-3 py-2">Ubuntu 24.04+ (noble) kernel 6.8+</td><td className="px-3 py-2">✅</td><td className="px-3 py-2">Ubuntu 22.04+</td><td className="px-3 py-2"><Badge variant="success" className="text-[10px]">required</Badge></td></tr>
@@ -207,7 +207,7 @@ export default function DocsPage() {
                   </table>
                 </div>
                 <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 p-3 font-mono text-[11px] leading-4 text-text-secondary">
-                  <strong className="text-text-primary">CUDA PTX JIT:</strong> vLLM nightly cu12 wheels run on CUDA 13.3 via forward-compat (driver 580+). No rebuild required. Blackwall sm_120 native PTX only on 580+. Check: <code className="rounded bg-bg-tertiary px-1">nvidia-smi | grep Driver</code> + <code className="rounded bg-bg-tertiary px-1">nvidia-smi --query-gpu=compute_cap --format=csv</code> (12.0 dla 5090). With driver &lt;580: warn, &lt;570: warn, &lt;550: error in install.sh/entrypoint.sh.
+                  <strong className="text-text-primary">CUDA PTX JIT:</strong> vLLM nightly cu12 wheels run on CUDA 13.3 via forward-compat (driver 580+). No rebuild required. Blackwall sm_120 native PTX only on 580+. Check: <code className="rounded bg-bg-tertiary px-1">nvidia-smi | grep Driver</code> + <code className="rounded bg-bg-tertiary px-1">nvidia-smi --query-gpu=compute_cap --format=csv</code> (12.0 for 5090). With driver &lt;580: warn, &lt;570: warn, &lt;550: error in install.sh/entrypoint.sh.
                 </div>
               </CardContent>
             </Card>
@@ -215,7 +215,7 @@ export default function DocsPage() {
             {/* Install */}
             <Card id="install" className="border border-border-dim bg-bg-secondary">
               <CardHeader className="pb-3">
-                <CardTitle className="flex items-center gap-2 text-[13px]"><Terminal className="h-4 w-4 text-accent-brand" /> Instalacja — one-liner vs manual</CardTitle>
+                <CardTitle className="flex items-center gap-2 text-[13px]"><Terminal className="h-4 w-4 text-accent-brand" /> Installation — One-liner vs Manual</CardTitle>
                 <p className="font-mono text-xs text-text-tertiary">Terminal command that sets up the environment + verification. Copy and paste on Linux.</p>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -225,12 +225,12 @@ export default function DocsPage() {
                     <div className="rounded-lg border border-accent-brand/20 bg-accent-brand/10 p-3 font-mono text-[11px] leading-3 text-text-secondary">
                       No parameters — <code className="rounded bg-bg-tertiary px-1">install.sh</code> automatically fetches an authkey from <code className="rounded bg-bg-tertiary px-1">/api/v1/auth/request</code> + prebuild{" "}
                       <code className="rounded bg-bg-tertiary px-1">ghcr.io/seedinfer/provider:cuda13.3-nvfp4</code> ||{" "}
-                      <code className="rounded bg-bg-tertiary px-1">https://seedinfer.com/provider-image.tar.gz</code> (Pi) || build. Pi nie buduje CUDA — tylko hostuje.
+                      <code className="rounded bg-bg-tertiary px-1">https://seedinfer.com/provider-image.tar.gz</code> (Pi) || build.
                     </div>
                     <details className="rounded-xl border border-border-dim bg-bg-primary">
                       <summary className="cursor-pointer list-none px-3 py-2 font-mono text-xs font-medium text-text-primary">Advanced — custom authkey / model / gateway (expand)</summary>
                       <div className="space-y-2 border-t border-border-dim p-3">
-                        <CodeBlock label="1 · Z kluczem z Generate invite" code={ONE_LINER_SIMPLE} />
+                        <CodeBlock label="1 · With key from Generate invite" code={ONE_LINER_SIMPLE} />
                         <CodeBlock label="2 · Auto-fetch key (jq)" code={ONE_LINER_AUTO} />
                         <CodeBlock label="3 · Full options + hostname" code={ONE_LINER_CUSTOM} />
                         <div className="font-mono text-[11px] text-text-tertiary">
@@ -248,9 +248,9 @@ export default function DocsPage() {
                       <ol className="mt-2 list-decimal list-inside space-y-1 font-mono text-xs text-text-secondary">
                         <li><code className="rounded bg-bg-tertiary px-1">nvidia-smi</code> check — VRAM ≥32GB, driver 580+, ports 47900/47901 free; auto-fetch authkey from <code className="rounded bg-bg-tertiary px-1">/api/v1/auth/request</code> if --authkey is missing</li>
                         <li>Installs <code>docker 24+ + nvidia-ctk + tailscale</code> if missing</li>
-                        <li><span className="inline-flex items-center rounded bg-accent-green/10 px-1 py-0.5 text-[10px] font-medium text-accent-green">Domyślnie: kontener</span> — jeśli host już w <code className="rounded bg-bg-tertiary px-1">tailscale.com</code> (100.94.x.x) → <code className="rounded bg-bg-tertiary px-1">docker run -d --name tailscale-seedinfer --restart unless-stopped --cap-add=NET_ADMIN --cap-add=NET_RAW --device /dev/net/tun -v tailscale-seedinfer-state:/tailscale -e TS_AUTHKEY -e TS_HOSTNAME -e TS_LOGIN_SERVER -e TS_EXTRA_ARGS="--advertise-tags=tag:provider --accept-routes" tailscale/tailscale:latest</code> (healthcheck, volume, network <code>seedinfer-tailnet</code>). Współistnienie <code>100.94.x.x</code> (host, tailscale.com) + <code>100.64.x.x</code> (kontener, Headscale) — nie rozłącza. Provider agent używa kontenera (DNS <code>100.64.x.x</code>). Opt-in host: <code>--force-host-tailscale</code> (<code>--reset</code>, rozłączy tailscale.com) lub <code>TAILSCALE_USE_CONTAINER=0</code>. Jeśli brak istniejącego tailnetu → host <code>tailscale up --login-server https://tailnet.seedinfer.com --authkey XXX --advertise-tags tag:provider</code></li>
+                        <li><span className="inline-flex items-center rounded bg-accent-green/10 px-1 py-0.5 text-[10px] font-medium text-accent-green">Default: Container</span> — if host is already on <code className="rounded bg-bg-tertiary px-1">tailscale.com</code> (100.94.x.x) → launches isolated container <code className="rounded bg-bg-tertiary px-1">tailscale-seedinfer</code>. Coexistence of <code className="rounded bg-bg-tertiary px-1">100.94.x.x</code> (host) + <code className="rounded bg-bg-tertiary px-1">100.64.x.x</code> (container, Headscale) — never disconnects home network. Provider agent uses container DNS. Opt-in host mode: <code className="rounded bg-bg-tertiary px-1">--force-host-tailscale</code> or <code className="rounded bg-bg-tertiary px-1">TAILSCALE_USE_CONTAINER=0</code>. If no existing tailnet → host <code className="rounded bg-bg-tertiary px-1">tailscale up --login-server https://tailnet.seedinfer.com</code></li>
                         <li>Clones <code>provider/</code> → <code>/opt/seedinfer-provider</code>, creates <code>.env</code> (<code>VLLM_MODEL=nvidia/...NVFP4</code>)</li>
-                        <li>Prebuild: <code>docker pull ghcr.io/seedinfer/provider:cuda13.3-nvfp4</code> → <code>curl https://seedinfer.com/provider-image.tar.gz | docker load</code> (Pi) → <code>docker compose up -d --build</code> (fallback) → vLLM auto-download ~30GB → <code>./models/cache</code>. Sidecar compose: <code>docker compose --profile tailscale up -d</code> (<code>tailscale</code> service, volume <code>tailscale-seedinfer-state</code>)</li>
+                        <li>Prebuild: <code>docker pull ghcr.io/seedinfer/provider:cuda13.3-nvfp4</code> → <code>curl https://seedinfer.com/provider-image.tar.gz | docker load</code> (Pi) → <code>docker compose up -d --build</code> (fallback) → vLLM auto-download ~30GB → <code>./models/cache</code>. Sidecar compose: <code>docker compose --profile tailscale up -d</code></li>
                         <li>Heartbeat every 30s to <code>/api/v1/providers/heartbeat</code> → pending → verifying → verified</li>
                       </ol>
                     </div>
@@ -260,14 +260,14 @@ export default function DocsPage() {
                         <pre className="overflow-x-auto rounded-lg bg-bg-tertiary p-2 font-mono text-[11px] text-text-secondary">{`git clone https://github.com/seedinfer/seedinfer.com.git
 cd seedinfer.com
 cp provider/.env.example provider/.env
-# edytuj TAILSCALE_AUTHKEY, MODEL, SEEDINFER_GATEWAY_URL
+# edit TAILSCALE_AUTHKEY, MODEL, SEEDINFER_GATEWAY_URL
 docker compose -f provider/docker-compose.yml up -d --build
 docker logs -f seedinfer-provider | grep -i download
 du -sh ./models/cache
 curl -fsS http://127.0.0.1:47901/health | jq`}</pre>
-                        <pre className="overflow-x-auto rounded-lg bg-bg-tertiary p-2 font-mono text-[11px] text-text-secondary">{`# Tailscale — domyślnie kontener (nie rusza hosta, współistnienie 100.94.x.x + 100.64.x.x):
-docker exec tailscale-seedinfer tailscale status  # kontener 100.64.x.x (Headscale)
-tailscale status  # host 100.94.x.x (dom, tailscale.com — nienaruszony)
+                        <pre className="overflow-x-auto rounded-lg bg-bg-tertiary p-2 font-mono text-[11px] text-text-secondary">{`# Tailscale — default container (isolated, coexistence 100.94.x.x + 100.64.x.x):
+docker exec tailscale-seedinfer tailscale status  # container 100.64.x.x (Headscale)
+tailscale status  # host 100.94.x.x (home tailscale intact)
 docker exec tailscale-seedinfer tailscale ip -4  # 100.64.x.x
 tailscale ip -4  # host 100.94.x.x
 ping -c2 gateway.seedinfer.ts.net
@@ -275,7 +275,7 @@ ping -c2 gateway.seedinfer.ts.net
 # volume: tailscale-seedinfer-state:/tailscale  network: seedinfer-tailnet
 # healthcheck: tailscale status  cap_add: [NET_ADMIN, NET_RAW]  device: /dev/net/tun
 # TS_EXTRA_ARGS="--advertise-tags=tag:provider --accept-routes"  TS_LOGIN_SERVER=https://tailnet.seedinfer.com
-# Opt-in host (rozłączy tailscale.com): curl ... | bash -s -- --force-host-tailscale`}</pre>
+# Opt-in host (disconnects tailscale.com): curl ... | bash -s -- --force-host-tailscale`}</pre>
                       </CardContent>
                     </Card>
                     <div className="flex flex-wrap gap-2 font-mono text-xs">
@@ -352,21 +352,21 @@ docker logs -f seedinfer-provider | grep -E "heartbeat|vllm|download"`}</pre>
                     </thead>
                     <tbody className="divide-y divide-border-dim text-text-secondary">
                       <tr><td className="px-3 py-2 font-medium text-text-primary">OOM CUDA</td><td className="px-3 py-2">1M ctx + 0.93 on 24GB, full KV</td><td className="px-3 py-2"><code className="rounded bg-bg-tertiary px-1">VLLM_MAX_MODEL_LEN=32768</code> + <code className="rounded bg-bg-tertiary px-1">VLLM_GPU_MEMORY_UTILIZATION=0.80</code> → restart</td></tr>
-                      <tr><td className="px-3 py-2 font-medium text-text-primary"><code>nvidia-smi</code> brak</td><td className="px-3 py-2">driver &lt;580, missing module</td><td className="px-3 py-2"><code>sudo apt update && sudo apt install nvidia-driver-580 && sudo reboot</code> · fallback 570 / 550 legacy · <code>ubuntu-drivers autoinstall</code></td></tr>
+                      <tr><td className="px-3 py-2 font-medium text-text-primary"><code>nvidia-smi</code> missing</td><td className="px-3 py-2">driver &lt;580, missing module</td><td className="px-3 py-2"><code>sudo apt update && sudo apt install nvidia-driver-580 && sudo reboot</code> · fallback 570 / 550 legacy · <code>ubuntu-drivers autoinstall</code></td></tr>
                       <tr><td className="px-3 py-2 font-medium text-text-primary">docker no nvidia runtime</td><td className="px-3 py-2">missing nvidia-ctk</td><td className="px-3 py-2"><code>sudo apt install nvidia-container-toolkit && sudo nvidia-ctk runtime configure --runtime=docker && sudo systemctl restart docker</code></td></tr>
-                      <tr><td className="px-3 py-2 font-medium text-text-primary">port 47900/47901 in use</td><td className="px-3 py-2"><code>ss -tlnp | grep :4790</code></td><td className="px-3 py-2"><code>VLLM_PORT=41000 AGENT_PORT=41001 curl ... | bash -s -- --authkey XXX</code> (zakres 479xx wolny, lub 41000+)</td></tr>
+                      <tr><td className="px-3 py-2 font-medium text-text-primary">port 47900/47901 in use</td><td className="px-3 py-2"><code>ss -tlnp | grep :4790</code></td><td className="px-3 py-2"><code>VLLM_PORT=41000 AGENT_PORT=41001 curl ... | bash -s -- --authkey XXX</code> (range 479xx busy, use 41000+)</td></tr>
                       <tr><td className="px-3 py-2 font-medium text-text-primary">disk full / no space</td><td className="px-3 py-2">HF cache 60GB + vLLM 28GB</td><td className="px-3 py-2"><code>df -h</code> · <code>docker system prune -a</code> · <code>rm -rf ./models/cache/.../snapshots</code> · check 60GB+ free</td></tr>
-                      <tr><td className="px-3 py-2 font-medium text-text-primary">vLLM down in /health</td><td className="px-3 py-2">HF model missing, QUANTIZATION mismatch</td><td className="px-3 py-2"><code>docker logs seedinfer-provider --tail 100</code> · <code>VLLM_QUANTIZATION=modelopt</code> (nie modelopt_fp4) + <code>--kv-cache-dtype fp8</code> auto</td></tr>
-                      <tr><td className="px-3 py-2 font-medium text-text-primary">tailscale invalid authkey</td><td className="px-3 py-2">key expired (24h)</td><td className="px-3 py-2">New key: <code>curl -fsSL https://seedinfer.com/api/v1/auth/request | jq</code> + <code>docker exec tailscale-seedinfer tailscale up --authkey NEW</code> (kontener) lub <code>tailscale up --authkey NEW</code> (host) — details <a href="/docs" className="text-accent-brand underline">/docs</a></td></tr>
-                      <tr><td className="px-3 py-2 font-medium text-text-primary">host już w tailscale.com 100.94.x.x</td><td className="px-3 py-2">domowy tailnet, nie chcesz rozłączać</td><td className="px-3 py-2"><span className="inline-flex items-center rounded bg-accent-green/10 px-1 py-0.5 text-[10px] font-medium text-accent-green">Domyślnie: kontener</span> — <code>install.sh</code> auto <code>docker run -d --name tailscale-seedinfer --restart unless-stopped --cap-add=NET_ADMIN --cap-add=NET_RAW --device /dev/net/tun -v tailscale-seedinfer-state:/tailscale -e TS_AUTHKEY -e TS_HOSTNAME -e TS_LOGIN_SERVER -e TS_EXTRA_ARGS="--advertise-tags=tag:provider --accept-routes" tailscale/tailscale:latest</code> (healthcheck, volume, network). Współistnienie <code>100.94.x.x</code> (host) + <code>100.64.x.x</code> (kontener) — nie rozłącza. Provider używa kontenera (<code>docker exec tailscale-seedinfer tailscale status</code>). Compose: <code>docker compose --profile tailscale up -d</code>. Opt-in host: <code>--force-host-tailscale</code> (<code>--reset</code>, rozłączy) lub <code>TAILSCALE_USE_CONTAINER=0</code></td></tr>
-                      <tr><td className="px-3 py-2 font-medium text-text-primary">tailscale-seedinfer nie startuje</td><td className="px-3 py-2">volume/network/authkey</td><td className="px-3 py-2"><code>docker logs tailscale-seedinfer</code> · <code>docker volume create tailscale-seedinfer-state</code> · <code>docker network create seedinfer-tailnet</code> · check <code>TS_AUTHKEY</code>/<code>TS_LOGIN_SERVER</code> · healthcheck <code>tailscale status</code></td></tr>
-                      <tr><td className="px-3 py-2 font-medium text-text-primary">heartbeat 401/404</td><td className="px-3 py-2">gateway path fallback</td><td className="px-3 py-2">Agent fallback na <code>/api/providers/heartbeat</code> — log warn, nie krytyczne · check <code>SEEDINFER_GATEWAY_URL</code></td></tr>
-                      <tr><td className="px-3 py-2 font-medium text-text-primary">chat_template error</td><td className="px-3 py-2">jinja missing</td><td className="px-3 py-2">HF <code>tokenizer_config.json</code> jinja auto z nvidia — nie nadpisuj · fallback <code>./provider/assets:/qwen_setup:ro</code> · <code>VLLM_CHAT_TEMPLATE=/qwen_setup/...</code></td></tr>
+                      <tr><td className="px-3 py-2 font-medium text-text-primary">vLLM down in /health</td><td className="px-3 py-2">HF model missing, QUANTIZATION mismatch</td><td className="px-3 py-2"><code>docker logs seedinfer-provider --tail 100</code> · <code>VLLM_QUANTIZATION=modelopt</code> (not modelopt_fp4) + <code>--kv-cache-dtype fp8</code> auto</td></tr>
+                      <tr><td className="px-3 py-2 font-medium text-text-primary">tailscale invalid authkey</td><td className="px-3 py-2">key expired (24h)</td><td className="px-3 py-2">New key: <code>curl -fsSL https://seedinfer.com/api/v1/auth/request | jq</code> + <code>docker exec tailscale-seedinfer tailscale up --authkey NEW</code> (container) or <code>tailscale up --authkey NEW</code> (host) — details <a href="/docs" className="text-accent-brand underline">/docs</a></td></tr>
+                      <tr><td className="px-3 py-2 font-medium text-text-primary">host already on tailscale.com 100.94.x.x</td><td className="px-3 py-2">home tailnet, preserve connection</td><td className="px-3 py-2"><span className="inline-flex items-center rounded bg-accent-green/10 px-1 py-0.5 text-[10px] font-medium text-accent-green">Default: Container</span> — <code>install.sh</code> launches isolated container <code className="rounded bg-bg-tertiary px-1">tailscale-seedinfer</code>. Coexistence of <code>100.94.x.x</code> (host) + <code>100.64.x.x</code> (container). Provider agent uses container interface. Compose alternative: <code>docker compose --profile tailscale up -d</code>. Opt-in host mode: <code>--force-host-tailscale</code> or <code>TAILSCALE_USE_CONTAINER=0</code></td></tr>
+                      <tr><td className="px-3 py-2 font-medium text-text-primary">tailscale-seedinfer won't start</td><td className="px-3 py-2">volume/network/authkey</td><td className="px-3 py-2"><code>docker logs tailscale-seedinfer</code> · <code>docker volume create tailscale-seedinfer-state</code> · <code>docker network create seedinfer-tailnet</code> · check <code>TS_AUTHKEY</code>/<code>TS_LOGIN_SERVER</code> · healthcheck <code>tailscale status</code></td></tr>
+                      <tr><td className="px-3 py-2 font-medium text-text-primary">heartbeat 401/404</td><td className="px-3 py-2">gateway path fallback</td><td className="px-3 py-2">Agent fallback to <code>/api/providers/heartbeat</code> — log warning, non-critical · check <code>SEEDINFER_GATEWAY_URL</code></td></tr>
+                      <tr><td className="px-3 py-2 font-medium text-text-primary">chat_template error</td><td className="px-3 py-2">jinja missing</td><td className="px-3 py-2">HF <code>tokenizer_config.json</code> jinja auto from nvidia — do not overwrite · fallback <code>./provider/assets:/qwen_setup:ro</code> · <code>VLLM_CHAT_TEMPLATE=/qwen_setup/...</code></td></tr>
                     </tbody>
                   </table>
                 </div>
                 <div className="rounded-lg border border-dashed border-border-default bg-bg-primary p-3 font-mono text-[11px] leading-4 text-text-secondary">
-                  Logi: <code className="rounded bg-bg-tertiary px-1">docker compose -f provider/docker-compose.yml logs -f</code> · <code className="rounded bg-bg-tertiary px-1">docker exec tailscale-seedinfer tailscale status</code> (kontener 100.64.x.x) · <code className="rounded bg-bg-tertiary px-1">tailscale status</code> (host 100.94.x.x — nienaruszony) · <code className="rounded bg-bg-tertiary px-1">docker logs tailscale-seedinfer</code> · <code className="rounded bg-bg-tertiary px-1">curl -fsS http://127.0.0.1:47901/metrics | jq</code> · <code className="rounded bg-bg-tertiary px-1">nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv</code> · <code className="rounded bg-bg-tertiary px-1">df -h && du -sh ./models/cache</code>
+                  Logs: <code className="rounded bg-bg-tertiary px-1">docker compose -f provider/docker-compose.yml logs -f</code> · <code className="rounded bg-bg-tertiary px-1">docker exec tailscale-seedinfer tailscale status</code> (container 100.64.x.x) · <code className="rounded bg-bg-tertiary px-1">tailscale status</code> (host 100.94.x.x intact) · <code className="rounded bg-bg-tertiary px-1">docker logs tailscale-seedinfer</code> · <code className="rounded bg-bg-tertiary px-1">curl -fsS http://127.0.0.1:47901/metrics | jq</code> · <code className="rounded bg-bg-tertiary px-1">nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv</code> · <code className="rounded bg-bg-tertiary px-1">df -h && du -sh ./models/cache</code>
                 </div>
               </CardContent>
             </Card>
