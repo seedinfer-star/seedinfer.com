@@ -202,10 +202,11 @@ export function upsertProvider(
     agent_url: agent_url || existing?.agent_url || null,
     heartbeat_count,
     raw: payload,
-    // preserve routing stats if existing
+    // preserve routing stats if existing & extract dynamic maxConcurrency from payload
     ewmaTtft: (existing as any)?.ewmaTtft ?? null,
     ewmaLatency: (existing as any)?.ewmaLatency ?? null,
     concurrentRequests: (existing as any)?.concurrentRequests ?? 0,
+    maxConcurrency: Number(payload.max_concurrency || payload.max_num_seqs || (existing as any)?.maxConcurrency || 0) || undefined,
     totalRequests: (existing as any)?.totalRequests ?? 0,
     successCount: (existing as any)?.successCount ?? 0,
     _routingWeight: (existing as any)?._routingWeight ?? undefined,

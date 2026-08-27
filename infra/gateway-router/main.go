@@ -27,6 +27,7 @@ type ProviderNode struct {
 	AgentURL           string    `json:"agent_url"`
 	Status             string    `json:"status"`
 	EWMATTFTMs         int64     `json:"ewma_ttft_ms"`
+	MaxConcurrency     int64     `json:"max_concurrency"`
 	ConcurrentRequests int64     `json:"-"`
 	LastHeartbeat      time.Time `json:"last_heartbeat"`
 }
@@ -46,10 +47,14 @@ func NewRouterRegistry() *RouterRegistry {
 func (r *RouterRegistry) Upsert(node *ProviderNode) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if node.MaxConcurrency <= 0 {
+		node.MaxConcurrency = 8 // Default fallback cap
+	}
 	if existing, ok := r.providers[node.ID]; ok {
 		existing.TailscaleIP = node.TailscaleIP
 		existing.AgentURL = node.AgentURL
 		existing.Status = node.Status
+		existing.MaxConcurrency = node.MaxConcurrency
 		existing.LastHeartbeat = time.Now()
 	} else {
 		node.LastHeartbeat = time.Now()
@@ -61,31 +66,41 @@ func (r *RouterRegistry) Upsert(node *ProviderNode) {
 func (r *RouterRegistry) SelectP2C() *ProviderNode {
 	r.mu.RLock()
 	var eligible []*ProviderNode
+	var unsaturated []*ProviderNode
 	for _, p := range r.providers {
 		if p.Status == "serving" || p.Status == "verified" {
 			eligible = append(eligible, p)
+			if atomic.LoadInt64(&p.ConcurrentRequests) < p.MaxConcurrency {
+				unsaturated = append(unsaturated, p)
+			}
 		}
 	}
 	r.mu.RUnlock()
 
-	if len(eligible) == 0 {
+	// Prioritize unsaturated pool to avoid KV Cache swapping
+	pool := unsaturated
+	if len(pool) == 0 {
+		pool = eligible
+	}
+
+	if len(pool) == 0 {
 		return nil
 	}
-	if len(eligible) == 1 {
-		return eligible[0]
+	if len(pool) == 1 {
+		return pool[0]
 	}
 
 	// Pick 2 random distinct indices
-	n1, _ := rand.Int(rand.Reader, big.NewInt(int64(len(eligible))))
-	n2, _ := rand.Int(rand.Reader, big.NewInt(int64(len(eligible))))
+	n1, _ := rand.Int(rand.Reader, big.NewInt(int64(len(pool))))
+	n2, _ := rand.Int(rand.Reader, big.NewInt(int64(len(pool))))
 	idx1 := n1.Int64()
 	idx2 := n2.Int64()
 	if idx1 == idx2 {
-		idx2 = (idx1 + 1) % int64(len(eligible))
+		idx2 = (idx1 + 1) % int64(len(pool))
 	}
 
-	candA := eligible[idx1]
-	candB := eligible[idx2]
+	candA := pool[idx1]
+	candB := pool[idx2]
 
 	concA := atomic.LoadInt64(&candA.ConcurrentRequests)
 	concB := atomic.LoadInt64(&candB.ConcurrentRequests)
