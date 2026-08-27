@@ -153,6 +153,7 @@ function zeroStats(): any {
 }
 
 import { listProviders } from "@/lib/providers-store"
+import { listTelemetry } from "@/lib/telemetry-store"
 
 function buildLocalStats(): any {
   const providers = listProviders()
@@ -175,10 +176,33 @@ function buildLocalStats(): any {
     modelsList.push({ id: FAZA0_ID, providers: activeProviders.length })
   }
 
+  // Build real 30-minute time series from telemetry events
+  const nowMs = Date.now()
+  const thirtyMinAgo = new Date(nowMs - 30 * 60_000).toISOString()
+  const events = listTelemetry({ since: thirtyMinAgo })
+
+  const timeSeries = Array.from({ length: 30 }, (_, i) => {
+    const bucketStart = nowMs - (29 - i) * 60_000
+    const bucketEnd = bucketStart + 60_000
+    const bucketEvents = events.filter((e) => {
+      const ts = new Date(e.timestamp).getTime()
+      return ts >= bucketStart && ts < bucketEnd
+    })
+    const reqs = bucketEvents.reduce((s, e) => s + (e.requests || (e.upstream === "chat" ? 1 : 0)), 0)
+    const toks = bucketEvents.reduce((s, e) => s + (e.tokens || 0), 0)
+    return {
+      timestamp: new Date(bucketStart).toISOString(),
+      requests: reqs,
+      prompt_tokens: Math.round(toks * 0.3),
+      completion_tokens: Math.round(toks * 0.7),
+      total_tokens: toks,
+    }
+  })
+
   return {
     active_power_watts: activeProviders.length * 450,
     active_providers: activeProviders.length,
-    avg_tokens_per_request: totalRequests > 0 ? Math.round(totalTokens / totalRequests) : 1200,
+    avg_tokens_per_request: totalRequests > 0 ? Math.round(totalTokens / totalRequests) : 0,
     code_attestation_enforced: false,
     code_attested_providers: activeProviders.length,
     last_24h_completion_tokens: Math.round(totalTokens * 0.7),
@@ -200,13 +224,7 @@ function buildLocalStats(): any {
     provider_locations: Array.from(new Set(providers.map((p) => p.region || "eu-central"))),
     provider_regions: Array.from(new Set(providers.map((p) => p.region || "eu-central"))),
     providers: providers,
-    time_series: Array.from({ length: 30 }, (_, i) => ({
-      timestamp: new Date(Date.now() - (29 - i) * 60_000).toISOString(),
-      requests: 0,
-      prompt_tokens: 0,
-      completion_tokens: 0,
-      total_tokens: 0,
-    })),
+    time_series: timeSeries,
     total_bandwidth_gbs: totalBandwidthGbs,
     total_completion_tokens: Math.round(totalTokens * 0.7),
     total_cpu_cores: totalCpuCores,
