@@ -272,9 +272,9 @@ export async function GET(request: Request) {
     })
   }
 
-  // 2. Only try custom upstream IF explicitly configured in environment
+  // 2. Only try custom upstream IF explicitly configured and NOT pointing to legacy darkbloom/api.seedinfer.com
   const customUpstream = process.env.SEEDINFER_STATS_UPSTREAM || process.env.STATS_UPSTREAM_URL
-  if (customUpstream) {
+  if (customUpstream && !customUpstream.includes("darkbloom") && !customUpstream.includes("api.seedinfer.com")) {
     try {
       const r = await fetch(customUpstream, { next: { revalidate: 15 } as any } as any)
       if (r.ok) {
@@ -282,7 +282,7 @@ export async function GET(request: Request) {
         const payload = useFaza0 ? filterToFaza0(data) : data
         return NextResponse.json(payload, {
           headers: {
-            "Cache-Control": "public, s-maxage=15, stale-while-revalidate=30",
+            "Cache-Control": "no-store, max-age=0",
             "X-SeedInfer-Faza": useFaza0 ? "0-nemotron-only" : "parity",
             ...CORS_HEADERS,
           },
@@ -298,6 +298,8 @@ export async function GET(request: Request) {
   return NextResponse.json(payload, {
     headers: {
       "Cache-Control": "no-store, max-age=0",
+      "CDN-Cache-Control": "no-store",
+      "Cloudflare-CDN-Cache-Control": "no-store",
       "X-SeedInfer-Faza": useFaza0 ? "0-nemotron-only" : "parity",
       "X-SeedInfer-Zero": "1",
       ...CORS_HEADERS,
