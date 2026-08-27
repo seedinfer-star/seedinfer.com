@@ -10,8 +10,8 @@
 set -euo pipefail
 
 # --- Konfig ---
-PI_HOST="${PI_HOST:-192.168.1.50}"
-PI_USER="${PI_USER:-seedinfer}"
+PI_HOST="${PI_HOST:-192.168.1.15}"
+PI_USER="${PI_USER:-root}"
 REMOTE_DIR="${REMOTE_DIR:-/opt/seedinfer}"
 SSH_KEY="${SSH_KEY:-}"  # np. ~/.ssh/orange_pi
 MODE="systemd"
@@ -29,12 +29,12 @@ for arg in "$@"; do
   esac
 done
 
-SSH_OPTS=(-o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new)
+SSH_OPTS="-o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new"
 if [[ -n "$SSH_KEY" ]]; then
-  SSH_OPTS+=(-i "$SSH_KEY")
+  SSH_OPTS="$SSH_OPTS -i $SSH_KEY"
 fi
-SSH="ssh ${SSH_OPTS[*]} $PI_USER@$PI_HOST"
-RSYNC_SSH="ssh ${SSH_OPTS[*]}"
+SSH="ssh $SSH_OPTS $PI_USER@$PI_HOST"
+RSYNC_SSH="ssh $SSH_OPTS"
 
 # Kolory
 info()  { echo -e "\033[1;34m[info]\033[0m $*"; }
@@ -70,10 +70,14 @@ if [[ "$MODE" == "docker" ]]; then
     warn "SKIP_BUILD=1 — pomijam lokalny build"
   fi
 else
-  info "Tryb SYSTEMD — npm ci && npm run build ..."
-  npm ci
-  npm run build
-  ok "build OK"
+  if [[ "${SKIP_BUILD:-0}" != "1" ]]; then
+    info "Tryb SYSTEMD — npm ci && npm run build ..."
+    npm ci
+    npm run build
+    ok "build OK"
+  else
+    warn "SKIP_BUILD=1 — pomijam lokalny build"
+  fi
 fi
 
 # --- Rsync ---
