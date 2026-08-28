@@ -119,9 +119,8 @@ export default function ProviderPage() {
         <main className="min-h-0 flex-1 overflow-y-auto bg-bg-primary">
           <div className="mx-auto max-w-[1600px] space-y-5 p-4 sm:p-5">
 
-            {/* ========================================================================= */}
-            {/* SECTION 1: MARKETING, VALUE PROPOSITION & REVENUE CALCULATOR              */}
-            {/* ========================================================================= */}
+            {/* Real-World Hardware Economics & Provider Revenue & Net-Profit Calculator */}
+            <Calculator />
 
             {/* Hero Card */}
             <Card className="overflow-hidden border border-accent-brand/20 bg-gradient-to-br from-accent-brand/10 via-bg-secondary to-bg-secondary shadow-md">
@@ -249,35 +248,7 @@ export default function ProviderPage() {
             {/* Zero-Account Node Access Dashboard (Inspect node stats with pubkey) */}
             <NodeLoginDashboard />
 
-            {/* Provider Revenue & Net-Profit Calculator Banner Link */}
-            <Card className="overflow-hidden border border-accent-brand/30 bg-gradient-to-r from-accent-brand/10 via-bg-secondary to-bg-secondary p-5 shadow-sm">
-              <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                <div className="flex items-start gap-3 min-w-0 flex-1">
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent-brand/15 border border-accent-brand/30 text-accent-brand">
-                    <CalculatorIcon className="h-5 w-5" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <h3 className="text-sm font-bold text-text-primary">
-                        Provider Revenue & Net-Profit Calculator
-                      </h3>
-                      <Badge variant="outline" className="font-mono text-[10px] text-accent-green border-accent-green/30 bg-accent-green/10">
-                        Network Median: ~$120/mo Net
-                      </Badge>
-                    </div>
-                    <p className="mt-1 font-mono text-xs text-text-secondary leading-5">
-                      Symuluj ekonomię sprzętową NVIDIA RTX 5090 (32GB VRAM). Porównaj Nemotron 3.5 30B vs Gemma 4 26B, dopasuj przepustowość tokenów, taryfy energii i zobacz empiryczne benchmarki Darkbloom.
-                    </p>
-                  </div>
-                </div>
-                <a
-                  href="/earn"
-                  className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-accent-brand px-4 py-2.5 text-xs font-semibold text-white hover:bg-accent-brand-hover transition-colors shadow-md"
-                >
-                  <Coins className="h-4 w-4" /> Open Earnings & Calculator <ArrowUpRight className="h-4 w-4" />
-                </a>
-              </div>
-            </Card>
+
 
             {/* ========================================================================= */}
             {/* SECTION 2: TECHNICAL SETUP, SECURITY ARCHITECTURE & INSTALLATION         */}
