@@ -44,18 +44,27 @@ const nextConfig = {
         ],
       },
       {
-        source: "/provider.tar.gz",
+        source: "/provider",
         headers: [
-          { key: "Content-Type", value: "application/gzip" },
-          { key: "Cache-Control", value: "public, s-maxage=3600, stale-while-revalidate=86400" },
+          { key: "Cache-Control", value: "no-store, max-age=0, must-revalidate" },
+          { key: "CDN-Cache-Control", value: "no-store" },
+          { key: "Cloudflare-CDN-Cache-Control", value: "no-store" },
         ],
       },
       {
-        source: "/provider-image.tar.gz",
+        source: "/docs",
         headers: [
-          { key: "Content-Type", value: "application/gzip" },
-          { key: "Cache-Control", value: "public, s-maxage=3600, stale-while-revalidate=86400" },
-          { key: "Content-Disposition", value: 'attachment; filename="provider-image.tar.gz"' },
+          { key: "Cache-Control", value: "no-store, max-age=0, must-revalidate" },
+          { key: "CDN-Cache-Control", value: "no-store" },
+          { key: "Cloudflare-CDN-Cache-Control", value: "no-store" },
+        ],
+      },
+      {
+        source: "/earn",
+        headers: [
+          { key: "Cache-Control", value: "no-store, max-age=0, must-revalidate" },
+          { key: "CDN-Cache-Control", value: "no-store" },
+          { key: "Cloudflare-CDN-Cache-Control", value: "no-store" },
         ],
       },
     ]
