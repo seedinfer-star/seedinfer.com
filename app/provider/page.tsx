@@ -2,6 +2,7 @@
 import { useState } from "react"
 import Sidebar from "@/components/sidebar"
 import Calculator from "@/components/calculator"
+import NodeLoginDashboard from "@/components/node-login-dashboard"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -24,6 +25,14 @@ import {
   FileText,
   Zap,
   Globe,
+  Fingerprint,
+  Lock,
+  Key,
+  Shield,
+  Layers,
+  CheckCircle,
+  ArrowUpRight,
+  Calculator as CalculatorIcon,
 } from "lucide-react"
 
 const ONE_LINER_RECOMMENDED = `curl -fsSL https://seedinfer.com/install.sh | bash`
@@ -43,7 +52,7 @@ function CopyButton({ text, label }: { text: string; label?: string }) {
   return (
     <button
       onClick={onCopy}
-      className="inline-flex items-center gap-1.5 rounded-lg border border-border-default bg-bg-tertiary px-2.5 py-1.5 font-mono text-[11px] text-text-secondary hover:bg-bg-hover hover:text-text-primary"
+      className="inline-flex items-center gap-1.5 rounded-lg border border-border-default bg-bg-tertiary px-2.5 py-1.5 font-mono text-[11px] text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors"
       title={label || "Copy"}
     >
       {copied ? <Check className="h-3.5 w-3.5 text-accent-green" /> : <Copy className="h-3.5 w-3.5" />}
@@ -82,6 +91,7 @@ export default function ProviderPage() {
     <div className="flex h-screen overflow-hidden bg-bg-primary">
       <Sidebar />
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        {/* Header */}
         <header className="flex h-[48px] shrink-0 items-center justify-between border-b border-border-dim bg-bg-secondary px-4">
           <div className="min-w-0">
             <h1 className="truncate text-[13px] font-semibold tracking-tight text-text-primary">Become a Provider</h1>
@@ -93,13 +103,13 @@ export default function ProviderPage() {
             <a
               href="/api/v1/providers"
               target="_blank"
-              className="hidden sm:inline-flex items-center gap-1.5 rounded-lg border border-border-default bg-bg-tertiary px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-bg-hover hover:text-text-primary"
+              className="hidden sm:inline-flex items-center gap-1.5 rounded-lg border border-border-default bg-bg-tertiary px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors"
             >
               <Activity className="h-3.5 w-3.5" /> /api/v1/providers
             </a>
             <a
               href="/earn"
-              className="inline-flex items-center gap-1.5 rounded-lg bg-accent-brand px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-brand-hover"
+              className="inline-flex items-center gap-1.5 rounded-lg bg-accent-brand px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-brand-hover transition-colors"
             >
               <Coins className="h-3.5 w-3.5" /> Earnings
             </a>
@@ -107,45 +117,52 @@ export default function ProviderPage() {
         </header>
 
         <main className="min-h-0 flex-1 overflow-y-auto bg-bg-primary">
-          <div className="mx-auto max-w-[1600px] space-y-6 p-4 sm:p-6">
-            {/* Hero */}
-            <Card className="overflow-hidden border border-accent-brand/20 bg-gradient-to-br from-accent-brand/10 via-bg-secondary to-bg-secondary">
-              <CardContent className="p-6">
-                <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+          <div className="mx-auto max-w-[1600px] space-y-5 p-4 sm:p-5">
+
+            {/* ========================================================================= */}
+            {/* SECTION 1: MARKETING, VALUE PROPOSITION & REVENUE CALCULATOR              */}
+            {/* ========================================================================= */}
+
+            {/* Hero Card */}
+            <Card className="overflow-hidden border border-accent-brand/20 bg-gradient-to-br from-accent-brand/10 via-bg-secondary to-bg-secondary shadow-md">
+              <CardContent className="p-5 sm:p-6">
+                <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
                   <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Badge variant="success" className="gap-1">
-                        <BadgeCheck className="h-3 w-3" /> Faza 0 · NVFP4
-                      </Badge>
-                      <Badge variant="outline" className="font-mono text-[10px]">
-                        seedinfer/nemotron-lightning-1m
-                      </Badge>
-                      <Badge variant="outline" className="font-mono text-[10px]">
-                        1M ctx · 2M KV
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <Badge variant="success" className="gap-1 font-mono text-[10px]">
+                        <BadgeCheck className="h-3 w-3" /> Flagship: Gemma 4 26B A4B
                       </Badge>
                       <Badge variant="outline" className="font-mono text-[10px] border-accent-brand/30 text-accent-brand">
-                        CUDA 13.3 · driver 580+
+                        Zero-Account Ed25519 Auth
+                      </Badge>
+                      <Badge variant="outline" className="font-mono text-[10px]">
+                        Hardware Fingerprint Lock
+                      </Badge>
+                      <Badge variant="outline" className="font-mono text-[10px]">
+                        CUDA 13.3 · Driver 580+
                       </Badge>
                       <Badge variant="outline" className="font-mono text-[10px] border-accent-green/30 text-accent-green">
                         Fair Monthly Waterfall Settlement
                       </Badge>
                     </div>
-                    <h2 className="mt-3 text-2xl font-semibold tracking-tight text-text-primary">
-                      Become a Provider — fairest settlement for GPU operators
+
+                    <h2 className="mt-2.5 text-2xl font-semibold tracking-tight text-text-primary sm:text-3xl">
+                      Become a Node Operator — High-Yield GPU Monetization
                     </h2>
-                    <p className="mt-2 max-w-2xl text-sm leading-5 text-text-secondary">
-                      Serve{" "}
-                      <code className="rounded bg-bg-tertiary px-1 font-mono text-xs">seedinfer/nemotron-lightning-1m</code>{" "}
-                      (NVIDIA Nemotron 3.5 Lightning 30B A3B NVFP4) on your RTX 5090 32GB (GB202 Blackwell).
-                      Fair monthly settlement model: <strong className="text-text-primary">$0.40/day standby coverage</strong> (for ≥50% uptime since joining) to cover electricity + <strong className="text-text-primary">network surplus profit share from processed traffic</strong>. Automated USDC payouts on Base network (min. $1.00 USD / month).
+                    
+                    <p className="mt-2 max-w-3xl text-xs sm:text-sm leading-5 text-text-secondary">
+                      Serve flagship <code className="rounded bg-bg-tertiary px-1.5 py-0.5 font-mono text-xs text-text-primary">google/gemma-4-26b-a4b-nvfp4</code> & <code className="rounded bg-bg-tertiary px-1.5 py-0.5 font-mono text-xs text-text-primary">seedinfer/nemotron-lightning-1m</code> models on your RTX 5090 32GB rig. 
+                      No account registration needed — automated Ed25519 key generation and hardware-bound identity protection in seconds.
+                      Fair monthly settlement model: <strong className="text-text-primary">$0.40/day standby coverage</strong> (for &ge;50% uptime since joining) to cover electricity + <strong className="text-text-primary">network surplus profit share from processed traffic</strong>. Automated USDC payouts on Base network.
                     </p>
-                    <div className="mt-4 grid gap-2 sm:grid-cols-3">
+
+                    <div className="mt-4 grid gap-2.5 sm:grid-cols-3">
                       <div className="rounded-xl border border-border-dim bg-bg-tertiary/60 p-3">
                         <div className="font-mono text-[10px] uppercase tracking-wide text-text-tertiary flex items-center gap-1">
                           <Clock className="h-3 w-3 text-accent-brand" /> Standby Electricity Cover
                         </div>
                         <div className="mt-1 font-mono text-sm font-semibold text-text-primary">$0.40 / day</div>
-                        <div className="font-mono text-[10px] text-text-tertiary">$0.01667/h (after completed hour, uptime ≥50%)</div>
+                        <div className="font-mono text-[10px] text-text-tertiary">$0.01667/h (after completed hour, uptime &ge;50%)</div>
                       </div>
                       <div className="rounded-xl border border-border-dim bg-bg-tertiary/60 p-3">
                         <div className="font-mono text-[10px] uppercase tracking-wide text-text-tertiary flex items-center gap-1">
@@ -156,85 +173,72 @@ export default function ProviderPage() {
                       </div>
                       <div className="rounded-xl border border-border-dim bg-bg-tertiary/60 p-3">
                         <div className="font-mono text-[10px] uppercase tracking-wide text-text-tertiary flex items-center gap-1">
-                          <Cpu className="h-3 w-3" /> Context & Hardware
+                          <Cpu className="h-3 w-3 text-accent-brand" /> Context & Hardware
                         </div>
                         <div className="mt-1 font-mono text-sm font-semibold text-text-primary">1M · RTX 5090 32GB</div>
                         <div className="font-mono text-[10px] text-text-tertiary">NVFP4 W4A16+FP8 KV ~22-28GB VRAM</div>
                       </div>
                     </div>
+
                     <div className="mt-4 flex flex-wrap items-center gap-2">
                       <a
                         href="#install"
-                        className="inline-flex items-center gap-2 rounded-xl bg-accent-brand px-4 py-2 text-sm font-medium text-white hover:bg-accent-brand-hover"
+                        className="inline-flex items-center gap-2 rounded-xl bg-accent-brand px-4 py-2 text-xs font-medium text-white hover:bg-accent-brand-hover transition-colors"
                       >
                         <Terminal className="h-4 w-4" /> One-liner install
                       </a>
                       <a
                         href="/provider.tar.gz"
-                        className="inline-flex items-center gap-2 rounded-xl border border-border-default bg-bg-tertiary px-4 py-2 text-sm font-medium text-text-primary hover:bg-bg-hover"
+                        className="inline-flex items-center gap-2 rounded-xl border border-border-default bg-bg-tertiary px-4 py-2 text-xs font-medium text-text-primary hover:bg-bg-hover transition-colors"
                       >
                         <Download className="h-4 w-4" /> provider.tar.gz
                       </a>
                       <a
                         href="https://seedinfer.com/install.sh"
                         target="_blank"
-                        className="inline-flex items-center gap-1.5 font-mono text-xs text-text-tertiary hover:text-text-primary"
+                        className="inline-flex items-center gap-1 font-mono text-xs text-text-tertiary hover:text-text-primary transition-colors"
                       >
                         https://seedinfer.com/install.sh <ExternalLink className="h-3 w-3" />
                       </a>
                     </div>
                   </div>
 
-                  <Card className="w-full shrink-0 border border-border-dim bg-bg-primary/60 lg:w-[380px]">
-                    <CardHeader className="pb-2">
+                  {/* Quick Requirements Summary */}
+                  <Card className="w-full shrink-0 border border-border-dim bg-bg-primary/70 lg:w-[360px]">
+                    <CardHeader className="pb-2 pt-3 px-3.5">
                       <CardTitle className="flex items-center gap-2 text-xs font-mono uppercase tracking-wide text-text-tertiary">
-                        <ShieldCheck className="h-3.5 w-3.5" /> Requirements
+                        <ShieldCheck className="h-3 w-3" /> Minimum Node Requirements
                       </CardTitle>
                     </CardHeader>
-                    <CardContent className="space-y-2 pt-0">
-                      <div className="space-y-1.5 font-mono text-xs">
-                        <div className="flex items-center justify-between rounded-lg bg-bg-tertiary px-2.5 py-2">
+                    <CardContent className="space-y-1.5 px-3.5 pb-3">
+                      <div className="grid grid-cols-2 gap-1.5 font-mono text-[11px]">
+                        <div className="flex items-center justify-between rounded-lg bg-bg-tertiary px-2 py-1.5">
                           <span className="text-text-tertiary">OS</span>
-                          <span className="font-medium text-text-primary">Ubuntu 24.04+ (noble)</span>
+                          <span className="font-semibold text-text-primary">Ubuntu 24.04+</span>
                         </div>
-                        <div className="flex items-center justify-between rounded-lg bg-bg-tertiary px-2.5 py-2">
+                        <div className="flex items-center justify-between rounded-lg bg-bg-tertiary px-2 py-1.5">
                           <span className="text-text-tertiary">Driver</span>
-                          <span className="font-medium text-text-primary">580+ (CUDA 13.3+)</span>
+                          <span className="font-semibold text-text-primary">580+ (cu13.3)</span>
                         </div>
-                        <div className="flex items-center justify-between rounded-lg bg-bg-tertiary px-2.5 py-2">
+                        <div className="flex items-center justify-between rounded-lg bg-bg-tertiary px-2 py-1.5">
                           <span className="text-text-tertiary">GPU</span>
-                          <span className="font-medium text-text-primary">RTX 5090 32GB min</span>
+                          <span className="font-semibold text-text-primary">RTX 5090</span>
                         </div>
-                        <div className="flex items-center justify-between rounded-lg bg-bg-tertiary px-2.5 py-2">
-                          <span className="text-text-tertiary">VRAM min</span>
-                          <span className="font-medium text-text-primary">32GB (16 hard min)</span>
+                        <div className="flex items-center justify-between rounded-lg bg-bg-tertiary px-2 py-1.5">
+                          <span className="text-text-tertiary">VRAM</span>
+                          <span className="font-semibold text-text-primary">32GB (16 min)</span>
                         </div>
-                        <div className="flex items-center justify-between rounded-lg bg-bg-tertiary px-2.5 py-2">
+                        <div className="flex items-center justify-between rounded-lg bg-bg-tertiary px-2 py-1.5">
                           <span className="text-text-tertiary">Docker</span>
-                          <span className="font-medium text-text-primary">24+ + nvidia-ctk</span>
+                          <span className="font-semibold text-text-primary">24+ + nvidia-ctk</span>
                         </div>
-                        <div className="flex items-center justify-between rounded-lg bg-bg-tertiary px-2.5 py-2">
-                          <span className="text-text-tertiary">HF cache</span>
-                          <span className="font-medium text-text-primary">50GB+ (provider ~60GB with model)</span>
-                        </div>
-                        <div className="flex items-center justify-between rounded-lg bg-bg-tertiary px-2.5 py-2">
-                          <span className="text-text-tertiary">Free space</span>
-                          <span className="font-medium text-text-primary">60GB+ (df -h)</span>
-                        </div>
-                        <div className="flex items-center justify-between rounded-lg bg-bg-tertiary px-2.5 py-2">
-                          <span className="text-text-tertiary">Network</span>
-                          <span className="font-medium text-text-primary">UDP 41641</span>
-                        </div>
-                        <div className="flex items-center justify-between rounded-lg bg-bg-tertiary px-2.5 py-2">
-                          <span className="text-text-tertiary">Ports</span>
-                          <span className="font-medium text-text-primary">47900:8000 + 47901:3001</span>
+                        <div className="flex items-center justify-between rounded-lg bg-bg-tertiary px-2 py-1.5">
+                          <span className="text-text-tertiary">Disk</span>
+                          <span className="font-semibold text-text-primary">60GB+ free</span>
                         </div>
                       </div>
-                      <div className="rounded-lg border border-dashed border-border-default bg-bg-secondary p-2.5 font-mono text-[11px] leading-3 text-text-secondary">
-                        tailscale + nvidia-container-toolkit are installed automatically by <code className="rounded bg-bg-tertiary px-1">install.sh</code> if missing. Host ports 47900:8000 + 47901:3001 can be overridden via env <code className="rounded bg-bg-tertiary px-1">VLLM_PORT/AGENT_PORT</code>.
-                      </div>
-                      <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 p-2.5 font-mono text-[11px] leading-3 text-text-secondary">
-                        Minimum 60GB free (vLLM ~28.8GB + NVFP4 ~30GB + cache). Check <code className="rounded bg-bg-tertiary px-1">df -h</code> · cleanup: <code className="rounded bg-bg-tertiary px-1">docker system prune -a</code> · free ports 47900/47901 (overridable via env VLLM_PORT/AGENT_PORT) — details in <a href="/docs" className="text-accent-brand underline">/docs</a>.
+                      <div className="rounded-lg border border-dashed border-border-default bg-bg-secondary p-2 font-mono text-[10px] leading-3.5 text-text-secondary">
+                        Ports: 47900 (vLLM) + 47901 (Agent). Tailscale container runs isolated (no conflict with personal host tailnet).
                       </div>
                     </CardContent>
                   </Card>
@@ -242,35 +246,161 @@ export default function ProviderPage() {
               </CardContent>
             </Card>
 
-            {/* Provider Revenue & Net-Profit Calculator */}
-            <Calculator />
+            {/* Zero-Account Node Access Dashboard (Inspect node stats with pubkey) */}
+            <NodeLoginDashboard />
 
-            {/* One-liner */}
-            <Card id="install" className="border border-border-dim bg-bg-secondary">
+            {/* Provider Revenue & Net-Profit Calculator Banner Link */}
+            <Card className="overflow-hidden border border-accent-brand/30 bg-gradient-to-r from-accent-brand/10 via-bg-secondary to-bg-secondary p-5 shadow-sm">
+              <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                <div className="flex items-start gap-3 min-w-0 flex-1">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent-brand/15 border border-accent-brand/30 text-accent-brand">
+                    <CalculatorIcon className="h-5 w-5" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="text-sm font-bold text-text-primary">
+                        Provider Revenue & Net-Profit Calculator
+                      </h3>
+                      <Badge variant="outline" className="font-mono text-[10px] text-accent-green border-accent-green/30 bg-accent-green/10">
+                        Network Median: ~$120/mo Net
+                      </Badge>
+                    </div>
+                    <p className="mt-1 font-mono text-xs text-text-secondary leading-5">
+                      Symuluj ekonomię sprzętową NVIDIA RTX 5090 (32GB VRAM). Porównaj Nemotron 3.5 30B vs Gemma 4 26B, dopasuj przepustowość tokenów, taryfy energii i zobacz empiryczne benchmarki Darkbloom.
+                    </p>
+                  </div>
+                </div>
+                <a
+                  href="/calculator"
+                  className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-accent-brand px-4 py-2.5 text-xs font-semibold text-white hover:bg-accent-brand-hover transition-colors shadow-md"
+                >
+                  <CalculatorIcon className="h-4 w-4" /> Open Dedicated Calculator <ArrowUpRight className="h-4 w-4" />
+                </a>
+              </div>
+            </Card>
+
+            {/* ========================================================================= */}
+            {/* SECTION 2: TECHNICAL SETUP, SECURITY ARCHITECTURE & INSTALLATION         */}
+            {/* ========================================================================= */}
+
+            {/* Technical Section Divider Banner */}
+            <div className="relative pt-6 pb-2">
+              <div className="absolute inset-0 flex items-center" aria-hidden="true">
+                <div className="w-full border-t border-border-dim" />
+              </div>
+              <div className="relative flex justify-center">
+                <span className="inline-flex items-center gap-2 rounded-full border border-accent-brand/30 bg-bg-secondary px-4 py-1.5 font-mono text-xs font-bold text-accent-brand shadow-sm">
+                  <Terminal className="h-4 w-4" /> Technical Setup & Node Onboarding Guide
+                </span>
+              </div>
+            </div>
+
+            {/* REQUIRED DEDICATED CARD: Zero-Account Key Architecture & Hardware Fingerprint Lock */}
+            <Card className="border border-border-dim bg-bg-secondary shadow-sm">
               <CardHeader className="pb-3">
-                <CardTitle className="flex items-center gap-2 text-[13px]">
-                  <Terminal className="h-4 w-4 text-accent-brand" /> One-liner — terminal Linux
-                  <Badge variant="outline" className="ml-2 font-mono text-[10px]">
-                    curl | bash
+                <CardTitle className="flex items-center justify-between text-sm font-semibold text-text-primary">
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck className="h-4.5 w-4.5 text-accent-brand" /> Zero-Account Architecture: Key Pair & Hardware Lock
+                  </div>
+                  <Badge variant="outline" className="font-mono text-[10px] border-accent-brand/30 text-accent-brand">
+                    Ed25519 + SHA-256 Hardware Fingerprint
                   </Badge>
                 </CardTitle>
-                <p className="font-mono text-xs text-text-tertiary">
-                  One command: <code className="rounded bg-bg-tertiary px-1">curl -fsSL https://seedinfer.com/install.sh | bash</code> — auto-fetches authkey from{" "}
-                  <code className="rounded bg-bg-tertiary px-1">/api/v1/auth/request</code> if --authkey is missing, nvidia-smi check (47900/47901 free, VLLM_PORT/AGENT_PORT) → Docker + nvidia-ctk + tailscale →{" "}
-                  <code className="rounded bg-bg-tertiary px-1">tailscale up</code> → prebuild{" "}
-                  <code className="rounded bg-bg-tertiary px-1">docker pull ghcr.io/seedinfer/provider:cuda13.3-nvfp4</code> ||{" "}
-                  <code className="rounded bg-bg-tertiary px-1">curl https://seedinfer.com/provider-image.tar.gz | docker load</code> (Pi) ||{" "}
-                  <code className="rounded bg-bg-tertiary px-1">docker compose up</code> → heartbeat → verified.
+                <p className="font-mono text-xs text-text-tertiary leading-4">
+                  Jak działa bezhasłowy system identyfikacji węzła SeedInfer bez rejestracji konta, podawania maila czy haseł:
                 </p>
               </CardHeader>
               <CardContent className="space-y-4">
-                {/* Authkey generation */}
+                <div className="grid gap-3.5 md:grid-cols-3">
+                  
+                  {/* Klucz Prywatny */}
+                  <div className="rounded-xl border border-border-dim bg-bg-primary p-4 space-y-2">
+                    <div className="flex items-center gap-2 font-mono text-xs font-bold text-accent-brand">
+                      <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-accent-brand/10 border border-accent-brand/20">
+                        <Key className="h-4 w-4 text-accent-brand" />
+                      </div>
+                      1. Klucz Prywatny (Private Key)
+                    </div>
+                    <div className="font-mono text-[11px] text-text-tertiary">
+                      Plik lokalny: <code className="rounded bg-bg-tertiary px-1 text-text-primary">/opt/seedinfer-provider/seedinfer.key</code>
+                    </div>
+                    <p className="font-mono text-xs leading-4 text-text-secondary">
+                      Generowany automatycznie w algorytmie <strong className="text-text-primary">Ed25519</strong> przy pierwszym starcie kontenera. 
+                      <span className="text-accent-red font-semibold"> Nigdy nie opuszcza Twojej maszyny</span> i nie jest przesyłany przez sieć. Służy do cyfrowego podpisywania heartbeatów oraz potwierdzania przetworzonych tokenów (Proof of Work).
+                    </p>
+                    <div className="rounded-lg bg-bg-tertiary p-2 font-mono text-[10px] text-text-tertiary">
+                      Perms: 600 (-rw-------) · Nie udostępniaj nikomu pliku seedinfer.key
+                    </div>
+                  </div>
+
+                  {/* Klucz Publiczny */}
+                  <div className="rounded-xl border border-border-dim bg-bg-primary p-4 space-y-2">
+                    <div className="flex items-center gap-2 font-mono text-xs font-bold text-accent-green">
+                      <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-accent-green/10 border border-accent-green/20">
+                        <Globe className="h-4 w-4 text-accent-green" />
+                      </div>
+                      2. Klucz Publiczny (Public Key)
+                    </div>
+                    <div className="font-mono text-[11px] text-text-tertiary">
+                      Identyfikator: <code className="rounded bg-bg-tertiary px-1 text-text-primary">pubkey_ed25519_...</code>
+                    </div>
+                    <p className="font-mono text-xs leading-4 text-text-secondary">
+                      Jawny identyfikator węzła zgłaszany do SeedInfer Gateway (<code className="rounded bg-bg-tertiary px-1 text-text-primary">/api/v1/providers</code>). 
+                      Działa jako Twój anonimowy adres rozliczeniowy Zero-Account. Pozwala sprawdzać status węzła w panelu, mierzyć TTFT oraz automatycznie kierować wypłaty USDC na sieci Base bez podawania danych osobowych.
+                    </p>
+                    <div className="rounded-lg bg-bg-tertiary p-2 font-mono text-[10px] text-text-tertiary">
+                      Rejestracja: Auto-register w gateway przy pierwszym sygnale heartbeat
+                    </div>
+                  </div>
+
+                  {/* Odcisk Sprzętowy */}
+                  <div className="rounded-xl border border-border-dim bg-bg-primary p-4 space-y-2">
+                    <div className="flex items-center gap-2 font-mono text-xs font-bold text-purple-400">
+                      <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-purple-500/10 border border-purple-500/20">
+                        <Fingerprint className="h-4 w-4 text-purple-400" />
+                      </div>
+                      3. Odcisk Sprzętowy (Hardware Lock)
+                    </div>
+                    <div className="font-mono text-[11px] text-text-tertiary">
+                      Sygnatura: <code className="rounded bg-bg-tertiary px-1 text-text-primary">SHA-256(GPU_UUID + PCIe_Bus + machine-id)</code>
+                    </div>
+                    <p className="font-mono text-xs leading-4 text-text-secondary">
+                      Unikalna sygnatura sprzętowa wyliczana przez agenta na podstawie fizycznego układu GPU (<code className="rounded bg-bg-tertiary px-1 text-text-primary">nvidia-smi</code>) i identyfikatora płyty głównej. 
+                      Trwale wiąże Twój klucz z fizycznym rigiem, uniemożliwiając klonowanie tożsamości węzła na innych maszynach. Niezgodność sprzętu natychmiast blokuje ruch (<code className="text-accent-red">HARDWARE MISMATCH</code>).
+                    </p>
+                    <div className="rounded-lg bg-bg-tertiary p-2 font-mono text-[10px] text-text-tertiary">
+                      Ochrona: Wykrywanie kopii VM / sklonowanych kluczy prywatnych
+                    </div>
+                  </div>
+
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* One-liner Installation & Authkey Invite Generator */}
+            <Card id="install" className="border border-border-dim bg-bg-secondary shadow-sm">
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center justify-between text-[13px]">
+                  <div className="flex items-center gap-2">
+                    <Terminal className="h-4 w-4 text-accent-brand" /> One-liner Installation — Terminal Linux
+                    <Badge variant="outline" className="font-mono text-[10px]">
+                      curl | bash
+                    </Badge>
+                  </div>
+                </CardTitle>
+                <p className="font-mono text-xs text-text-tertiary">
+                  Jeden polecenie w konsoli Linux (Ubuntu 24.04+): <code className="rounded bg-bg-tertiary px-1 text-text-primary">curl -fsSL https://seedinfer.com/install.sh | bash</code> — automatyczne pobranie authkey, weryfikacja nvidia-smi (porty 47900/47901), instalacja Docker + nvidia-ctk + kontenerowego Tailscale oraz uruchomienie silnika inference.
+                </p>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                
+                {/* Authkey invite generator box */}
                 <div className="rounded-xl border border-border-dim bg-bg-primary p-4">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div className="flex items-center gap-2">
                       <KeyRound className="h-4 w-4 text-accent-brand" />
-                      <span className="text-sm font-medium text-text-primary">Authkey</span>
-                      <span className="font-mono text-xs text-text-tertiary">tag:provider · 24h · reusable</span>
+                      <span className="text-sm font-medium text-text-primary">Invite Authkey</span>
+                      <span className="font-mono text-xs text-text-tertiary">tag:provider · 24h ważności</span>
                     </div>
                     <div className="flex items-center gap-2">
                       <Button
@@ -278,10 +408,10 @@ export default function ProviderPage() {
                         size="sm"
                         onClick={() => generateKey()}
                         disabled={authLoading}
-                        className="gap-1.5"
+                        className="gap-1.5 font-mono text-xs"
                       >
                         {authLoading ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <KeyRound className="h-3.5 w-3.5" />}
-                        Generate invite
+                        Generate invite key
                       </Button>
                     </div>
                   </div>
@@ -290,103 +420,74 @@ export default function ProviderPage() {
                     <div className="mt-3 rounded-lg border border-accent-green/20 bg-accent-green/10 p-3">
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0 flex-1">
-                          <div className="font-mono text-xs font-medium text-accent-green">Authkey ready</div>
+                          <div className="font-mono text-xs font-semibold text-accent-green">Authkey ready</div>
                           <div className="mt-1 break-all rounded bg-bg-secondary p-2 font-mono text-xs text-text-primary">
                             {authKey}
                           </div>
                           {authMeta && (
                             <div className="mt-1 font-mono text-[11px] text-text-tertiary">
-                              {authMeta.expires} · {authMeta.login_server} ·{" "}
-                              {authMeta.created_at?.slice(0, 19).replace("T", " ")} · Key valid for 24h, one-time use
+                              {authMeta.expires} · {authMeta.login_server} · Key valid for 24h, one-time use
                             </div>
                           )}
                         </div>
                         <CopyButton text={authKey} label="Copy key" />
                       </div>
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        <a
-                          href="https://dashboard.seedinfer.com"
-                          target="_blank"
-                          className="inline-flex items-center gap-1 font-mono text-xs text-accent-brand hover:underline"
-                        >
-                          dashboard.seedinfer.com <ExternalLink className="h-3 w-3" />
-                        </a>
-                        <span className="font-mono text-xs text-text-tertiary">— contact us for a production key</span>
-                      </div>
                     </div>
                   )}
                   {!authKey && (
-                    <div className="mt-3 rounded-lg border border-dashed border-border-default bg-bg-secondary p-3 font-mono text-xs text-text-secondary">
-                      Click <strong className="text-text-primary">Generate invite</strong> to create a key — valid for 24h, one-time use (tag:provider). Copy it into the one-liner below. Details in <a href="/docs" className="text-accent-brand underline">/docs</a>.
+                    <div className="mt-3 rounded-lg border border-dashed border-border-default bg-bg-secondary p-2.5 font-mono text-xs text-text-secondary">
+                      Kliknij <strong className="text-text-primary">Generate invite key</strong> aby wygenerować klucz instalacyjny (24h ważności, jednorazowy). Skrypt <code className="rounded bg-bg-tertiary px-1 text-text-primary">install.sh</code> domyślnie pobierze klucz automatycznie jeśli uruchomiony bez parametrów.
                     </div>
                   )}
                   {error && <div className="mt-2 font-mono text-xs text-accent-red">{error}</div>}
                 </div>
 
-                {/* Command blocks — jedna komenda polecana */}
+                {/* Main recommended installation command */}
                 <div className="space-y-3">
-                    <div className="rounded-xl border border-accent-brand/20 bg-accent-brand/5 p-3">
-                      <div className="mb-1.5 flex items-center justify-between">
-                        <span className="font-mono text-[11px] uppercase tracking-wide text-accent-brand flex items-center gap-1">
-                          <Zap className="h-3 w-3" /> Recommended — one command (auto-authkey + prebuild)
-                        </span>
-                        <CopyButton text={ONE_LINER_RECOMMENDED} />
-                      </div>
-                      <pre className="overflow-x-auto rounded-xl border border-accent-brand/20 bg-bg-primary p-3 font-mono text-xs leading-4 text-text-primary">
-                        {ONE_LINER_RECOMMENDED}
-                      </pre>
-                      <p className="mt-2 font-mono text-[11px] leading-3 text-text-secondary">
-                        No parameters — <code className="rounded bg-bg-tertiary px-1">install.sh</code> automatically fetches an authkey from{" "}
-                        <code className="rounded bg-bg-tertiary px-1">https://seedinfer.com/api/v1/auth/request</code> (tag:provider, 24h) and tries{" "}
-                        <code className="rounded bg-bg-tertiary px-1">docker pull ghcr.io/seedinfer/provider:cuda13.3-nvfp4</code> → fallback{" "}
-                        <code className="rounded bg-bg-tertiary px-1">curl https://seedinfer.com/provider-image.tar.gz | docker load</code> (Pi) → fallback{" "}
-                        <code className="rounded bg-bg-tertiary px-1">docker compose build</code> (~28GB). Orange Pi 4 Pro does not build CUDA — it only hosts the tar/registry.
-                      </p>
+                  <div className="rounded-xl border border-accent-brand/30 bg-accent-brand/5 p-3.5">
+                    <div className="mb-2 flex items-center justify-between">
+                      <span className="font-mono text-[11px] uppercase tracking-wide text-accent-brand flex items-center gap-1 font-bold">
+                        <Zap className="h-3.5 w-3.5" /> Polecane — jedna komenda (auto-authkey + prebuild)
+                      </span>
+                      <CopyButton text={ONE_LINER_RECOMMENDED} />
+                    </div>
+                    <pre className="overflow-x-auto rounded-xl border border-accent-brand/20 bg-bg-primary p-3 font-mono text-xs leading-4 text-text-primary">
+                      {ONE_LINER_RECOMMENDED}
+                    </pre>
+                    <p className="mt-2 font-mono text-[11px] leading-4 text-text-secondary">
+                      Bez dodatkowych parametrów — <code className="rounded bg-bg-tertiary px-1 text-text-primary">install.sh</code> automatycznie pobiera authkey z bramki{" "}
+                      <code className="rounded bg-bg-tertiary px-1 text-text-primary">https://seedinfer.com/api/v1/auth/request</code> (tag:provider, 24h) i wykonuje szybki pull gotowej obrazu{" "}
+                      <code className="rounded bg-bg-tertiary px-1 text-text-primary">docker pull ghcr.io/seedinfer/provider:cuda13.3-nvfp4</code> (fallback: docker load / build).
+                    </p>
                     <div className="mt-2 flex flex-wrap gap-2 font-mono text-[11px]">
-                      <span className="rounded bg-bg-tertiary px-2 py-1 text-text-tertiary">Gateway https://seedinfer.com</span>
-                      <span className="rounded bg-bg-tertiary px-2 py-1 text-text-tertiary">Tailnet https://tailnet.seedinfer.com</span>
-                      <span className="rounded bg-bg-tertiary px-2 py-1 text-text-tertiary">Prebuild ghcr.io → Pi tar → build</span>
+                      <span className="rounded bg-bg-tertiary px-2 py-0.5 text-text-tertiary">Gateway https://seedinfer.com</span>
+                      <span className="rounded bg-bg-tertiary px-2 py-0.5 text-text-tertiary">Tailnet https://tailnet.seedinfer.com</span>
+                      <span className="rounded bg-bg-tertiary px-2 py-0.5 text-text-tertiary">Prebuild ghcr.io → docker compose</span>
                     </div>
                   </div>
 
-                    <details className="rounded-xl border border-border-dim bg-bg-primary">
-                      <summary className="cursor-pointer list-none px-4 py-3 font-mono text-xs font-medium text-text-primary flex items-center justify-between">
-                        <span className="flex items-center gap-2"><Terminal className="h-3.5 w-3.5 text-text-tertiary" /> Advanced — custom authkey / model / gateway</span>
-                        <span className="font-mono text-[10px] text-text-tertiary">expand</span>
-                      </summary>
-                    <div className="space-y-3 border-t border-border-dim p-3">
+                  {/* Advanced Custom Installation Commands */}
+                  <details className="rounded-xl border border-border-dim bg-bg-primary">
+                    <summary className="cursor-pointer list-none px-4 py-3 font-mono text-xs font-semibold text-text-primary flex items-center justify-between hover:bg-bg-tertiary/40 transition-colors">
+                      <span className="flex items-center gap-2"><Terminal className="h-3.5 w-3.5 text-accent-brand" /> Zaawansowane — własny authkey / model / gateway / env</span>
+                      <span className="font-mono text-[10px] text-text-tertiary border border-border-dim rounded px-2 py-0.5">Rozwiń</span>
+                    </summary>
+                    <div className="space-y-3 border-t border-border-dim p-3.5">
                       <div>
                         <div className="mb-1.5 flex items-center justify-between">
-                          <span className="font-mono text-[11px] uppercase tracking-wide text-text-tertiary">
-                            1 · With key from Generate invite
+                          <span className="font-mono text-[11px] uppercase tracking-wide text-text-tertiary font-medium">
+                            1 · Z ręcznym wygenerowanym kluczem (--authkey)
                           </span>
                           <CopyButton text={oneLinerWithKey} />
                         </div>
                         <pre className="overflow-x-auto rounded-xl border border-border-dim bg-bg-secondary p-3 font-mono text-xs leading-4 text-text-primary">
                           {oneLinerWithKey}
                         </pre>
-                        <p className="mt-1 font-mono text-[11px] text-text-tertiary">
-                          Use the key from Generate invite above — backward compatible. Same effect as recommended, but with an explicit --authkey.
-                        </p>
                       </div>
                       <div>
                         <div className="mb-1.5 flex items-center justify-between">
-                          <span className="font-mono text-[11px] uppercase tracking-wide text-text-tertiary">
-                            2 · Auto-fetch key (jq) — scripts
-                          </span>
-                          <CopyButton text={ONE_LINER_AUTO} />
-                        </div>
-                        <pre className="overflow-x-auto rounded-xl border border-border-dim bg-bg-secondary p-3 font-mono text-xs leading-4 text-text-secondary">
-                          {ONE_LINER_AUTO}
-                        </pre>
-                        <p className="mt-1 font-mono text-[11px] text-text-tertiary">
-                          Manual auto-fetch (now default in <code className="rounded bg-bg-tertiary px-1">install.sh</code> — you don&apos;t need to pass jq).
-                        </p>
-                      </div>
-                      <div>
-                        <div className="mb-1.5 flex items-center justify-between">
-                          <span className="font-mono text-[11px] uppercase tracking-wide text-text-tertiary">
-                            3 · Full options + env prebuild
+                          <span className="font-mono text-[11px] uppercase tracking-wide text-text-tertiary font-medium">
+                            2 · Pełna kastomizacja parametrów
                           </span>
                           <CopyButton text={ONE_LINER_CUSTOM} />
                         </div>
@@ -394,236 +495,237 @@ export default function ProviderPage() {
                           {ONE_LINER_CUSTOM}
                         </pre>
                         <p className="mt-1 font-mono text-[11px] text-text-tertiary">
-                          Custom model/gateway/hostname. ENV override:{" "}
-                          <code className="rounded bg-bg-tertiary px-1">SEEDINFER_PREBUILD_IMAGE=ghcr.io/seedinfer/provider:cuda13.3-nvfp4</code>{" "}
-                          <code className="rounded bg-bg-tertiary px-1">SEEDINFER_PREBUILD_URL=https://seedinfer.com/provider-image.tar.gz</code>{" "}
-                          <code className="rounded bg-bg-tertiary px-1">SEEDINFER_SKIP_PREBUILD=1</code> wymusza build.
+                          Override zmiennych ENV: <code className="rounded bg-bg-tertiary px-1 text-text-primary">SEEDINFER_PREBUILD_IMAGE=ghcr.io/...</code> · <code className="rounded bg-bg-tertiary px-1 text-text-primary">VLLM_PORT=47900</code> · <code className="rounded bg-bg-tertiary px-1 text-text-primary">AGENT_PORT=47901</code>
                         </p>
                       </div>
                     </div>
                   </details>
                 </div>
-
-                <div className="flex flex-wrap gap-2">
-                  <a
-                    href="/install.sh"
-                    className="inline-flex items-center gap-1.5 font-mono text-xs text-accent-brand hover:underline"
-                  >
-                    <FileText className="h-3.5 w-3.5" /> https://seedinfer.com/install.sh
-                  </a>
-                  <span className="font-mono text-xs text-text-tertiary">·</span>
-                  <a
-                    href="/api/install"
-                    className="inline-flex items-center gap-1.5 font-mono text-xs text-text-tertiary hover:text-text-primary"
-                  >
-                    /api/install alias
-                  </a>
-                  <span className="font-mono text-xs text-text-tertiary">·</span>
-                  <a href="/api/v1/auth/request" className="inline-flex items-center gap-1.5 font-mono text-xs text-text-tertiary hover:text-text-primary">
-                    /api/v1/auth/request
-                  </a>
-                  <span className="font-mono text-xs text-text-tertiary">·</span>
-                  <span className="inline-flex items-center gap-1 font-mono text-xs text-text-tertiary">
-                    <Globe className="h-3 w-3" /> dashboard.seedinfer.com
-                  </span>
-                </div>
               </CardContent>
             </Card>
 
-            {/* Steps */}
-            <Card className="border border-border-dim bg-bg-secondary">
+            {/* Step-by-Step Onboarding Pipeline */}
+            <Card className="border border-border-dim bg-bg-secondary shadow-sm">
               <CardHeader className="pb-3">
                 <CardTitle className="flex items-center gap-2 text-[13px]">
-                  <Clock className="h-4 w-4 text-accent-brand" /> Steps — from curl to fleet
+                  <Clock className="h-4 w-4 text-accent-brand" /> Kroki Instalacji — Od komendy curl do aktywnego węzła w sieci
                   <Badge variant="outline" className="ml-2 font-mono text-[10px]">
-                    ~5 min + 30GB download
+                    ~5 min + 30GB pobierania modelu
                   </Badge>
                 </CardTitle>
               </CardHeader>
               <CardContent>
                 <ol className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                  <li className="rounded-xl border border-border-dim bg-bg-primary p-4">
-                    <div className="flex h-7 w-7 items-center justify-center rounded-full bg-accent-brand text-xs font-bold text-white">
-                      1
+                  
+                  {/* Step 1 */}
+                  <li className="rounded-xl border border-border-dim bg-bg-primary p-4 flex flex-col justify-between">
+                    <div>
+                      <div className="flex h-7 w-7 items-center justify-center rounded-full bg-accent-brand text-xs font-bold text-white">
+                        1
+                      </div>
+                      <div className="mt-2 text-sm font-semibold text-text-primary">curl install.sh</div>
+                      <div className="mt-1 font-mono text-xs leading-4 text-text-secondary">
+                        Weryfikuje układ GPU (<code className="rounded bg-bg-tertiary px-1 text-text-primary">nvidia-smi</code> min 32GB VRAM), sterownik 580+ (CUDA 13.3), wolne porty 47900/47901 oraz automatycznie instaluje Docker, <code className="rounded bg-bg-tertiary px-1 text-text-primary">nvidia-container-toolkit</code> i Tailscale.
+                      </div>
                     </div>
-                    <div className="mt-2 text-sm font-medium text-text-primary">curl install.sh</div>
-                    <div className="mt-1 font-mono text-xs leading-4 text-text-secondary">
-                      <code className="rounded bg-bg-tertiary px-1">curl -fsSL https://seedinfer.com/install.sh | bash</code> (auto-authkey)
-                      <br />
-                      Auto-fetches authkey from <code className="rounded bg-bg-tertiary px-1">/api/v1/auth/request</code> if --authkey is missing, checks <code>nvidia-smi</code> (CUDA 13.3+, driver 580+, VRAM 32GB min), HF model, installs Docker +{" "}
-                      <code>nvidia-container-toolkit</code> + <code>tailscale</code> if missing.
-                    </div>
-                    <pre className="mt-2 rounded-lg bg-bg-tertiary p-2 font-mono text-[11px] text-text-tertiary">
-                      nvidia-smi VRAM OK (&gt;=32GB) HF OK driver 580+ authkey auto-fetched docker pull ghcr.io → Pi tar → build
+                    <pre className="mt-3 rounded-lg bg-bg-tertiary p-2 font-mono text-[10px] text-text-tertiary leading-3">
+                      nvidia-smi VRAM OK (&ge;32GB)
+                      HF OK driver 580+ CUDA 13.3
                     </pre>
                   </li>
-                  <li className="rounded-xl border border-border-dim bg-bg-primary p-4">
-                    <div className="flex h-7 w-7 items-center justify-center rounded-full bg-accent-brand text-xs font-bold text-white">
-                      2
+
+                  {/* Step 2 */}
+                  <li className="rounded-xl border border-border-dim bg-bg-primary p-4 flex flex-col justify-between">
+                    <div>
+                      <div className="flex h-7 w-7 items-center justify-center rounded-full bg-accent-brand text-xs font-bold text-white">
+                        2
+                      </div>
+                      <div className="mt-2 text-sm font-semibold text-text-primary">Izolowany Tailscale</div>
+                      <div className="mt-1 font-mono text-xs leading-4 text-text-secondary">
+                        <span className="inline-flex items-center rounded bg-accent-green/10 px-1.5 py-0.5 text-[10px] font-bold text-accent-green">Kontenerowy Mesh</span> — Jeśli Twój host używa prywatnego Tailscale (100.94.x.x), instalator tworzy niezależny kontener <code className="rounded bg-bg-tertiary px-1 text-text-primary">tailscale-seedinfer</code> (100.64.x.x). <strong>Nie rozłącza Twojej domowej sieci VPN!</strong>
+                      </div>
                     </div>
-                    <div className="mt-2 text-sm font-medium text-text-primary">tailscale (Container by default)</div>
-                    <div className="mt-1 font-mono text-xs leading-4 text-text-secondary">
-                      <span className="inline-flex items-center rounded bg-accent-green/10 px-1.5 py-0.5 text-[10px] font-medium text-accent-green">Default: Isolated Container</span> — if host is already connected to <code className="rounded bg-bg-tertiary px-1">tailscale.com</code> (100.94.x.x <code className="rounded bg-bg-tertiary px-1">tail*.ts.net</code>), <code className="rounded bg-bg-tertiary px-1">install.sh</code> automatically detects it (<code className="rounded bg-bg-tertiary px-1">tailscale status --json</code>) and launches <code className="rounded bg-bg-tertiary px-1">tailscale-seedinfer</code> as an isolated container (<code className="rounded bg-bg-tertiary px-1">docker run -d --name tailscale-seedinfer ...</code>). Coexistence: Host <code className="rounded bg-bg-tertiary px-1">100.94.x.x</code> (Personal Tailscale) + Container <code className="rounded bg-bg-tertiary px-1">100.64.x.x</code> (Headscale mesh) — will never disconnect your home tailnet. The provider agent uses the container interface.<br />
-                      <span className="text-text-tertiary">Compose Alternative:</span> <code className="rounded bg-bg-tertiary px-1">docker compose --profile tailscale up -d</code>. Opt-in host mode: <code className="rounded bg-bg-tertiary px-1">--force-host-tailscale</code> or <code className="rounded bg-bg-tertiary px-1">TAILSCALE_USE_CONTAINER=0</code>. Verification: <code className="rounded bg-bg-tertiary px-1">docker exec tailscale-seedinfer tailscale status</code> (container 100.64.x.x) + <code className="rounded bg-bg-tertiary px-1">tailscale status</code> (host 100.94.x.x intact).
-                    </div>
-                    <pre className="mt-2 rounded-lg bg-bg-tertiary p-2 font-mono text-[11px] text-text-tertiary">docker exec tailscale-seedinfer tailscale status  # kontener 100.64.x.x
-tailscale status  # host 100.94.x.x (nienaruszony)
-docker exec tailscale-seedinfer tailscale ip -4  # 100.64.x.x
-ping -c2 gateway.seedinfer.ts.net</pre>
-                  </li>
-                  <li className="rounded-xl border border-border-dim bg-bg-primary p-4">
-                    <div className="flex h-7 w-7 items-center justify-center rounded-full bg-accent-brand text-xs font-bold text-white">
-                      3
-                    </div>
-                    <div className="mt-2 text-sm font-medium text-text-primary">docker pull / load → up</div>
-                    <div className="mt-1 font-mono text-xs leading-4 text-text-secondary">
-                      Klonuje <code className="rounded bg-bg-tertiary px-1">provider/</code> do{" "}
-                      <code className="rounded bg-bg-tertiary px-1">/opt/seedinfer-provider</code>, tworzy <code>.env</code>{" "}
-                      (VLLM_MODEL=nvidia/...NVFP4), prebuild{" "}
-                      <code className="rounded bg-bg-tertiary px-1">docker pull ghcr.io/seedinfer/provider:cuda13.3-nvfp4</code> ||{" "}
-                      <code className="rounded bg-bg-tertiary px-1">curl https://seedinfer.com/provider-image.tar.gz | docker load</code> (Pi) ||{" "}
-                      <code className="rounded bg-bg-tertiary px-1">docker compose up -d --build</code> → vLLM auto-download ~30GB do <code>./models/cache</code>.
-                    </div>
-                    <pre className="mt-2 rounded-lg bg-bg-tertiary p-2 font-mono text-[11px] text-text-tertiary">
-                      docker pull ghcr.io/...:cuda13.3-nvfp4 || curl https://seedinfer.com/provider-image.tar.gz | docker load || docker compose up --build
+                    <pre className="mt-3 rounded-lg bg-bg-tertiary p-2 font-mono text-[10px] text-text-tertiary leading-3">
+                      Host: 100.94.x.x (Domowy Tailnet)
+                      Kontener: 100.64.x.x (Headscale Mesh)
                     </pre>
                   </li>
-                  <li className="rounded-xl border border-border-dim bg-bg-primary p-4">
-                    <div className="flex h-7 w-7 items-center justify-center rounded-full bg-accent-green text-xs font-bold text-white">
-                      4
+
+                  {/* Step 3 */}
+                  <li className="rounded-xl border border-border-dim bg-bg-primary p-4 flex flex-col justify-between">
+                    <div>
+                      <div className="flex h-7 w-7 items-center justify-center rounded-full bg-accent-brand text-xs font-bold text-white">
+                        3
+                      </div>
+                      <div className="mt-2 text-sm font-semibold text-text-primary">Docker Pull / Start Engine</div>
+                      <div className="mt-1 font-mono text-xs leading-4 text-text-secondary">
+                        Pobiera gotowy kontener <code className="rounded bg-bg-tertiary px-1 text-text-primary">ghcr.io/seedinfer/provider:cuda13.3-nvfp4</code> i rozpoczyna pobieranie wag modelu (~30GB NVFP4) bezpośrednio do lokalnego cache <code className="rounded bg-bg-tertiary px-1 text-text-primary">./models/cache</code>.
+                      </div>
                     </div>
-                    <div className="mt-2 text-sm font-medium text-text-primary">health → verified → fleet</div>
-                    <div className="mt-1 font-mono text-xs leading-4 text-text-secondary">
-                      <code className="rounded bg-bg-tertiary px-1">curl http://127.0.0.1:47901/health</code> +{" "}
-                      <code className="rounded bg-bg-tertiary px-1">/v1/models</code> → heartbeat co 30s do{" "}
-                      <code className="rounded bg-bg-tertiary px-1">/api/v1/providers/heartbeat</code> → pending → verifying →
-                      verified (fleet zielony, opacity 100).
-                    </div>
-                    <pre className="mt-2 rounded-lg bg-bg-tertiary p-2 font-mono text-[11px] text-text-tertiary">
-                      curl https://seedinfer.com/api/v1/providers | jq
+                    <pre className="mt-3 rounded-lg bg-bg-tertiary p-2 font-mono text-[10px] text-text-tertiary leading-3">
+                      docker compose up -d --build
+                      vLLM model weight cache ~30GB
                     </pre>
                   </li>
+
+                  {/* Step 4 */}
+                  <li className="rounded-xl border border-border-dim bg-bg-primary p-4 flex flex-col justify-between">
+                    <div>
+                      <div className="flex h-7 w-7 items-center justify-center rounded-full bg-accent-green text-xs font-bold text-white">
+                        4
+                      </div>
+                      <div className="mt-2 text-sm font-semibold text-text-primary">Health check & Fleet Join</div>
+                      <div className="mt-1 font-mono text-xs leading-4 text-text-secondary">
+                        Agent przesyła heartbeat co 30s z podpisem cyfrowym Ed25519. Po 2 poprawnych heartbeatach bramka automatycznie zmienia status z <code className="text-amber-400">verifying</code> na <code className="text-accent-green">verified</code>.
+                      </div>
+                    </div>
+                    <pre className="mt-3 rounded-lg bg-bg-tertiary p-2 font-mono text-[10px] text-text-tertiary leading-3">
+                      Status: pending &rarr; verifying &rarr; VERIFIED
+                      P2P routing aktywny (opacity 100)
+                    </pre>
+                  </li>
+
                 </ol>
-
-                <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                  <div className="rounded-xl border border-border-dim bg-bg-primary p-3">
-                    <div className="font-mono text-[10px] uppercase tracking-wide text-text-tertiary">Health check</div>
-                    <pre className="mt-1 overflow-x-auto rounded-lg bg-bg-tertiary p-2 font-mono text-[11px] text-text-secondary">
-                      {`curl -fsS http://127.0.0.1:47901/health | jq
-# {"status":"ok","provider_id":"...","vllm_health":{"status":"ok"},"gpu":{"count":1}}
-
-curl -fsS http://127.0.0.1:47900/v1/models | jq
-curl http://127.0.0.1:47901/v1/chat/completions \\
-  -H "Content-Type: application/json" \\
-  -d '{"model":"seedinfer/nemotron-lightning-1m","messages":[{"role":"user","content":"Hello"}],"max_tokens":32}'`}
-                    </pre>
-                  </div>
-                  <div className="rounded-xl border border-border-dim bg-bg-primary p-3">
-                    <div className="font-mono text-[10px] uppercase tracking-wide text-text-tertiary">Heartbeat + verify</div>
-                    <pre className="mt-1 overflow-x-auto rounded-lg bg-bg-tertiary p-2 font-mono text-[11px] text-text-secondary">
-                      {`# heartbeat co 30s (agent/main.py)
-POST https://seedinfer.com/api/v1/providers/heartbeat
-# payload Provider + gpu + host + vllm_health
-
-# auto-verify po 2 heartbeat (~60s)
-GET https://seedinfer.com/api/v1/providers
-# verification: pending -> verifying -> verified
-
-# manual verify
-curl -X POST https://seedinfer.com/api/v1/providers/verify \\
-  -H "Content-Type: application/json" \\
-  -d '{"provider_id":"provider-5090-xxx"}' | jq`}
-                    </pre>
-                  </div>
-                  <div className="rounded-xl border border-border-dim bg-bg-primary p-3">
-                    <div className="font-mono text-[10px] uppercase tracking-wide text-text-tertiary">Fleet UI</div>
-                    <div className="mt-1 font-mono text-xs leading-4 text-text-secondary">
-                      <code className="rounded bg-bg-tertiary px-1">/providers</code> — pending/verifying opacity 60, failed red, verified
-                      green (opacity 100) = official node.
-                      <br />
-                      <code className="rounded bg-bg-tertiary px-1">GET /api/v1/providers?verified=1</code> — verified only.
-                      <br />
-                      Pi gateway decides <code>verified</code> (not Headscale ACL).
-                    </div>
-                    <div className="mt-2 rounded-lg bg-bg-tertiary p-2 font-mono text-[11px] text-text-tertiary">
-                      Badge: pending 🟡 verif. 60% → verified 🟢 100% → failed 🔴
-                    </div>
-                  </div>
-                </div>
               </CardContent>
             </Card>
 
-            {/* Models NVFP4 */}
-            <Card className="border border-border-dim bg-bg-secondary">
+            {/* Download Assets & Console Verification Snippets */}
+            <Card className="border border-border-dim bg-bg-secondary shadow-sm">
               <CardHeader className="pb-3">
                 <CardTitle className="flex items-center gap-2 text-[13px]">
-                  <Cpu className="h-4 w-4 text-accent-brand" /> Models — NVFP4 plug-and-play (Phase 0)
+                  <Download className="h-4 w-4 text-accent-brand" /> Paczka Instalacyjna i Komendy Konsoli
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-3">
+              <CardContent className="space-y-4">
+                
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <a
+                    href="/provider.tar.gz"
+                    className="rounded-xl border border-accent-brand/20 bg-accent-brand/10 p-4 hover:bg-accent-brand/15 transition-colors"
+                  >
+                    <div className="flex items-center gap-2 font-semibold text-text-primary">
+                      <Download className="h-4 w-4 text-accent-brand" /> provider.tar.gz
+                    </div>
+                    <div className="mt-1 font-mono text-xs text-text-secondary">Pełny pakiet provider/ — Dockerfile.cuda + compose + agent</div>
+                    <div className="mt-2 font-mono text-[11px] text-accent-brand">Pobierz archiwa tar.gz &rarr;</div>
+                  </a>
+
+                  <a
+                    href="/install.sh"
+                    className="rounded-xl border border-border-dim bg-bg-primary p-4 hover:bg-bg-tertiary transition-colors"
+                  >
+                    <div className="flex items-center gap-2 font-semibold text-text-primary">
+                      <FileText className="h-4 w-4 text-accent-brand" /> install.sh
+                    </div>
+                    <div className="mt-1 font-mono text-xs text-text-secondary">Skrypt instalacyjny one-liner plug-and-play</div>
+                    <div className="mt-2 font-mono text-[11px] text-text-tertiary">https://seedinfer.com/install.sh</div>
+                  </a>
+
+                  <a href="/docs" className="rounded-xl border border-border-dim bg-bg-primary p-4 hover:bg-bg-tertiary transition-colors">
+                    <div className="flex items-center gap-2 font-semibold text-text-primary">
+                      <Server className="h-4 w-4 text-accent-brand" /> Control Plane Docs
+                    </div>
+                    <div className="mt-1 font-mono text-xs text-text-secondary">
+                      Dokumentacja sieci Headscale (WireGuard) oraz parametrów ENV
+                    </div>
+                    <div className="mt-2 font-mono text-[11px] text-accent-brand">Przejdź do /docs &rarr;</div>
+                  </a>
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  
+                  {/* Verification local */}
+                  <div className="rounded-xl border border-border-dim bg-bg-primary p-3.5">
+                    <div className="font-mono text-[10px] uppercase tracking-wide text-text-tertiary font-bold mb-1.5">
+                      Weryfikacja lokalna (Health check na maszynie)
+                    </div>
+                    <pre className="overflow-x-auto rounded-lg bg-bg-tertiary p-2.5 font-mono text-[11px] text-text-secondary leading-4">
+{`# 1. Sprawdź stan kontenerów:
+docker ps | grep seedinfer-provider
+
+# 2. Sprawdź health check agenta (port 47901):
+curl -fsS http://127.0.0.1:47901/health | jq
+
+# 3. Test odpowiedzi modelu vLLM (port 47900):
+curl -fsS http://127.0.0.1:47900/v1/models | jq`}
+                    </pre>
+                  </div>
+
+                  {/* Verification gateway */}
+                  <div className="rounded-xl border border-border-dim bg-bg-primary p-3.5">
+                    <div className="font-mono text-[10px] uppercase tracking-wide text-text-tertiary font-bold mb-1.5">
+                      Weryfikacja w sieci Gateway (Remote verification)
+                    </div>
+                    <pre className="overflow-x-auto rounded-lg bg-bg-tertiary p-2.5 font-mono text-[11px] text-text-secondary leading-4">
+{`# Sprawdź widoczność swojego węzła w sieci:
+curl -fsS https://seedinfer.com/api/v1/providers | jq '.data[] | {id,status,verification}'
+
+# Statystyki aktywnej floty:
+curl -fsS https://seedinfer.com/api/stats | jq '.active_providers'`}
+                    </pre>
+                  </div>
+
+                </div>
+
+              </CardContent>
+            </Card>
+
+            {/* Supported NVFP4 Models & GPU Compatibility Matrix */}
+            <Card className="border border-border-dim bg-bg-secondary shadow-sm">
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center justify-between text-[13px]">
+                  <div className="flex items-center gap-2">
+                    <Cpu className="h-4 w-4 text-accent-brand" /> Supported Models & GPU Hardware Matrix (CUDA 13.3)
+                  </div>
+                  <Badge variant="outline" className="font-mono text-[10px] border-accent-brand/30 text-accent-brand">
+                    Blackwell GB202 Native
+                  </Badge>
+                </CardTitle>
+                <p className="font-mono text-xs text-text-tertiary">
+                  Oficjalnie wspierany sprzęt flagowy: <strong className="text-text-primary">NVIDIA RTX 5090 32GB (GB202, sm_120, 24,576 CUDA, 32GB GDDR7 ~1.8 TB/s)</strong>. 
+                  Sterownik 580+ oraz CUDA 13.3 zapewniają najwyższą wydajność dla modeli z kwantyzacją NVFP4.
+                </p>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                
+                {/* Models Table */}
                 <div className="overflow-x-auto rounded-xl border border-border-dim">
                   <table className="w-full text-left font-mono text-xs">
                     <thead className="bg-bg-tertiary text-[10px] uppercase tracking-wide text-text-tertiary">
                       <tr>
-                        <th className="px-3 py-2">ID (MODEL)</th>
-                        <th className="px-3 py-2">VLLM_MODEL (HF repo)</th>
-                        <th className="px-3 py-2">VRAM</th>
-                        <th className="px-3 py-2">Pricing</th>
-                        <th className="px-3 py-2">On-disk</th>
-                        <th className="px-3 py-2">Ctx</th>
+                        <th className="px-3 py-2">Model ID</th>
+                        <th className="px-3 py-2">HuggingFace Repo</th>
+                        <th className="px-3 py-2">VRAM Load</th>
+                        <th className="px-3 py-2">Pricing (In/Out)</th>
+                        <th className="px-3 py-2">Disk Size</th>
+                        <th className="px-3 py-2">Context</th>
                         <th className="px-3 py-2">Status</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-border-dim text-text-secondary">
+                      <tr className="bg-accent-brand/10 font-medium text-text-primary">
+                        <td className="px-3 py-2 font-bold text-accent-brand">google/gemma-4-26b-a4b-nvfp4</td>
+                        <td className="px-3 py-2 text-xs">nvidia/Gemma-4-26B-A4B-NVFP4</td>
+                        <td className="px-3 py-2">18-24GB</td>
+                        <td className="px-3 py-2">$0.03 / $0.30</td>
+                        <td className="px-3 py-2">~26GB</td>
+                        <td className="px-3 py-2">262k</td>
+                        <td className="px-3 py-2">
+                          <Badge variant="success" className="text-[10px] font-mono">
+                            flagship active
+                          </Badge>
+                        </td>
+                      </tr>
                       <tr className="bg-accent-brand/5">
                         <td className="px-3 py-2 font-medium text-text-primary">seedinfer/nemotron-lightning-1m</td>
-                        <td className="px-3 py-2">nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4</td>
+                        <td className="px-3 py-2 text-xs">nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4</td>
                         <td className="px-3 py-2">16-22GB</td>
-                        <td className="px-3 py-2">$0.02 / $0.05</td>
-                        <td className="px-3 py-2">~20-30GB</td>
+                        <td className="px-3 py-2">$0.02 / $0.10</td>
+                        <td className="px-3 py-2">~28GB</td>
                         <td className="px-3 py-2">1M (2M KV)</td>
                         <td className="px-3 py-2">
-                          <Badge variant="success" className="text-[10px]">
+                          <Badge variant="success" className="text-[10px] font-mono">
                             active
-                          </Badge>
-                        </td>
-                      </tr>
-                      <tr>
-                        <td className="px-3 py-2">gpt-oss-20b</td>
-                        <td className="px-3 py-2 text-text-tertiary">alias → seedinfer/nemotron-lightning-1m</td>
-                        <td className="px-3 py-2">—</td>
-                        <td className="px-3 py-2">same</td>
-                        <td className="px-3 py-2">—</td>
-                        <td className="px-3 py-2">1M</td>
-                        <td className="px-3 py-2">
-                          <Badge variant="outline" className="text-[10px]">
-                            alias
-                          </Badge>
-                        </td>
-                      </tr>
-                      <tr className="opacity-60">
-                        <td className="px-3 py-2">qwen3.6-35b-a3b</td>
-                        <td className="px-3 py-2">Qwen/Qwen3.6-35B-A3B</td>
-                        <td className="px-3 py-2">—</td>
-                        <td className="px-3 py-2">$0.06 / $0.50</td>
-                        <td className="px-3 py-2">—</td>
-                        <td className="px-3 py-2">131k</td>
-                        <td className="px-3 py-2">
-                          <Badge variant="outline" className="text-[10px]">
-                            is coming
-                          </Badge>
-                        </td>
-                      </tr>
-                      <tr className="opacity-60">
-                        <td className="px-3 py-2">gemma-4-26b-a4b</td>
-                        <td className="px-3 py-2">modal —</td>
-                        <td className="px-3 py-2">—</td>
-                        <td className="px-3 py-2">on Modal</td>
-                        <td className="px-3 py-2">—</td>
-                        <td className="px-3 py-2">—</td>
-                        <td className="px-3 py-2">
-                          <Badge variant="outline" className="text-[10px]">
-                            is coming
                           </Badge>
                         </td>
                       </tr>
@@ -631,322 +733,91 @@ curl -X POST https://seedinfer.com/api/v1/providers/verify \\
                   </table>
                 </div>
 
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div className="rounded-xl border border-border-dim bg-bg-primary p-3">
-                    <div className="font-mono text-[10px] uppercase tracking-wide text-text-tertiary">NVFP4 — vLLM nightly</div>
-                    <div className="mt-1 font-mono text-xs leading-4 text-text-secondary">
-                      W4A16 + FP8 KV via ModelOpt → ~16-22GB VRAM (vs 66GB BF16). On-disk ~20-30GB.{" "}
-                      <code className="rounded bg-bg-tertiary px-1">pip install --pre vllm --extra-index-url https://wheels.vllm.ai/nightly</code>{" "}
-                      + <code className="rounded bg-bg-tertiary px-1">FROM nvidia/cuda:13.3.0-cudnn-devel-ubuntu24.04</code> (fallback 13.3.1/13.2.1, legacy 12.4.1 via PTX JIT). Auto-detect
-                      — do not pass <code>--quantization</code> (log: <code>auto</code>). If it fails:{" "}
-                      <code>VLLM_QUANTIZATION=modelopt_fp4</code> +{" "}
-                      <code className="rounded bg-bg-tertiary px-1">--kv-cache-dtype fp8</code>.
-                    </div>
-                    <pre className="mt-2 rounded-lg bg-bg-tertiary p-2 font-mono text-[11px] text-text-tertiary">
-                      {`--model nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4 \\
---served-model-name seedinfer/nemotron-lightning-1m \\
---max-model-len 1048576 --enable-prefix-caching --enable-chunked-prefill \\
---dtype bfloat16 --gpu-memory-utilization 0.90 --trust-remote-code
-# jinja chat_template from HF auto (tokenizer_config.json)`}
-                    </pre>
-                  </div>
-                  <div className="rounded-xl border border-border-dim bg-bg-primary p-3">
-                    <div className="font-mono text-[10px] uppercase tracking-wide text-text-tertiary">Endpoints + pricing</div>
-                    <div className="mt-1 flex flex-wrap gap-1 font-mono text-xs">
-                      <a
-                        href="/api/v1/models"
-                        className="rounded bg-bg-tertiary px-2 py-1 text-text-secondary hover:text-text-primary"
-                      >
-                        /api/v1/models
-                      </a>
-                      <a
-                        href="/api/v1/pricing"
-                        className="rounded bg-bg-tertiary px-2 py-1 text-text-secondary hover:text-text-primary"
-                      >
-                        /api/v1/pricing
-                      </a>
-                      <a
-                        href="/api/v1/fallback/status"
-                        className="rounded bg-bg-tertiary px-2 py-1 text-text-secondary hover:text-text-primary"
-                      >
-                        /api/v1/fallback/status
-                      </a>
-                      <a
-                        href="/api/v1/telemetry"
-                        className="rounded bg-bg-tertiary px-2 py-1 text-text-secondary hover:text-text-primary"
-                      >
-                        /api/v1/telemetry
-                      </a>
-                    </div>
-                    <div className="mt-2 font-mono text-xs text-text-secondary">
-                      <strong className="text-text-primary">Fallback:</strong> local (Headscale 100.64.x.x:47901) → NIM → OpenRouter →
-                      Modal (Modal warmup parallel po local fail). <code>X-SeedInfer-Upstream</code> header.
-                    </div>
-                    <div className="mt-2 font-mono text-xs text-text-secondary">
-                      <strong className="text-text-primary">Telemetry:</strong> JSONL{" "}
-                      <code className="rounded bg-bg-tertiary px-1">/mnt/nvme/telemetry/telemetry.jsonl</code> →{" "}
-                      <code className="rounded bg-bg-tertiary px-1">GET /api/v1/telemetry</code> · fallback chain log.
-                    </div>
-                    <div className="mt-2 rounded-lg border border-amber-500/20 bg-amber-500/10 p-2 font-mono text-[11px] text-text-secondary">
-                      On OOM: <code>VLLM_MAX_MODEL_LEN=32768</code> +{" "}
-                      <code className="rounded bg-bg-tertiary px-1">VLLM_GPU_MEMORY_UTILIZATION=0.80</code>
-                    </div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-
-            {/* GPU Matrix — CUDA 13.3 */}
-            <Card className="border border-border-dim bg-bg-secondary">
-              <CardHeader className="pb-3">
-                <CardTitle className="flex items-center gap-2 text-[13px]">
-                  <Cpu className="h-4 w-4 text-accent-brand" /> GPU Matrix — minimum RTX 5090 32GB (CUDA 13.3)
-                  <Badge variant="outline" className="ml-2 font-mono text-[10px] border-accent-brand/30 text-accent-brand">
-                    Blackwell native
-                  </Badge>
-                </CardTitle>
-                <p className="font-mono text-xs text-text-tertiary">
-                  Minimum <strong className="text-text-primary">RTX 5090 32GB (GB202, Blackwell sm_120, 21760 CUDA, 680 Tensor 5th gen, 32GB GDDR7 ~1.8 TB/s)</strong>. NVFP4 30B ~16-22GB + ~6GB KV for 1M ctx = ~22-28GB → 32GB gives headroom with <code className="rounded bg-bg-tertiary px-1">--gpu-memory-utilization 0.90</code> + <code className="rounded bg-bg-tertiary px-1">--max-model-len 1048576</code>. vLLM nightly cu12 wheels run on CUDA 13.3 via PTX JIT (forward-compat, driver 580+).
-                </p>
-              </CardHeader>
-              <CardContent className="space-y-3">
+                {/* GPU Matrix Table */}
                 <div className="overflow-x-auto rounded-xl border border-border-dim">
                   <table className="w-full text-left font-mono text-xs">
                     <thead className="bg-bg-tertiary text-[10px] uppercase tracking-wide text-text-tertiary">
                       <tr>
-                        <th className="px-3 py-2">GPU</th>
+                        <th className="px-3 py-2">GPU Model</th>
                         <th className="px-3 py-2">Arch</th>
                         <th className="px-3 py-2">VRAM</th>
-                        <th className="px-3 py-2">BW</th>
-                        <th className="px-3 py-2">NVFP4 1M</th>
-                        <th className="px-3 py-2">Est. tput*</th>
-                        <th className="px-3 py-2">Status</th>
+                        <th className="px-3 py-2">Bandwidth</th>
+                        <th className="px-3 py-2">NVFP4 1M Ctx</th>
+                        <th className="px-3 py-2">Est. Throughput</th>
+                        <th className="px-3 py-2">Status Tier</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-border-dim text-text-secondary">
                       <tr className="bg-accent-brand/10 font-medium text-text-primary">
-                        <td className="px-3 py-2">RTX 5090 32GB</td>
+                        <td className="px-3 py-2 font-bold">RTX 5090 32GB</td>
                         <td className="px-3 py-2">GB202 sm_120</td>
                         <td className="px-3 py-2">32GB GDDR7</td>
                         <td className="px-3 py-2">~1.8 TB/s</td>
-                        <td className="px-3 py-2">✅ ~22-28GB</td>
+                        <td className="px-3 py-2">&check; ~22-28GB</td>
                         <td className="px-3 py-2">~120-180 tok/s</td>
-                        <td className="px-3 py-2"><Badge variant="success" className="text-[10px]">minimum</Badge></td>
+                        <td className="px-3 py-2"><Badge variant="success" className="text-[10px]">Official Min</Badge></td>
                       </tr>
                       <tr>
-                        <td className="px-3 py-2">A100 40GB</td>
+                        <td className="px-3 py-2">A100 40GB / 80GB</td>
                         <td className="px-3 py-2">GA100 sm_80</td>
-                        <td className="px-3 py-2">40GB HBM2e</td>
-                        <td className="px-3 py-2">1.6 TB/s</td>
-                        <td className="px-3 py-2">✅ W4A16</td>
-                        <td className="px-3 py-2">~60-90</td>
-                        <td className="px-3 py-2"><Badge variant="outline" className="text-[10px]">welcome</Badge></td>
-                      </tr>
-                      <tr>
-                        <td className="px-3 py-2">A100 80GB</td>
-                        <td className="px-3 py-2">GA100</td>
-                        <td className="px-3 py-2">80GB HBM2e</td>
-                        <td className="px-3 py-2">2.0 TB/s</td>
-                        <td className="px-3 py-2">✅</td>
-                        <td className="px-3 py-2">~70-100</td>
-                        <td className="px-3 py-2"><Badge variant="outline" className="text-[10px]">welcome</Badge></td>
+                        <td className="px-3 py-2">40/80GB HBM2e</td>
+                        <td className="px-3 py-2">1.6 - 2.0 TB/s</td>
+                        <td className="px-3 py-2">&check; W4A16</td>
+                        <td className="px-3 py-2">~70-100 tok/s</td>
+                        <td className="px-3 py-2"><Badge variant="outline" className="text-[10px]">Enterprise</Badge></td>
                       </tr>
                       <tr>
                         <td className="px-3 py-2">H100 80GB</td>
                         <td className="px-3 py-2">H100 sm_90</td>
                         <td className="px-3 py-2">80GB HBM3</td>
                         <td className="px-3 py-2">3.0 TB/s</td>
-                        <td className="px-3 py-2">✅</td>
-                        <td className="px-3 py-2">~150-220</td>
-                        <td className="px-3 py-2"><Badge variant="outline" className="text-[10px]">welcome</Badge></td>
+                        <td className="px-3 py-2">&check; Native</td>
+                        <td className="px-3 py-2">~150-220 tok/s</td>
+                        <td className="px-3 py-2"><Badge variant="outline" className="text-[10px]">Enterprise</Badge></td>
                       </tr>
                       <tr>
-                        <td className="px-3 py-2">L40S 48GB</td>
+                        <td className="px-3 py-2">L40S / RTX 6000 Ada 48GB</td>
                         <td className="px-3 py-2">AD102 sm_89</td>
                         <td className="px-3 py-2">48GB GDDR6</td>
-                        <td className="px-3 py-2">864 GB/s</td>
-                        <td className="px-3 py-2">✅</td>
-                        <td className="px-3 py-2">~80-120</td>
-                        <td className="px-3 py-2"><Badge variant="outline" className="text-[10px]">welcome</Badge></td>
-                      </tr>
-                      <tr>
-                        <td className="px-3 py-2">RTX 6000 Ada 48GB</td>
-                        <td className="px-3 py-2">AD102</td>
-                        <td className="px-3 py-2">48GB GDDR6</td>
-                        <td className="px-3 py-2">960 GB/s</td>
-                        <td className="px-3 py-2">✅</td>
-                        <td className="px-3 py-2">~80-120</td>
-                        <td className="px-3 py-2"><Badge variant="outline" className="text-[10px]">welcome</Badge></td>
-                      </tr>
-                      <tr>
-                        <td className="px-3 py-2">RTX 6000 Pro Blackwell</td>
-                        <td className="px-3 py-2">GB202</td>
-                        <td className="px-3 py-2">96GB GDDR7</td>
-                        <td className="px-3 py-2">~1.8 TB/s+</td>
-                        <td className="px-3 py-2">✅ 96GB</td>
-                        <td className="px-3 py-2">~130-190</td>
-                        <td className="px-3 py-2"><Badge variant="outline" className="text-[10px]">welcome</Badge></td>
-                      </tr>
-                      <tr>
-                        <td className="px-3 py-2">RTX 4500 Blackwell 32GB</td>
-                        <td className="px-3 py-2">GB203</td>
-                        <td className="px-3 py-2">32GB GDDR7</td>
-                        <td className="px-3 py-2">~1.0 TB/s</td>
-                        <td className="px-3 py-2">✅</td>
-                        <td className="px-3 py-2">~90-130</td>
-                        <td className="px-3 py-2"><Badge variant="outline" className="text-[10px]">welcome</Badge></td>
-                      </tr>
-                      <tr>
-                        <td className="px-3 py-2">RTX 5000 Blackwell</td>
-                        <td className="px-3 py-2">GB203</td>
-                        <td className="px-3 py-2">32-48GB GDDR7</td>
-                        <td className="px-3 py-2">~1.2 TB/s</td>
-                        <td className="px-3 py-2">✅</td>
-                        <td className="px-3 py-2">~110-160</td>
-                        <td className="px-3 py-2"><Badge variant="outline" className="text-[10px]">welcome</Badge></td>
+                        <td className="px-3 py-2">864 - 960 GB/s</td>
+                        <td className="px-3 py-2">&check; Full Ctx</td>
+                        <td className="px-3 py-2">~80-120 tok/s</td>
+                        <td className="px-3 py-2"><Badge variant="outline" className="text-[10px]">Supported</Badge></td>
                       </tr>
                       <tr className="opacity-60">
-                        <td className="px-3 py-2">RTX 3090 24GB ⏳</td>
-                        <td className="px-3 py-2">GA102 sm_86</td>
+                        <td className="px-3 py-2">RTX 3090 / 4090 (24GB) ⏳</td>
+                        <td className="px-3 py-2">GA102 / AD102</td>
                         <td className="px-3 py-2">24GB GDDR6X</td>
-                        <td className="px-3 py-2">936 GB/s</td>
-                        <td className="px-3 py-2">⚠️ 24GB tight</td>
-                        <td className="px-3 py-2">~50-80</td>
-                        <td className="px-3 py-2"><Badge variant="outline" className="text-[10px]">plan</Badge></td>
-                      </tr>
-                      <tr className="opacity-60">
-                        <td className="px-3 py-2">RTX 4090 24GB ⏳</td>
-                        <td className="px-3 py-2">AD102 sm_89</td>
-                        <td className="px-3 py-2">24GB GDDR6X</td>
-                        <td className="px-3 py-2">1.0 TB/s</td>
-                        <td className="px-3 py-2">⚠️ tight</td>
-                        <td className="px-3 py-2">~70-100</td>
-                        <td className="px-3 py-2"><Badge variant="outline" className="text-[10px]">plan</Badge></td>
+                        <td className="px-3 py-2">0.9 - 1.0 TB/s</td>
+                        <td className="px-3 py-2">&warning; Ctx limit 131k</td>
+                        <td className="px-3 py-2">~50-80 tok/s</td>
+                        <td className="px-3 py-2"><Badge variant="outline" className="text-[10px]">Roadmap</Badge></td>
                       </tr>
                     </tbody>
                   </table>
                 </div>
-                <div className="rounded-lg border border-dashed border-border-default bg-bg-primary p-3 font-mono text-[11px] leading-4 text-text-secondary">
-                  * Est. tput single-user prefill+decode for Nemotron 30B NVFP4 (W4A16+FP8 KV), batch 1, 1k in / 256 out, no prefix cache. Real throughput depends on humming/mamba backend + KV hit. <br />
-                  <strong className="text-text-primary">Eventually 3090/4090 (24GB)</strong> — planned as &quot;community&quot; tier with auto-downscale <code className="rounded bg-bg-tertiary px-1">VLLM_MAX_MODEL_LEN=131072</code> and <code className="rounded bg-bg-tertiary px-1">VLLM_GPU_MEMORY_UTILIZATION=0.85</code>. Currently welcome for testing, but the official minimum is 32GB.
-                  <br />
-                  <strong className="text-text-primary">CUDA 13.3 + driver 580+</strong> required for Blackwell GB202 native (sm_120). Modal/legacy CUDA 12.4 via PTX JIT works without rebuild.
-                </div>
+
               </CardContent>
             </Card>
 
-                        {/* Kontener do pobrania + Pi instructions */}
-            <Card className="border border-border-dim bg-bg-secondary">
-              <CardHeader className="pb-3">
-                <CardTitle className="flex items-center gap-2 text-[13px]">
-                  <Download className="h-4 w-4 text-accent-brand" /> Kontener do pobrania
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid gap-3 sm:grid-cols-3">
-                  <a
-                    href="/provider.tar.gz"
-                    className="rounded-xl border border-accent-brand/20 bg-accent-brand/10 p-4 hover:bg-accent-brand/15"
-                  >
-                    <div className="flex items-center gap-2 font-medium text-text-primary">
-                      <Download className="h-4 w-4" /> provider.tar.gz
-                    </div>
-                    <div className="mt-1 font-mono text-xs text-text-secondary">Full provider/ pack — Dockerfile.cuda + compose + agent</div>
-                    <div className="mt-2 font-mono text-[11px] text-accent-brand">https://seedinfer.com/provider.tar.gz →</div>
-                  </a>
-                  <a
-                    href="/install.sh"
-                    className="rounded-xl border border-border-dim bg-bg-primary p-4 hover:bg-bg-tertiary"
-                  >
-                    <div className="flex items-center gap-2 font-medium text-text-primary">
-                      <FileText className="h-4 w-4" /> install.sh
-                    </div>
-                    <div className="mt-1 font-mono text-xs text-text-secondary">One-liner plug-and-play ~279 linii</div>
-                    <div className="mt-2 font-mono text-[11px] text-text-tertiary">https://seedinfer.com/install.sh</div>
-                  </a>
-                  <a href="/docs" className="rounded-xl border border-border-dim bg-bg-primary p-4 hover:bg-bg-tertiary">
-                    <div className="flex items-center gap-2 font-medium text-text-primary">
-                      <Server className="h-4 w-4" /> Control plane
-                    </div>
-                    <div className="mt-1 font-mono text-xs text-text-secondary">
-                      Headscale tailnet.seedinfer.com (WireGuard) · Gateway https://seedinfer.com
-                    </div>
-                    <div className="mt-2 font-mono text-[11px] text-accent-brand">docs.seedinfer.com /docs →</div>
-                  </a>
-                </div>
-
-                <div className="rounded-xl border border-border-dim bg-bg-primary p-4">
-                  <div className="mb-2 flex items-center gap-2 font-mono text-[10px] uppercase tracking-wide text-text-tertiary">
-                    <HardDrive className="h-3 w-3" /> Instrukcje dla dostawcy
-                  </div>
-                  <pre className="overflow-x-auto rounded-lg bg-bg-tertiary p-3 font-mono text-xs leading-4 text-text-secondary">
-                    {`# Provider pack — pobierz i zweryfikuj:
-curl -fsSL https://seedinfer.com/provider.tar.gz -o provider.tar.gz && tar tzf provider.tar.gz | head
-curl -fsSL https://seedinfer.com/install.sh | head -n 20
-
-# Docs:
-# https://seedinfer.com/docs  lub  https://docs.seedinfer.com
-
-# Authkey:
-curl -fsSL https://seedinfer.com/api/v1/auth/request | jq
-# -> {authkey, expires: "24h", login_server: "https://tailnet.seedinfer.com"}`}
-                  </pre>
-                  <p className="mt-2 font-mono text-[11px] text-text-tertiary">
-                    Details in <a href="/docs" className="text-accent-brand underline">/docs</a> — requirements, ports, troubleshooting and env.
-                  </p>
-                </div>
-
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div className="rounded-xl border border-border-dim bg-bg-primary p-3">
-                    <div className="font-mono text-[10px] uppercase tracking-wide text-text-tertiary">Weryfikacja po instalacji</div>
-                    <pre className="mt-1 rounded-lg bg-bg-tertiary p-2 font-mono text-[11px] text-text-secondary">
-                      {`# Lokalnie:
-curl -fsS http://127.0.0.1:47901/health | jq
-curl -fsS http://127.0.0.1:47900/v1/models | jq
-docker ps | grep seedinfer-provider
-
-# Gateway:
-curl -fsS https://seedinfer.com/api/v1/providers | jq '.data[] | {id,status,verification}'
-curl -fsS https://seedinfer.com/api/stats | jq '.active_providers'
-# Heartbeat log Pi:
-tail -f /mnt/nvme/telemetry/telemetry.jsonl | jq`}
-                    </pre>
-                  </div>
-                  <div className="rounded-xl border border-border-dim bg-bg-primary p-3">
-                    <div className="font-mono text-[10px] uppercase tracking-wide text-text-tertiary">Manual Docker build</div>
-                    <pre className="mt-1 rounded-lg bg-bg-tertiary p-2 font-mono text-[11px] text-text-secondary">
-                      {`git clone https://github.com/seedinfer/seedinfer.com.git
-cd seedinfer.com
-cp provider/.env.example provider/.env
-# edytuj TAILSCALE_AUTHKEY
-docker compose -f provider/docker-compose.yml up -d --build
-docker build -f provider/Dockerfile.cuda -t seedinfer/provider:cuda-0.1.0 .`}
-                    </pre>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <div className="border-t border-border-dim pt-4 font-mono text-[10px] leading-4 text-text-tertiary">
-              SeedInfer.com · Provider pack Faza 0 CUDA —{" "}
-              <a href="/install.sh" className="text-accent-brand hover:underline">
-                /install.sh
-              </a>{" "}
-              ·{" "}
-              <a href="/provider.tar.gz" className="text-accent-brand hover:underline">
-                /provider.tar.gz
-              </a>{" "}
-              ·{" "}
-              <a href="/api/v1/auth/request" className="text-accent-brand hover:underline">
-                /api/v1/auth/request
-              </a>{" "}
-              ·{" "}
-              <a href="/api/v1/providers" className="text-accent-brand hover:underline">
-                /api/v1/providers
-              </a>{" "}
-              · <a href="/docs" className="text-accent-brand underline">docs.seedinfer.com /docs</a>
+            {/* Footer */}
+            <div className="border-t border-border-dim pt-4 font-mono text-[10px] leading-4 text-text-tertiary flex flex-wrap items-center justify-between gap-2">
+              <div>
+                SeedInfer.com · Node Provider Portal Faza 0 (CUDA 13.3)
+              </div>
+              <div className="flex items-center gap-3">
+                <a href="/install.sh" className="text-accent-brand hover:underline">/install.sh</a>
+                <span>·</span>
+                <a href="/provider.tar.gz" className="text-accent-brand hover:underline">/provider.tar.gz</a>
+                <span>·</span>
+                <a href="/api/v1/auth/request" className="text-accent-brand hover:underline">/api/v1/auth/request</a>
+                <span>·</span>
+                <a href="/api/v1/providers" className="text-accent-brand hover:underline">/api/v1/providers</a>
+                <span>·</span>
+                <a href="/docs" className="text-accent-brand underline">docs.seedinfer.com</a>
+              </div>
             </div>
+
           </div>
         </main>
       </div>

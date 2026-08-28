@@ -32,6 +32,9 @@ export type StoredProvider = Provider & {
   last_heartbeat_ip?: string | null
   tailscale_ip?: string | null
   agent_url?: string | null
+  public_key?: string | null
+  hw_fingerprint?: string | null
+  hardware_mismatch?: boolean
   heartbeat_count: number
   raw?: Record<string, any>
   // keep original gpu/host extras for verify
@@ -142,6 +145,16 @@ export function upsertProvider(
 
   const tailscale_ip = (payload.tailscale_ip as string) || (payload.tailscaleIp as string) || null
   const agent_url = (payload.agent_url as string) || (payload.agentUrl as string) || null
+  const public_key = (payload.public_key as string) || (payload.publicKey as string) || existing?.public_key || null
+  const hw_fingerprint = (payload.hw_fingerprint as string) || (payload.hwFingerprint as string) || existing?.hw_fingerprint || null
+
+  let hardware_mismatch = false
+  if (existing && existing.public_key && public_key && existing.public_key === public_key) {
+    if (existing.hw_fingerprint && hw_fingerprint && existing.hw_fingerprint !== hw_fingerprint) {
+      hardware_mismatch = true
+      console.warn(`[providers-store] HARDWARE MISMATCH detected for key ${public_key}: expected ${existing.hw_fingerprint}, got ${hw_fingerprint}`)
+    }
+  }
 
   // Map Provider fields — minimal to satisfy Provider type
   const base: Partial<StoredProvider> = {
@@ -153,8 +166,8 @@ export function upsertProvider(
     gpu_cores: payload.gpu_cores ?? payload.gpu?.gpu_cores ?? 0,
     memory_gb: payload.memory_gb ?? payload.gpu?.total_memory_gb ?? payload.host?.memory_gb ?? 0,
     memory_bandwidth_gbs: payload.memory_bandwidth_gbs ?? 1008,
-    current_model: payload.current_model || payload.model || "seedinfer/nemotron-lightning-1m",
-    models: payload.models || [payload.current_model || payload.model || "seedinfer/nemotron-lightning-1m"],
+    current_model: payload.current_model || payload.model || "google/gemma-4-26b-a4b-nvfp4",
+    models: payload.models || [payload.current_model || payload.model || "google/gemma-4-26b-a4b-nvfp4"],
     status: payload.status || "serving",
     trust_level: payload.trust_level || "software",
     attested: payload.attested ?? false,
@@ -188,13 +201,18 @@ export function upsertProvider(
     }
     heartbeat_count = 1
   }
-  verification.last_heartbeat = now
-  verification.heartbeat_count = heartbeat_count
+  if (hardware_mismatch) {
+    verification.status = "failed"
+    verification.failure_reason = "Hardware fingerprint mismatch — key locked to original GPU/host"
+  }
 
   const stored: StoredProvider = {
     ...(existing as StoredProvider),
     ...base,
     id,
+    public_key,
+    hw_fingerprint,
+    hardware_mismatch,
     verification,
     last_heartbeat: now,
     last_heartbeat_ip: opts?.ip ?? existing?.last_heartbeat_ip ?? null,
@@ -292,7 +310,7 @@ export async function verifyProvider(
   console.log(`[providers-store] verifying ${id} ... candidates:`, candidateAgentUrls(p))
 
   const timeout = opts?.timeoutMs ?? 30000
-  const modelId = "seedinfer/nemotron-lightning-1m"
+  const modelId = p.current_model || "google/gemma-4-26b-a4b-nvfp4"
   const checks: VerificationCheck[] = []
 
   // Prepare candidate URLs
@@ -433,7 +451,11 @@ export async function verifyProvider(
       inferenceJson = j
       if (r.ok) {
         const hasChoices = Array.isArray(j.choices) && j.choices.length > 0
-        const modelMatches = j.model === modelId || j.model === p.current_model || String(j.model || "").toLowerCase().includes("nemotron")
+        const modelMatches =
+          j.model === modelId ||
+          j.model === p.current_model ||
+          String(j.model || "").toLowerCase().includes("gemma") ||
+          String(j.model || "").toLowerCase().includes("nemotron")
         // Actually we check id matches: response model should be seedinfer/nemotron-lightning-1m
         // But also allow vLLM to return nvidia/... if served-model-name mismatched? We strict check: must be modelId or at least not error
         const latencyPass = lat < 10000

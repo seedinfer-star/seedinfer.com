@@ -42,7 +42,7 @@ const config: Config = {
         sm: "0.375rem",
       },
       fontFamily: {
-        sans: ["var(--font-inter)", "ABC Repro", "system-ui", "sans-serif"],
+        sans: ["var(--font-jakarta)", "var(--font-inter)", "system-ui", "sans-serif"],
         mono: ["var(--font-mono)", "ABC Repro Mono", "IBM Plex Mono", "monospace"],
         display: ["Louize", "Georgia", "serif"],
         logo: ["Louize", "Georgia", "serif"],

@@ -6,6 +6,8 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { MessageSquare, ExternalLink, Send, Copy, Check, Sparkles, Cpu } from "lucide-react"
 
+import ThemeToggle from "@/components/theme-toggle"
+
 type Msg = { role: "user" | "assistant"; content: string }
 
 const CURL = `curl https://api.seedinfer.com/v1/chat/completions \\
@@ -77,6 +79,7 @@ export default function ChatPage() {
             >
               docs.seedinfer.com <ExternalLink className="h-3 w-3" />
             </a>
+            <ThemeToggle variant="icon" />
           </div>
         </header>
 

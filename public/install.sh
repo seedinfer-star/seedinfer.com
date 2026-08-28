@@ -10,8 +10,8 @@ set -euo pipefail
 
 GATEWAY="https://seedinfer.com"
 LOGIN_SERVER="https://tailnet.seedinfer.com"
-MODEL="seedinfer/nemotron-lightning-1m"
-VLLM_MODEL="nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4"
+MODEL="google/gemma-4-26b-a4b-nvfp4"
+VLLM_MODEL="google/gemma-4-26b-a4b-nvfp4"
 AUTHKEY=""
 # --- HOSTNAME sanitization (DNS label RFC1123: [a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?) ---
 # FIX: cut -c1-12 na "jakub-B550M-AORUS-ELITE" dawał "jakub-B550M-" kończące się "-" -> invalid DNS label.
@@ -127,11 +127,13 @@ Prebuild: ghcr.io (primary, ~8-15GB gzip) || Pi tar (fallback, curl | docker loa
 EOF
 }
 
+PRIVATE_KEY_INPUT=""
 CUSTOM_MODEL=false
 CUSTOM_VLLM=false
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --authkey) AUTHKEY="$2"; shift 2 ;;
+    --private-key|--key) PRIVATE_KEY_INPUT="$2"; shift 2 ;;
     --model) MODEL="$2"; CUSTOM_MODEL=true; shift 2 ;;
     --vllm-model) VLLM_MODEL="$2"; CUSTOM_VLLM=true; shift 2 ;;
     --gateway) GATEWAY="$2"; shift 2 ;;
@@ -144,6 +146,71 @@ while [[ $# -gt 0 ]]; do
     *) echo "Nieznana opcja: $1" >&2; usage; exit 1 ;;
   esac
 done
+
+get_hw_fingerprint() {
+  local gpu_uuid machine_id sys_uuid cpu_info raw_concat
+  gpu_uuid=$(nvidia-smi --query-gpu=gpu_uuid --format=csv,noheader 2>/dev/null | head -n1 | tr -d ' ' || echo "no-gpu-uuid")
+  machine_id=$(cat /etc/machine-id 2>/dev/null || cat /var/lib/dbus/machine-id 2>/dev/null || echo "no-machine-id")
+  sys_uuid=$(cat /sys/class/dmi/id/product_uuid 2>/dev/null || echo "no-sys-uuid")
+  cpu_info=$(grep -m1 "model name" /proc/cpuinfo 2>/dev/null | cut -d: -f2 | tr -d ' ' || echo "unknown-cpu")
+  raw_concat="${gpu_uuid}:${machine_id}:${sys_uuid}:${cpu_info}"
+  if command -v sha256sum >/dev/null 2>&1; then
+    echo "hw_fp_$(echo -n "$raw_concat" | sha256sum | awk '{print $1}' | cut -c1-32)"
+  else
+    echo "hw_fp_$(echo -n "$raw_concat" | md5sum | awk '{print $1}' | cut -c1-32)"
+  fi
+}
+
+generate_or_load_identity() {
+  mkdir -p "/opt/seedinfer-provider" 2>/dev/null || true
+  local env_file="/opt/seedinfer-provider/seedinfer.env"
+  local existing_priv="" existing_pub=""
+  
+  if [[ -f "$env_file" ]]; then
+    existing_priv=$(grep -E "^SEEDINFER_PRIVATE_KEY=" "$env_file" 2>/dev/null | cut -d= -f2- | tr -d '"' | tr -d "'" || true)
+    existing_pub=$(grep -E "^SEEDINFER_PUBLIC_KEY=" "$env_file" 2>/dev/null | cut -d= -f2- | tr -d '"' | tr -d "'" || true)
+  fi
+
+  if [[ -n "$PRIVATE_KEY_INPUT" ]]; then
+    SEEDINFER_PRIVATE_KEY="$PRIVATE_KEY_INPUT"
+    if command -v python3 >/dev/null 2>&1; then
+      SEEDINFER_PUBLIC_KEY=$(python3 -c "import hashlib; print('pubkey_' + hashlib.sha256(b'$SEEDINFER_PRIVATE_KEY').hexdigest()[:32])" 2>/dev/null || echo "pubkey_custom")
+    else
+      SEEDINFER_PUBLIC_KEY="pubkey_custom"
+    fi
+  elif [[ -n "$existing_priv" && -n "$existing_pub" ]]; then
+    SEEDINFER_PRIVATE_KEY="$existing_priv"
+    SEEDINFER_PUBLIC_KEY="$existing_pub"
+  else
+    if command -v python3 >/dev/null 2>&1; then
+      eval $(python3 -c "import os, hashlib; priv=os.urandom(32).hex(); pub=hashlib.sha256(priv.encode()).hexdigest()[:32]; print(f'SEEDINFER_PRIVATE_KEY=sk_{priv}; SEEDINFER_PUBLIC_KEY=pubkey_{pub}')")
+    else
+      local random_hex=$(date +%s%N | sha256sum | awk '{print $1}')
+      SEEDINFER_PRIVATE_KEY="sk_${random_hex}"
+      SEEDINFER_PUBLIC_KEY="pubkey_${random_hex:0:32}"
+    fi
+  fi
+
+  SEEDINFER_HW_FINGERPRINT=$(get_hw_fingerprint)
+
+  cat > "$env_file" 2>/dev/null <<EOF
+# SeedInfer Provider Identity & Hardware Lock
+SEEDINFER_PRIVATE_KEY=$SEEDINFER_PRIVATE_KEY
+SEEDINFER_PUBLIC_KEY=$SEEDINFER_PUBLIC_KEY
+SEEDINFER_HW_FINGERPRINT=$SEEDINFER_HW_FINGERPRINT
+EOF
+  chmod 600 "$env_file" 2>/dev/null || true
+
+  echo "============================================================"
+  echo "🔑 SEEDINFER PROVIDER IDENTITY (ZERO-ACCOUNT)"
+  echo "============================================================"
+  echo " PUBLIC KEY:     $SEEDINFER_PUBLIC_KEY"
+  echo " HW FINGERPRINT: $SEEDINFER_HW_FINGERPRINT"
+  echo " IDENTITY FILE:  $env_file"
+  echo "============================================================"
+}
+
+generate_or_load_identity
 # --- sanitize HOSTNAME supplied via --hostname/env (or default) ---
 # zachowaj prefix provider- sanitizując tylko suffix aby nie złamać DNS label
 if [[ "$HOSTNAME" == provider-* ]]; then
@@ -804,7 +871,7 @@ if [[ -n "$COMPOSE_FILE" ]]; then
     _detected_ts_ip=$(tailscale ip -4 2>/dev/null | head -n1 || true)
   fi
   # usuń stare wpisy i dopisz (NVFP4 defaults)
-  grep -v -E "^(TAILSCALE_AUTHKEY|MODEL|VLLM_MODEL|SEEDINFER_GATEWAY_URL|TAILSCALE_LOGIN_SERVER|TAILSCALE_HOSTNAME|TAILSCALE_IP|HOST_AGENT_PORT|HF_TOKEN|PYTORCH_CUDA_ALLOC_CONF|VLLM_GPU_MEMORY_UTILIZATION|HF_CACHE_HOST)=" "$ENV_FILE" > "$ENV_FILE.tmp" 2>/dev/null || cp "$ENV_FILE" "$ENV_FILE.tmp"
+  grep -v -E "^(TAILSCALE_AUTHKEY|MODEL|VLLM_MODEL|SEEDINFER_GATEWAY_URL|TAILSCALE_LOGIN_SERVER|TAILSCALE_HOSTNAME|TAILSCALE_IP|HOST_AGENT_PORT|HF_TOKEN|PYTORCH_CUDA_ALLOC_CONF|VLLM_GPU_MEMORY_UTILIZATION|HF_CACHE_HOST|SEEDINFER_PUBLIC_KEY|SEEDINFER_PRIVATE_KEY|SEEDINFER_HW_FINGERPRINT)=" "$ENV_FILE" > "$ENV_FILE.tmp" 2>/dev/null || cp "$ENV_FILE" "$ENV_FILE.tmp"
   cat >> "$ENV_FILE.tmp" <<EOF
 TAILSCALE_AUTHKEY=$AUTHKEY
 MODEL=$MODEL
@@ -817,6 +884,9 @@ HOST_AGENT_PORT=${AGENT_PORT:-47901}
 PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 VLLM_GPU_MEMORY_UTILIZATION=0.94
 HF_CACHE_HOST=/mnt/d/hf_cache
+SEEDINFER_PUBLIC_KEY=${SEEDINFER_PUBLIC_KEY:-}
+SEEDINFER_PRIVATE_KEY=${SEEDINFER_PRIVATE_KEY:-}
+SEEDINFER_HW_FINGERPRINT=${SEEDINFER_HW_FINGERPRINT:-}
 EOF
   # zachowaj HF_TOKEN jeśli był w .env.example
   if ! grep -q "^HF_TOKEN=" "$ENV_FILE.tmp"; then

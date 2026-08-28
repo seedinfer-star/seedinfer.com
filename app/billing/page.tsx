@@ -31,7 +31,6 @@ export default function BillingPage() {
         return
       }
       if (!res.ok) {
-        // treat as unauth/zero but keep loading false
         setLoading(false)
         return
       }
@@ -63,7 +62,6 @@ export default function BillingPage() {
       return
     }
     gatewayRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
-    // fallback to id
     if (!gatewayRef.current) {
       document.getElementById("crypto-gateway")?.scrollIntoView({ behavior: "smooth" })
     }
@@ -94,7 +92,7 @@ export default function BillingPage() {
               <CardContent className="p-3 flex items-start gap-2">
                 <CheckCircle2 className="h-4 w-4 mt-0.5 shrink-0 text-accent-green" />
                 <div className="min-w-0 flex-1">
-                  <div className="text-xs font-semibold text-text-primary">Crypto live — pay-as-you-go $0.02/$0.05 per 1M + Stripe coming soon. 7 chains: ETH/Arb/Polygon/Base/BNB/HyperEVM/Solana → POST /api/v1/invoices → QR (EIP-681/Solana Pay) → worker 15s</div>
+                  <div className="text-xs font-semibold text-text-primary">Crypto live — pay-as-you-go $0.02/$0.05 per 1M + Stripe coming soon.</div>
                   <div className="mt-0.5 text-xs leading-4 text-text-secondary">
                     7 chains: ETH/Arb/Polygon/Base/BNB/HyperEVM/Solana →{" "}
                     <code className="rounded bg-bg-tertiary px-1">POST /api/v1/invoices</code> → QR (EIP-681/Solana Pay) → worker 15s
@@ -226,26 +224,16 @@ export default function BillingPage() {
                   </CardHeader>
                   <CardContent className="space-y-2 text-xs leading-4 text-text-secondary">
                     <p>card → credits → metered</p>
-                    <p className="font-mono text-[11px]">Stripe publishable key: pk_test_… (placeholder)</p>
                     <div className="rounded-lg border border-dashed border-border-default bg-bg-primary/60 p-2 font-mono text-[11px]">Stripe publishable key: pk_test_… (placeholder)</div>
                   </CardContent>
                 </Card>
 
                 <Card className="border border-border-dim bg-bg-secondary">
-                  <CardContent className="p-3 font-mono text-[11px] leading-4 text-text-tertiary">
-                    Docs proxy: <a href="https://docs.seedinfer.com" target="_blank" rel="noopener noreferrer" className="text-accent-brand underline">docs.seedinfer.com</a> · billing →{" "}
-                    <code className="rounded bg-bg-tertiary px-1">POST /v1/checkout</code> +{" "}
-                    <code className="rounded bg-bg-tertiary px-1">POST /api/v1/invoices</code> (Crypto live)
+                  <CardContent className="p-3 font-mono text-[11px] text-text-tertiary">
+                    Need custom enterprise billing or bulk credits? Contact support@seedinfer.com
                   </CardContent>
                 </Card>
               </div>
-            </div>
-
-            <div className="border-t border-border-dim pt-4 font-mono text-[10px] leading-4 text-text-tertiary">
-              SeedInfer.com · Billing via Crypto (live) + Stripe (soon) — docs.seedinfer.com — proxy to{" "}
-              <a href="https://docs.seedinfer.com" target="_blank" rel="noopener noreferrer" className="text-accent-brand underline">
-                docs.seedinfer.com
-              </a>
             </div>
           </div>
         </main>

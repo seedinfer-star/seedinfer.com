@@ -1,61 +1,62 @@
 #!/bin/bash
 set -euo pipefail
 
-# SeedInfer provider entrypoint — uruchamia vLLM + agent (NVFP4 plug-and-play, host 1:1 RTX 5090 32GB GB202)
-# Host reference (jakub-b550m):
-#   -e VLLM_ATTENTION_BACKEND=FLASHINFER -e VLLM_NVFP4_GEMM_BACKEND=flashinfer-cutlass -e VLLM_USE_FLASHINFER_MOE_FP4=1 -e VLLM_USE_FLASHINFER_SAMPLER=1 -e PYTORCH_CUDA_ALLOC_CONF=expandable_segments:False -e VLLM_ALLOW_LONG_MAX_MODEL_LEN=1 -e HF_HUB_OFFLINE=1 -e HF_HOME=/tmp/hf_home
-#   --model "$MODEL_CONT" --served-model-name nemotron-3.5-lightning-30b-a3b-nvfp4 --quantization modelopt --dtype bfloat16 --kv-cache-dtype fp8 --max-model-len 1048576 --gpu-memory-utilization 0.93 --max-num-seqs 128 --max-num-batched-tokens 4096 --enable-chunked-prefill --enable-prefix-caching --moe-backend marlin --mamba-backend flashinfer --mamba-cache-mode align --chat-template /mnt/d/qwen_setup/nemotron_lightning_chat_template_nothink2.jinja --enable-auto-tool-choice --tool-call-parser nemotron3 --tool-parser-plugin /mnt/d/qwen_setup/nemotron3_tool_parser_plugin.py --trust-remote-code --language-model-only --host 0.0.0.0 --port $PORT_CONT
-# Lean: trap SIGTERM -> graceful shutdown obu procesów.
+# SeedInfer provider entrypoint — Gemma 4 26B A4B NVFP4 (1:1 z DiffusionGemma Studio)
+# Host reference (jakub-b550m RTX 5090 32GB GB202)
 
-MODEL="${MODEL:-seedinfer/nemotron-lightning-1m}"
-VLLM_MODEL="${VLLM_MODEL:-nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4}"
+MODEL="${MODEL:-google/gemma-4-26b-a4b-nvfp4}"
+VLLM_MODEL="${VLLM_MODEL:-/models/Gemma-4-26B-A4B-NVFP4}"
 
-# Auto-detect local snapshot (generic — finds ANY snapshot in HF cache, not just one hash)
-# This is CRITICAL: loading via HF Hub identifier causes ~20GB RAM spike (Python buffers).
-# Loading via direct path uses zero-copy mmap (disk → VRAM), keeping RAM at ~3.5GB.
-_SNAP_FOUND=false
-for _cache_root in "/mnt/d/hf_cache" "/root/.cache/huggingface" "/tmp/hf_home"; do
-  _snap_parent="${_cache_root}/hub/models--nvidia--NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4/snapshots"
-  if [[ -d "$_snap_parent" ]]; then
-    # Find latest snapshot directory (any hash)
-    _snap=$(find "$_snap_parent" -maxdepth 1 -mindepth 1 -type d 2>/dev/null | head -n1)
-    if [[ -n "$_snap" && -d "$_snap" ]]; then
-      echo "[entrypoint] Found local model snapshot: $_snap — using mmap (zero-copy, no RAM spike)"
-      VLLM_MODEL="$_snap"
+# Auto-detect local snapshot if /models/Gemma-4-26B-A4B-NVFP4 is not present
+if [[ ! -d "$VLLM_MODEL" && ! -f "$VLLM_MODEL/config.json" ]]; then
+  _SNAP_FOUND=false
+  for _cache_root in "/mnt/d/models/hf/Gemma-4-26B-A4B-NVFP4" "/models/Gemma-4-26B-A4B-NVFP4" "/mnt/d/hf_cache" "/root/.cache/huggingface" "/tmp/hf_home"; do
+    if [[ -f "${_cache_root}/model.safetensors.index.json" || -f "${_cache_root}/config.json" ]]; then
+      echo "[entrypoint] Found direct model directory: $_cache_root"
+      VLLM_MODEL="$_cache_root"
       export HF_HUB_OFFLINE=1
       _SNAP_FOUND=true
       break
     fi
+    _snap_parent="${_cache_root}/hub/models--nvidia--Gemma-4-26B-A4B-NVFP4/snapshots"
+    if [[ -d "$_snap_parent" ]]; then
+      _snap=$(find "$_snap_parent" -maxdepth 1 -mindepth 1 -type d 2>/dev/null | head -n1)
+      if [[ -n "$_snap" && -d "$_snap" ]]; then
+        echo "[entrypoint] Found local Gemma 4 snapshot: $_snap — using mmap zero-copy"
+        VLLM_MODEL="$_snap"
+        export HF_HUB_OFFLINE=1
+        _SNAP_FOUND=true
+        break
+      fi
+    fi
+  done
+  if [[ "$_SNAP_FOUND" != "true" ]]; then
+    VLLM_MODEL="nvidia/Gemma-4-26B-A4B-NVFP4"
   fi
-done
-if [[ "$_SNAP_FOUND" != "true" ]]; then
-  echo "[entrypoint] No local snapshot found — will download via HF Hub (first run: ~30GB, RAM spike possible)"
 fi
-if [[ -z "$VLLM_MODEL" ]]; then
-  VLLM_MODEL="nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4"
-fi
-# Host mapping domyślnie 47900:8000 i 47901:3001 (wolne, nie kolidują z 3000/3002/8004-8007). Wewnątrz kontenera 8000/3001, można nadpisać env VLLM_PORT/AGENT_PORT.
-VLLM_PORT="${VLLM_PORT:-8000}" # wewnętrzny 8000, host 47900 via docker-compose ports (można nadpisać env)
-AGENT_PORT="${AGENT_PORT:-3001}" # wewnętrzny 3001, host 47901 via docker-compose ports (można nadpisać env)
-# Alternatywnie jeśli chcesz zmienić wewnętrzny port: export VLLM_PORT=47900 AGENT_PORT=47901 i zaktualizuj VLLM_URL oraz compose right-side
-VLLM_MAX_MODEL_LEN="${VLLM_MAX_MODEL_LEN:-1048576}"
+
+VLLM_PORT="${VLLM_PORT:-8000}"
+AGENT_PORT="${AGENT_PORT:-3001}"
+VLLM_MAX_MODEL_LEN="${VLLM_MAX_MODEL_LEN:-262144}"
 VLLM_GPU_MEMORY_UTILIZATION="${VLLM_GPU_MEMORY_UTILIZATION:-0.94}"
-# NOTE: --cpu-offload-gb and --swap-space are NOT used by working Studio config.
-# They cause additional RAM allocation during init. Disabled by default.
+VLLM_MAX_NUM_SEQS="${VLLM_MAX_NUM_SEQS:-32}"
+VLLM_MAX_BATCHED_TOKENS="${VLLM_MAX_BATCHED_TOKENS:-4096}"
+VLLM_BLOCK_SIZE="${VLLM_BLOCK_SIZE:-16}"
+VLLM_MAX_CUDAGRAPH_CAPTURE_SIZE="${VLLM_MAX_CUDAGRAPH_CAPTURE_SIZE:-32}"
+VLLM_CUDAGRAPH_CAPTURE_SIZES="${VLLM_CUDAGRAPH_CAPTURE_SIZES:-1 2 4 8 16 32}"
 VLLM_CPU_OFFLOAD_GB="${VLLM_CPU_OFFLOAD_GB:-0}"
 VLLM_SWAP_SPACE="${VLLM_SWAP_SPACE:-0}"
 VLLM_DTYPE="${VLLM_DTYPE:-bfloat16}"
 VLLM_ENABLE_PREFIX_CACHING="${VLLM_ENABLE_PREFIX_CACHING:-true}"
+VLLM_ENABLE_CHUNKED_PREFILL="${VLLM_ENABLE_CHUNKED_PREFILL:-true}"
+VLLM_SCHEDULING_POLICY="${VLLM_SCHEDULING_POLICY:-priority}"
 VLLM_QUANTIZATION="${VLLM_QUANTIZATION:-modelopt}"
 VLLM_KV_CACHE_DTYPE="${VLLM_KV_CACHE_DTYPE:-fp8}"
 VLLM_EXTRA_ARGS="${VLLM_EXTRA_ARGS:-}"
-VLLM_MOE_BACKEND="${VLLM_MOE_BACKEND:-marlin}"
-VLLM_MAMBA_BACKEND="${VLLM_MAMBA_BACKEND:-flashinfer}"
-VLLM_MAMBA_CACHE_MODE="${VLLM_MAMBA_CACHE_MODE:-align}"
-VLLM_CHAT_TEMPLATE="${VLLM_CHAT_TEMPLATE:-/qwen_setup/nemotron_lightning_chat_template_nothink2.jinja}"
-VLLM_TOOL_PARSER_PLUGIN="${VLLM_TOOL_PARSER_PLUGIN:-/qwen_setup/nemotron3_tool_parser_plugin.py}"
+VLLM_CHAT_TEMPLATE="${VLLM_CHAT_TEMPLATE:-/qwen_setup/gemma4_chat_template.jinja}"
 
-# --- Host env exports (1:1 z docker run -d hosta / patch_and_run.sh) ---
+# --- Host env exports (1:1 z DiffusionGemma Studio) ---
+export VLLM_USE_V2_MODEL_RUNNER="${VLLM_USE_V2_MODEL_RUNNER:-1}"
 export VLLM_USE_V1="${VLLM_USE_V1:-0}"
 export VLLM_ATTENTION_BACKEND="${VLLM_ATTENTION_BACKEND:-FLASHINFER}"
 export VLLM_NVFP4_GEMM_BACKEND="${VLLM_NVFP4_GEMM_BACKEND:-flashinfer-cutlass}"
@@ -64,26 +65,23 @@ export VLLM_USE_FLASHINFER_SAMPLER="${VLLM_USE_FLASHINFER_SAMPLER:-1}"
 export VLLM_USE_TRITON_FLASH_ATTN="${VLLM_USE_TRITON_FLASH_ATTN:-0}"
 export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
 export VLLM_ALLOW_LONG_MAX_MODEL_LEN="${VLLM_ALLOW_LONG_MAX_MODEL_LEN:-1}"
-# Limit PyTorch Inductor / Triton compilation parallelism (prevents 16-core RAM spike during Mamba2 compile)
 export OMP_NUM_THREADS="${OMP_NUM_THREADS:-4}"
 export TORCHINDUCTOR_NUM_THREADS="${TORCHINDUCTOR_NUM_THREADS:-4}"
 export MKL_NUM_THREADS="${MKL_NUM_THREADS:-4}"
-# HF: provider online (HF_HUB_OFFLINE=0, /root/.cache/huggingface) vs host offline (1, /tmp/hf_home)
 export HF_HUB_OFFLINE="${HF_HUB_OFFLINE:-0}"
 export HF_HOME="${HF_HOME:-/root/.cache/huggingface}"
 export HF_HOME
+
 if [[ -n "${HF_TOKEN:-}" ]]; then
   export HUGGING_FACE_HUB_TOKEN="$HF_TOKEN"
   export HF_TOKEN
-  echo "[entrypoint] HF_TOKEN set (len ${#HF_TOKEN}), will be used for gated HF downloads"
-else
-  echo "[entrypoint] HF_TOKEN not set — public model nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4 is public, no token needed"
 fi
-echo "[entrypoint] ENV VLLM_ATTENTION_BACKEND=$VLLM_ATTENTION_BACKEND VLLM_NVFP4_GEMM_BACKEND=$VLLM_NVFP4_GEMM_BACKEND VLLM_USE_FLASHINFER_MOE_FP4=$VLLM_USE_FLASHINFER_MOE_FP4 VLLM_USE_FLASHINFER_SAMPLER=$VLLM_USE_FLASHINFER_SAMPLER PYTORCH_CUDA_ALLOC_CONF=$PYTORCH_CUDA_ALLOC_CONF VLLM_ALLOW_LONG_MAX_MODEL_LEN=$VLLM_ALLOW_LONG_MAX_MODEL_LEN HF_HUB_OFFLINE=$HF_HUB_OFFLINE HF_HOME=$HF_HOME"
-echo "[entrypoint] MODEL=$MODEL  VLLM_MODEL=$VLLM_MODEL"
+
+echo "[entrypoint] ENV VLLM_USE_V2_MODEL_RUNNER=$VLLM_USE_V2_MODEL_RUNNER VLLM_ATTENTION_BACKEND=$VLLM_ATTENTION_BACKEND PYTORCH_CUDA_ALLOC_CONF=$PYTORCH_CUDA_ALLOC_CONF"
+echo "[entrypoint] MODEL=$MODEL VLLM_MODEL=$VLLM_MODEL"
 mkdir -p "$HF_HOME" 2>/dev/null || true
 
-# 1) Tailscale IP & host port export
+# Tailscale IP export
 export HOST_AGENT_PORT="${HOST_AGENT_PORT:-47901}"
 if [[ -z "${TAILSCALE_IP:-}" ]]; then
   _ts_ip=""
@@ -108,261 +106,100 @@ if [[ -n "${TAILSCALE_AUTHKEY:-}" ]]; then
         --advertise-tags tag:provider \
         --hostname "${TAILSCALE_HOSTNAME:-provider-5090}" \
         ${TAILSCALE_EXTRA_ARGS:-} || echo "[entrypoint] tailscale up failed (continuing)"
-    else
-      echo "[entrypoint] tailscaled not running in container — expected host tailscaled. Skipping container tailscale up."
-      echo "[entrypoint] Run on host: tailscale up --login-server ${TAILSCALE_LOGIN_SERVER:-https://tailnet.seedinfer.com} --authkey *** --advertise-tags tag:provider"
     fi
   fi
 fi
 
-# 2) Sprawdź CUDA + VRAM + Host System RAM
-GPU_NAME=""
-VRAM_MB="0"
-SYS_RAM_AVAIL_MB=$(free -m 2>/dev/null | awk '/Mem:/ {print $7}' || echo "99999")
-SYS_RAM_TOTAL_MB=$(free -m 2>/dev/null | awk '/Mem:/ {print $2}' || echo "99999")
-echo "[entrypoint] Host System RAM total: ${SYS_RAM_TOTAL_MB}MB, available: ${SYS_RAM_AVAIL_MB}MB"
-
-if command -v nvidia-smi >/dev/null 2>&1; then
-  echo "[entrypoint] nvidia-smi:"
-  nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv || true
-  VRAM_MB=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits 2>/dev/null | head -n1 | tr -d ' ' || echo "0")
-  GPU_NAME=$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -n1 || echo "")
-  GPU_NAME_LC=$(echo "$GPU_NAME" | tr '[:upper:]' '[:lower:]')
-  echo "[entrypoint] GPU detected: $GPU_NAME VRAM=${VRAM_MB}MB"
-  if [[ "$VRAM_MB" != "0" && "$VRAM_MB" -lt 16000 ]]; then
-    echo "[entrypoint] ERROR: GPU VRAM ${VRAM_MB}MB < 16GB — NVFP4 model nvidia/... requires >=16GB (minimum RTX 5090 32GB zalecane dla 1M ctx). Zmniejsz VLLM_GPU_MEMORY_UTILIZATION lub użyj mniejszego modelu." >&2
-    echo "[entrypoint] Hint: nvidia-smi; try VLLM_MAX_MODEL_LEN=32768 VLLM_GPU_MEMORY_UTILIZATION=0.80 lub 0.85" >&2
-  elif [[ "$VRAM_MB" != "0" && "$VRAM_MB" -lt 32000 ]]; then
-    echo "[entrypoint] WARN: GPU VRAM ${VRAM_MB}MB < 32GB — NVFP4 działa (~16-22GB + ~6GB KV dla 1M ctx), ale minimum 32GB zalecane (RTX 5090 32GB). Jeśli OOM, zmniejsz VLLM_MAX_MODEL_LEN=131072 i VLLM_GPU_MEMORY_UTILIZATION=0.85." >&2
-    if [[ "$VRAM_MB" -lt 24000 ]]; then
-      echo "[entrypoint] WARN: VRAM <24GB — dla 1M ctx konieczne VLLM_GPU_MEMORY_UTILIZATION=0.80 i VLLM_MAX_MODEL_LEN=131072 lub 32768." >&2
-    fi
-  else
-    echo "[entrypoint] VRAM OK >=32GB (utilization limit: $VLLM_GPU_MEMORY_UTILIZATION, max model len: $VLLM_MAX_MODEL_LEN)"
-  fi
-  VER=$(nvidia-smi | grep -oP 'Driver Version: \K[0-9.]+' || echo "")
-  if [[ -n "$VER" ]]; then
-    MAJ=$(echo "$VER" | cut -d. -f1)
-    if [[ "$MAJ" -lt 580 ]]; then
-      if [[ "$MAJ" -lt 550 ]]; then
-        echo "[entrypoint] WARN: NVIDIA driver $VER < 550 — CUDA 12.4 wymaga 550+, CUDA 13.3 wymaga 580+. Zaktualizuj driver do 580+." >&2
-      elif [[ "$MAJ" -lt 570 ]]; then
-        echo "[entrypoint] WARN: NVIDIA driver $VER < 570 — CUDA 13.2+ wymaga 570+, CUDA 13.3 wymaga 580+. Działa na 12.4 ale dla Blackwell użyj 580+." >&2
-      else
-        echo "[entrypoint] WARN: NVIDIA driver $VER < 580 — CUDA 13.3 wymaga 580.65+ (Blackwell GB202). Masz $VER — użyj image 13.2.1 (570+) lub zaktualizuj do 580+." >&2
-      fi
-    else
-      echo "[entrypoint] Driver $VER OK for CUDA 13.3 (580+)"
-    fi
-    CUDA_VER=$(nvidia-smi | grep -oP 'CUDA Version: \K[0-9.]+' || echo "unknown")
-    echo "[entrypoint] CUDA runtime driver reports: $CUDA_VER (need 13.3+ for Blackwell native, 12.4+ min)"
-  fi
-else
-  echo "[entrypoint] WARN: nvidia-smi not found — GPU monitoring will be degraded"
-  GPU_NAME_LC=""
-fi
-
-# 2b) Sprawdź dostępność HF modelu (bez download — info only)
-if command -v python3 >/dev/null 2>&1; then
-  python3 - <<PY || true
-import os
-mid=os.getenv("VLLM_MODEL","nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4")
-print(f"[entrypoint] HF model to auto-download: {mid}")
-print(f"[entrypoint] HF cache: {os.getenv('HF_HOME','/root/.cache/huggingface')} — vLLM pobierze automatycznie przy pierwszym starcie (~20-30GB)")
-try:
- import urllib.request
- tok=os.getenv("HF_TOKEN","")
- headers={}
- if tok: headers["Authorization"]=f"Bearer {tok}"
- req=urllib.request.Request(f"https://huggingface.co/api/models/{mid}", headers=headers, method="HEAD")
- urllib.request.urlopen(req, timeout=5)
- print("[entrypoint] HF model exists on hub: OK")
-except Exception as e:
- print(f"[entrypoint] HF model check skip/failed (offline?): {e}")
-PY
-fi
-
-# 3) Profil detekcja: RTX 5090 / Blackwell 32GB (host) vs A100/H100 fallback (humming)
-# Host flags: marlin + fp8 + 0.88 + 128/4096 + flashinfer — dla 32GB GPUs (5090, Blackwell, L40S, 6000 Ada etc)
-# Fallback: A100/H100 (Ampere/Hopper) bez native FP4 → humming W4A16 emulation
-IS_32GB_HOST_PROFILE="true"
-if [[ -n "${GPU_NAME_LC:-}" ]]; then
-  if echo "$GPU_NAME_LC" | grep -qE "a100|h100|a800|h800"; then
-    IS_32GB_HOST_PROFILE="false"
-    echo "[entrypoint] GPU $GPU_NAME detected as A100/H100 Ampere/Hopper → fallback profile (humming)"
-  elif echo "$GPU_NAME_LC" | grep -qE "5090|blackwell|gb202|gb203|gb100|l40|rtx.*6000|rtx.*5000|rtx.*4500"; then
-    IS_32GB_HOST_PROFILE="true"
-    echo "[entrypoint] GPU $GPU_NAME detected as Blackwell/5090/L40/6000 → host profile (marlin + fp8)"
-  elif [[ "$VRAM_MB" != "0" && "$VRAM_MB" -lt 30000 ]]; then
-    # <30GB (np. RTX 4090 24GB) — host 1M ctx tight, ale nadal host flags jeśli nie A100/H100
-    IS_32GB_HOST_PROFILE="true"
-    echo "[entrypoint] VRAM ${VRAM_MB}MB <30GB but non-A100/H100 → keeping host marlin profile (may need --max-model-len downscale on OOM)"
-  else
-    echo "[entrypoint] GPU $GPU_NAME VRAM ${VRAM_MB}MB → host marlin profile (default dla 32GB)"
-  fi
-else
-  echo "[entrypoint] GPU name unknown → default host marlin profile (32GB)"
-fi
-# Allow explicit override via env VLLM_MOE_BACKEND=humming etc
-if [[ "$VLLM_MOE_BACKEND" == "humming" ]]; then
-  IS_32GB_HOST_PROFILE="false"
-  echo "[entrypoint] VLLM_MOE_BACKEND=humming override → fallback humming profile"
-fi
-echo "[entrypoint] Selected profile: $([ "$IS_32GB_HOST_PROFILE" == "true" ] && echo "HOST (marlin fp8 0.88 128/4096)" || echo "FALLBACK (humming)")"
-
-# 3b) Zbuduj vLLM args — host 1:1 dla 32GB path
+# 3) Build complete 1:1 vLLM arguments for Gemma 4 26B A4B NVFP4
 VLLM_ARGS=(
   --model "$VLLM_MODEL"
   --host 0.0.0.0
   --port "$VLLM_PORT"
   --served-model-name "$MODEL"
+  --hf-overrides '{"architectures": ["Gemma4ForCausalLM"]}'
   --quantization "$VLLM_QUANTIZATION"
   --dtype "$VLLM_DTYPE"
   --kv-cache-dtype "$VLLM_KV_CACHE_DTYPE"
-  --max-model-len "$VLLM_MAX_MODEL_LEN"
   --gpu-memory-utilization "$VLLM_GPU_MEMORY_UTILIZATION"
+  --block-size "$VLLM_BLOCK_SIZE"
+  --max-model-len "$VLLM_MAX_MODEL_LEN"
+  --max-num-seqs "$VLLM_MAX_NUM_SEQS"
+  --max-cudagraph-capture-size "$VLLM_MAX_CUDAGRAPH_CAPTURE_SIZE"
+  --disable-custom-all-reduce
+  --enable-chunked-prefill
+  --max-num-batched-tokens "$VLLM_MAX_BATCHED_TOKENS"
+  --scheduling-policy "$VLLM_SCHEDULING_POLICY"
+  --enable-auto-tool-choice
+  --tool-call-parser gemma4
+  --reasoning-parser gemma4
+  --override-generation-config '{"max_new_tokens": null, "max_denoising_steps": 32}'
+  --default-chat-template-kwargs '{"enable_thinking":true}'
+  --trust-remote-code
+  --language-model-only
 )
 
-if [[ "$IS_32GB_HOST_PROFILE" == "true" ]]; then
-  # Host dokładnie: 128 seq, 4096 batched, chunked, prefix, marlin, mamba flashinfer align
-  VLLM_ARGS+=(
-    --max-num-seqs 128
-    --max-num-batched-tokens 4096
-    --enable-chunked-prefill
-  )
-  if [[ "$VLLM_ENABLE_PREFIX_CACHING" == "true" ]]; then
-    VLLM_ARGS+=(--enable-prefix-caching)
-  fi
-  VLLM_ARGS+=(
-    --moe-backend marlin
-    --mamba-backend "$VLLM_MAMBA_BACKEND"
-    --mamba-cache-mode "$VLLM_MAMBA_CACHE_MODE"
-  )
-else
-  # Fallback A100/H100 — humming (W4A16) zachowany jako alternatywny profil
-  # max-num-seqs 128 zachowany jak host (można nadpisać env), batched 4096 jak host dla spójności; humming kernels emulują W4A16 na Ampere
-  # Opcjonalnie jeśli VLLM_MOE_BACKEND=humming nadpisuj:
-  VLLM_ARGS+=(
-    --max-num-seqs 128
-    --max-num-batched-tokens 4096
-    --enable-chunked-prefill
-  )
-  if [[ "$VLLM_ENABLE_PREFIX_CACHING" == "true" ]]; then
-    VLLM_ARGS+=(--enable-prefix-caching)
-  fi
-  # fallback humming: jeśli VLLM_QUANTIZATION == modelopt (host), na A100 lepiej modelopt_fp4 — ale zachowaj env override
-  if [[ "$VLLM_QUANTIZATION" == "modelopt" ]]; then
-    echo "[entrypoint] Fallback humming: VLLM_QUANTIZATION=$VLLM_QUANTIZATION (host) → dla A100/H100 może być modelopt_fp4; użyj modelopt (humming W4A16 emuluje) lub ustaw VLLM_QUANTIZATION=modelopt_fp4 ręcznie jeśli potrzeba"
-  fi
-  VLLM_ARGS+=(
-    --moe-backend humming
-    --mamba-backend "$VLLM_MAMBA_BACKEND"
-    --mamba-cache-mode "$VLLM_MAMBA_CACHE_MODE"
-  )
-  # humming optional linear-backend na A100/H100 (nie na Blackwell host)
-  # jeśli vLLM nightly humming wymaga --linear-backend humming, dodaj:
-  if [[ "$VLLM_MOE_BACKEND" == "humming" ]]; then
-    echo "[entrypoint] fallback humming: dodaję --linear-backend humming dla spójności z modal recipe (opcjonalne na A100)"
-    VLLM_ARGS+=(--linear-backend humming)
-  fi
+# Convert space-separated capture sizes to array if set
+if [[ -n "$VLLM_CUDAGRAPH_CAPTURE_SIZES" ]]; then
+  VLLM_ARGS+=(--cudagraph-capture-sizes $VLLM_CUDAGRAPH_CAPTURE_SIZES)
 fi
 
-# Chat template — jeśli plik istnieje (host 1:1), dodaj --chat-template, else fallback do HF tokenizer_config.json
+if [[ "$VLLM_ENABLE_PREFIX_CACHING" == "true" ]]; then
+  VLLM_ARGS+=(--enable-prefix-caching)
+fi
+
+# Chat template lookup for Gemma 4
 CHAT_TEMPLATE_FOUND=""
-for cand in "$VLLM_CHAT_TEMPLATE" "/qwen_setup/nemotron_lightning_chat_template_nothink2.jinja" "/app/assets/nemotron_lightning_chat_template_nothink2.jinja" "/app/provider/assets/nemotron_lightning_chat_template_nothink2.jinja" "./provider/assets/nemotron_lightning_chat_template_nothink2.jinja"; do
+for cand in "$VLLM_CHAT_TEMPLATE" "/qwen_setup/gemma4_chat_template.jinja" "/tmp/gemma4_chat_template.jinja" "/app/assets/gemma4_chat_template.jinja" "/app/provider/assets/gemma4_chat_template.jinja" "./provider/assets/gemma4_chat_template.jinja"; do
   if [[ -f "$cand" ]]; then
     CHAT_TEMPLATE_FOUND="$cand"
     break
   fi
 done
 if [[ -n "$CHAT_TEMPLATE_FOUND" ]]; then
-  echo "[entrypoint] chat-template found: $CHAT_TEMPLATE_FOUND → --chat-template $CHAT_TEMPLATE_FOUND"
+  echo "[entrypoint] Gemma 4 chat-template found: $CHAT_TEMPLATE_FOUND"
   VLLM_ARGS+=(--chat-template "$CHAT_TEMPLATE_FOUND")
-else
-  echo "[entrypoint] chat-template not found (fallback do HF tokenizer_config.json) — pomijam --chat-template"
 fi
 
-# Tool parser — host 1:1 nemotron3 + plugin
-VLLM_ARGS+=(--enable-auto-tool-choice --tool-call-parser nemotron3)
-TOOL_PLUGIN_FOUND=""
-for cand in "$VLLM_TOOL_PARSER_PLUGIN" "/qwen_setup/nemotron3_tool_parser_plugin.py" "/app/assets/nemotron3_tool_parser_plugin.py" "/app/provider/assets/nemotron3_tool_parser_plugin.py" "./provider/assets/nemotron3_tool_parser_plugin.py"; do
-  if [[ -f "$cand" ]]; then
-    TOOL_PLUGIN_FOUND="$cand"
-    break
-  fi
-done
-if [[ -n "$TOOL_PLUGIN_FOUND" ]]; then
-  echo "[entrypoint] tool-parser-plugin found: $TOOL_PLUGIN_FOUND → --tool-parser-plugin $TOOL_PLUGIN_FOUND"
-  VLLM_ARGS+=(--tool-parser-plugin "$TOOL_PLUGIN_FOUND")
-else
-  echo "[entrypoint] tool-parser-plugin not found — pomijam --tool-parser-plugin (użyj HF default lub mount /qwen_setup)"
-fi
-
-# Stałe host flags
-VLLM_ARGS+=(--trust-remote-code --language-model-only)
-
-# VLLM_EXTRA_ARGS — dodatkowe override z env (jeśli ustawione, dopisuj na koniec)
 if [[ -n "$VLLM_EXTRA_ARGS" ]]; then
   # shellcheck disable=SC2206
   EXTRA=($VLLM_EXTRA_ARGS)
-  echo "[entrypoint] VLLM_EXTRA_ARGS extra: ${EXTRA[*]}"
+  echo "[entrypoint] VLLM_EXTRA_ARGS: ${EXTRA[*]}"
   VLLM_ARGS+=("${EXTRA[@]}")
 fi
 
-# Auto-check and hotfix compressed-tensors for vLLM 0.28+ NVFP4 compatibility
+# compressed-tensors check
 if python3 -c "from compressed_tensors.compressors.pack_quantized.helpers import pack_to_int32" >/dev/null 2>&1; then
   echo "[entrypoint] compressed-tensors OK"
 else
-  echo "[entrypoint] Hotfixing compressed-tensors==0.17.0 for vLLM 0.28+ compatibility..."
+  echo "[entrypoint] Installing compressed-tensors==0.17.0..."
   pip install --break-system-packages --no-cache-dir "compressed-tensors==0.17.0" >/dev/null 2>&1 || true
 fi
 
-# Auto-apply Studio NVFP4 patches (patch_kv_cache, patch_trtllm, patch_cutlass, patch_vllm, tensorrt_llm)
-for patch_dir in "/qwen_setup" "/app/assets" "/mnt/d/qwen_setup"; do
+# Auto-apply patches
+for patch_dir in "/qwen_setup" "/studio" "/app/assets" "/mnt/d/qwen_setup"; do
   if [[ -f "$patch_dir/patch_kv_cache.py" ]]; then
-    echo "[entrypoint] Applying Studio NVFP4 patches from $patch_dir..."
-    export PIP_CACHE_DIR="${PIP_CACHE_DIR:-$patch_dir/pip-cache}"
-    mkdir -p "$PIP_CACHE_DIR" 2>/dev/null || true
-    if ! python3 -c "import ninja" 2>/dev/null; then
-      pip install --no-cache-dir ninja --break-system-packages 2>/dev/null || true
-    fi
+    echo "[entrypoint] Applying patches from $patch_dir..."
     for script in "patch_trtllm.py" "patch_vllm.py" "patch_fix_nightly_0825.py" "patch_kv_cache.py" "patch_cutlass.py"; do
       if [[ -f "$patch_dir/$script" ]]; then
-        echo "[entrypoint] Executing $script..."
         python3 "$patch_dir/$script" 2>&1 || echo "[entrypoint] WARN: $script failed"
       fi
     done
-    if [[ -f "$patch_dir/trtllm_nvfp4_moe.py" ]]; then
-      mkdir -p /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/fused_moe/experts/ 2>/dev/null || true
-      cp "$patch_dir/trtllm_nvfp4_moe.py" /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/fused_moe/experts/trtllm_nvfp4_moe.py 2>/dev/null || true
-    fi
-    TRTLLM_WHL="$patch_dir/tensorrt_llm-1.3.0rc5.post2-cp312-cp312-linux_x86_64.whl"
-    if [[ -f "$TRTLLM_WHL" ]]; then
-      TRTLLM_HAVE=$(python3 -c "import tensorrt_llm; print(tensorrt_llm.__version__)" 2>/dev/null || echo "missing")
-      if [[ "$TRTLLM_HAVE" != "1.3.0rc5.post2" ]]; then
-        echo "[entrypoint] Installing TensorRT-LLM 1.3.0rc5.post2 from $TRTLLM_WHL..."
-        pip install --no-cache-dir --no-deps "$TRTLLM_WHL" --break-system-packages 2>/dev/null || true
-      fi
-    fi
     break
   fi
 done
 
-echo "[entrypoint] HF_HOME=$HF_HOME (vLLM auto-download if missing)"
-
 if [[ -f "/qwen_setup/patch_and_run.sh" ]]; then
-  echo "[entrypoint] Executing via Studio /qwen_setup/patch_and_run.sh: ${VLLM_ARGS[*]}"
+  echo "[entrypoint] Executing via /qwen_setup/patch_and_run.sh: ${VLLM_ARGS[*]}"
   chmod +x /qwen_setup/patch_and_run.sh 2>/dev/null || true
   /qwen_setup/patch_and_run.sh "${VLLM_ARGS[@]}" &
   VLLM_PID=$!
 else
-  echo "[entrypoint] starting vLLM directly: python -m vllm.entrypoints.openai.api_server ${VLLM_ARGS[*]}"
+  echo "[entrypoint] Starting vLLM directly: python3 -m vllm.entrypoints.openai.api_server ${VLLM_ARGS[*]}"
   python3 -m vllm.entrypoints.openai.api_server "${VLLM_ARGS[@]}" &
   VLLM_PID=$!
 fi
 
-# czekaj aż vLLM wstanie (max 900s — model duży + download ~30GB)
-echo "[entrypoint] waiting for vLLM on :$VLLM_PORT (timeout 900s, download ~30GB if first run) ..."
+echo "[entrypoint] waiting for vLLM on :$VLLM_PORT (timeout 900s) ..."
 for i in $(seq 1 180); do
   if curl -fsS "http://127.0.0.1:${VLLM_PORT}/health" >/dev/null 2>&1 || curl -fsS "http://127.0.0.1:${VLLM_PORT}/v1/models" >/dev/null 2>&1; then
     echo "[entrypoint] vLLM ready after $((i*5))s"
@@ -373,21 +210,12 @@ for i in $(seq 1 180); do
     wait "$VLLM_PID" || true
     exit 1
   fi
-  if (( i % 6 == 0 )); then
-    CACHE_SZ=$(du -sh "$HF_HOME" 2>/dev/null | cut -f1 || echo "?")
-    echo "[entrypoint] still waiting ($((i*5))s) — HF cache size: $CACHE_SZ  (download in progress if growing)"
-  fi
   sleep 5
-  if (( i == 180 )); then
-    echo "[entrypoint] timeout 900s waiting for vLLM — logs tail:"
-    ps -o pid,cmd 2>/dev/null | head || true
-  fi
 done
 
-# 4) Uruchom agenta (foreground)
 echo "[entrypoint] starting agent on :$AGENT_PORT"
 cleanup() {
-  echo "[entrypoint] SIGTERM/SIGINT — shutting down..."
+  echo "[entrypoint] SIGTERM/SIGINT received — shutting down..."
   kill -TERM "$VLLM_PID" 2>/dev/null || true
   kill -TERM "$AGENT_PID" 2>/dev/null || true
   wait "$VLLM_PID" 2>/dev/null || true

@@ -133,30 +133,60 @@ function buildOpenRouterModelSpec(opts: {
   }
 }
 
-// Canonical Flagship Model
+// Gemma 4 Flagship Model
+const GEMMA4_SPEC = buildOpenRouterModelSpec({
+  id: "google/gemma-4-26b-a4b-nvfp4",
+  name: "SeedInfer: Gemma 4 26B A4B NVFP4",
+  hugging_face_id: "nvidia/Gemma-4-26B-A4B-NVFP4",
+  quantization: "nvfp4",
+  tokenizer: "Gemma4",
+  description: "SeedInfer P2P Gemma 4 26B A4B MoE (NVFP4) optimized for low TTFT P99 (<50ms) & high throughput.",
+  promptCostUsd: "0.00002",
+  completionCostUsd: "0.00005",
+  contextLength: 262144,
+  maxOutput: 262144,
+  isReady: true,
+  isFree: false,
+})
+
+const GEMMA4_ALIAS_SPEC = buildOpenRouterModelSpec({
+  id: "seedinfer/gemma-4-26b-a4b",
+  name: "SeedInfer: Gemma 4 26B A4B Alias",
+  hugging_face_id: "nvidia/Gemma-4-26B-A4B-NVFP4",
+  quantization: "nvfp4",
+  tokenizer: "Gemma4",
+  description: "Alias for google/gemma-4-26b-a4b-nvfp4",
+  promptCostUsd: "0.00002",
+  completionCostUsd: "0.00005",
+  contextLength: 262144,
+  maxOutput: 262144,
+  isReady: true,
+  isFree: false,
+  slug: "google/gemma-4-26b-a4b-nvfp4",
+})
+
 const NEMOTRON_SPEC = buildOpenRouterModelSpec({
   id: "seedinfer/nemotron-lightning-1m",
-  name: "SeedInfer: Nemotron Lightning 1M",
-  hugging_face_id: "nvidia/Nemotron-4-34B-Instruct",
+  name: "SeedInfer: Nemotron 3.5 Lightning 30B 1M (NVFP4)",
+  hugging_face_id: "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4",
   quantization: "nvfp4",
   tokenizer: "Nemotron",
-  description: "SeedInfer P2P Decentralized Nemotron 1M context with 2M KV cache at electricity cost ($0.02/$0.05 per 1M). Hardware-attested P2P GPU cluster.",
-  promptCostUsd: "0.00002",    // $0.02 / 1M
-  completionCostUsd: "0.00005", // $0.05 / 1M
+  description: "Legacy Nemotron 3.5 Lightning 30B A3B NVFP4 model.",
+  promptCostUsd: "0.00002",
+  completionCostUsd: "0.00005",
   contextLength: 1048576,
   maxOutput: 1048576,
   isReady: true,
   isFree: false,
 })
 
-// Legacy / Friendly Compatibility Alias
 const ALIAS_SPEC = buildOpenRouterModelSpec({
   id: "gpt-oss-20b",
-  name: "SeedInfer: GPT-OSS 20B Alias",
-  hugging_face_id: "nvidia/Nemotron-4-34B-Instruct",
+  name: "SeedInfer: gpt-oss-20b Alias",
+  hugging_face_id: "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4",
   quantization: "nvfp4",
   tokenizer: "Nemotron",
-  description: "Alias for seedinfer/nemotron-lightning-1m (legacy compatibility alias)",
+  description: "Alias for seedinfer/nemotron-lightning-1m",
   promptCostUsd: "0.00002",
   completionCostUsd: "0.00005",
   contextLength: 1048576,
@@ -173,7 +203,13 @@ export async function GET() {
 
   for (const prov of activeProviders) {
     const modelName = prov.current_model || prov.vllm_model
-    if (modelName && modelName !== NEMOTRON_SPEC.id && modelName !== ALIAS_SPEC.id) {
+    if (
+      modelName &&
+      modelName !== GEMMA4_SPEC.id &&
+      modelName !== GEMMA4_ALIAS_SPEC.id &&
+      modelName !== NEMOTRON_SPEC.id &&
+      modelName !== ALIAS_SPEC.id
+    ) {
       if (!dynamicModelsMap.has(modelName)) {
         dynamicModelsMap.set(
           modelName,
@@ -191,7 +227,7 @@ export async function GET() {
     }
   }
 
-  const allModels = [NEMOTRON_SPEC, ALIAS_SPEC, ...Array.from(dynamicModelsMap.values())]
+  const allModels = [GEMMA4_SPEC, GEMMA4_ALIAS_SPEC, NEMOTRON_SPEC, ALIAS_SPEC, ...Array.from(dynamicModelsMap.values())]
 
   const body = {
     object: "list",

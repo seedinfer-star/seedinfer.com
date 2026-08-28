@@ -1,6 +1,7 @@
 "use client"
 import { useState } from "react"
 import Sidebar from "@/components/sidebar"
+import ThemeToggle from "@/components/theme-toggle"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -132,14 +133,19 @@ export default function SettingsPage() {
                     <CardTitle className="text-xs font-mono uppercase tracking-wide text-text-tertiary">Preferences</CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-3 text-xs text-text-secondary">
-                    <label className="flex items-center justify-between gap-2 rounded-lg border border-border-dim bg-bg-primary px-3 py-2 opacity-60">
-                      <span>Theme</span>
-                      <span className="font-mono text-[11px] text-text-tertiary">dark — soon</span>
-                    </label>
-                    <label className="flex items-center justify-between gap-2 rounded-lg border border-border-dim bg-bg-primary px-3 py-2 opacity-60">
-                      <span>Base URL</span>
+                    <div className="flex flex-col gap-2 rounded-xl border border-border-dim bg-bg-primary p-3">
+                      <div className="flex items-center justify-between">
+                        <span className="font-medium text-text-primary">Theme Appearance</span>
+                        <span className="font-mono text-[10px] text-text-tertiary">White / Dark</span>
+                      </div>
+                      <div className="pt-1">
+                        <ThemeToggle variant="segmented" className="w-full justify-center" />
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between gap-2 rounded-xl border border-border-dim bg-bg-primary px-3 py-2.5">
+                      <span className="font-medium text-text-primary">Base API URL</span>
                       <span className="font-mono text-[11px] text-text-tertiary">api.seedinfer.com</span>
-                    </label>
+                    </div>
                     <p className="font-mono text-[10px] text-text-tertiary">
                       Docs: <a href="https://docs.seedinfer.com" target="_blank" rel="noopener noreferrer" className="text-accent-brand underline">docs.seedinfer.com</a>
                     </p>

@@ -17,9 +17,11 @@ import {
   UserPlus,
   LogOut,
   BadgeCheck,
+  Calculator as CalculatorIcon,
 } from "lucide-react"
 import { useState, useEffect } from "react"
 import { cn } from "@/lib/utils"
+import ThemeToggle from "@/components/theme-toggle"
 
 type NavItem = { href: string; label: string; icon: React.ElementType; active?: boolean; external?: boolean }
 
@@ -31,6 +33,7 @@ const useNetwork: NavItem[] = [
 const provide: NavItem[] = [
   { href: "/provider", label: "Become a Provider", icon: Server },
   { href: "/providers", label: "Provider fleet", icon: Server },
+  { href: "/calculator", label: "Calculator", icon: CalculatorIcon },
   { href: "/earn", label: "Earnings", icon: Coins },
 ]
 const build: NavItem[] = [
@@ -359,21 +362,20 @@ export default function Sidebar() {
         </a>
       </div>
 
-      <div className="border-t border-border-dim p-2.5">
-        <div className="grid grid-cols-2 gap-1">
-          <button className="flex items-center gap-2 rounded-lg px-2 py-2 text-left text-[11px] text-text-secondary hover:bg-bg-hover">
-            <Settings className="h-3 w-3" />
-            <span>Appearance</span>
-          </button>
+      <div className="border-t border-border-dim p-2.5 space-y-1">
+        <ThemeToggle variant="menu" />
+        <div className="flex items-center justify-between gap-1 pt-1">
           <button
             onClick={handleSignOut}
-            className="flex items-center justify-end gap-2 rounded-lg px-2 py-2 text-[11px] text-text-secondary hover:bg-accent-red/10 hover:text-accent-red"
+            className="flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-[11px] text-text-secondary hover:bg-accent-red/10 hover:text-accent-red transition-colors"
           >
-            <LogOut className="h-3 w-3" />
-            <span>Sign out</span>
+            <span className="flex items-center gap-2">
+              <LogOut className="h-3 w-3" />
+              <span>Sign out</span>
+            </span>
           </button>
         </div>
-        <p className="mt-1 px-2 font-mono text-[8px] leading-3 text-text-tertiary">
+        <p className="px-2 pt-1 font-mono text-[8px] leading-3 text-text-tertiary">
           Public alpha · evaluation use only · SeedInfer
         </p>
       </div>

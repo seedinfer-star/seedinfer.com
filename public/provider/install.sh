@@ -10,8 +10,8 @@ set -euo pipefail
 
 GATEWAY="https://seedinfer.com"
 LOGIN_SERVER="https://tailnet.seedinfer.com"
-MODEL="seedinfer/nemotron-lightning-1m"
-VLLM_MODEL="nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4"
+MODEL="google/gemma-4-26b-a4b-nvfp4"
+VLLM_MODEL="google/gemma-4-26b-a4b-nvfp4"
 AUTHKEY=""
 # --- HOSTNAME sanitization (DNS label RFC1123: [a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?) ---
 # FIX: cut -c1-12 na "jakub-B550M-AORUS-ELITE" dawał "jakub-B550M-" kończące się "-" -> invalid DNS label.

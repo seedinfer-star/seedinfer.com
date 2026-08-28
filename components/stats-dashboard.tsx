@@ -12,6 +12,7 @@ import Economics from "@/components/economics"
 import Calculator from "@/components/calculator"
 import WhiteGlove from "@/components/whiteglove"
 import Roadmap from "@/components/roadmap"
+import ThemeToggle from "@/components/theme-toggle"
 import { fetchStats } from "@/lib/api"
 import type { StatsResponse } from "@/lib/types"
 import { RefreshCw, AlertTriangle, Server, Terminal, FileText } from "lucide-react"
@@ -58,11 +59,12 @@ export default function StatsDashboard() {
             <span className="hidden font-mono text-[10px] text-text-tertiary sm:inline">Last fetch: {lastFetch || "—"}</span>
             <button
               onClick={() => load(true)}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-border-default bg-bg-tertiary px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-bg-hover hover:text-text-primary"
+              className="inline-flex items-center gap-1.5 rounded-xl border border-border-default bg-bg-tertiary px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-all"
             >
               <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
               Refresh
             </button>
+            <ThemeToggle variant="icon" />
           </div>
         </header>
 
