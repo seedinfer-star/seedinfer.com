@@ -8,24 +8,7 @@
 import { SignJWT, jwtVerify } from "jose";
 // bcrypt native with fallback to bcryptjs (pure JS, no native build needed on ARM)
 // Element requires refinement: native bcrypt requires python/make on Pi — fallback to bcryptjs for build
-let bcrypt: any;
-try {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  bcrypt = require("bcrypt");
-} catch {
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    bcrypt = require("bcryptjs");
-  } catch {
-    // Final fallback stub to avoid build crash (collect page data) — will throw at runtime if used without dep
-    bcrypt = {
-      hash: async () => {
-        throw new Error("bcrypt/bcryptjs not installed — run npm i bcryptjs");
-      },
-      compare: async () => false,
-    };
-  }
-}
+import bcrypt from "bcryptjs";
 import { randomUUID } from "crypto";
 
 import { getDb } from "./db";
