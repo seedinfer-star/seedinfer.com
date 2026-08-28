@@ -1,4 +1,5 @@
 "use client"
+
 import Sidebar from "@/components/sidebar"
 import Calculator from "@/components/calculator"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
