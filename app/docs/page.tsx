@@ -19,18 +19,16 @@ import {
   Download,
   KeyRound,
   ExternalLink,
-  AlertTriangle,
   Clock,
   Globe,
   Wrench,
   Code2,
   Lock,
-  Layers,
   HelpCircle,
   ChevronDown,
   ChevronUp,
   Coins,
-  ArrowUpRight
+  ArrowRight
 } from "lucide-react"
 
 const ONE_LINER_RECOMMENDED = `curl -fsSL https://seedinfer.com/install.sh | bash`
@@ -41,14 +39,14 @@ const PYTHON_EXAMPLE = `import openai
 
 client = openai.OpenAI(
     base_url="https://seedinfer.com/v1",
-    api_key="sk-seedinfer-demo" # or your API key
+    api_key="sk-seedinfer-demo" # lub Twój dedykowany klucz API
 )
 
 response = client.chat.completions.create(
     model="seedinfer/nemotron-lightning-1m",
     messages=[
         {"role": "system", "content": "You are a helpful AI assistant."},
-        {"role": "user", "content": "Explain quantum computing in 2 sentences."}
+        {"role": "user", "content": "Wyjaśnij obliczenia kwantowe w 2 zdaniach."}
     ],
     temperature=0.7,
     max_tokens=150
@@ -74,7 +72,7 @@ const openai = new OpenAI({
 
 async function main() {
   const completion = await openai.chat.completions.create({
-    messages: [{ role: 'user', content: 'Hello!' }],
+    messages: [{ role: 'user', content: 'Cześć SeedInfer!' }],
     model: 'seedinfer/nemotron-lightning-1m',
   });
 
@@ -152,7 +150,7 @@ export default function DocsPage() {
         <header className="flex h-[48px] shrink-0 items-center justify-between border-b border-border-dim bg-bg-secondary px-4">
           <div className="min-w-0 flex items-center gap-3">
             <h1 className="truncate text-[13px] font-semibold tracking-tight text-text-primary">
-              SeedInfer Documentation
+              SeedInfer Documentation Center
             </h1>
             <Badge variant="outline" className="hidden sm:inline-flex font-mono text-[10px] border-accent-brand/30 text-accent-brand">
               v1.0 Decentralized Network
@@ -174,42 +172,102 @@ export default function DocsPage() {
           </div>
         </header>
 
-        {/* Sub-Header Tabs */}
-        <div className="border-b border-border-dim bg-bg-secondary/60 px-4 py-2">
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setTab("provider")}
-              className={`inline-flex items-center gap-2 px-4 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                tab === "provider"
-                  ? "bg-accent-brand text-white shadow-sm"
-                  : "bg-bg-tertiary text-text-secondary hover:text-text-primary hover:bg-bg-hover"
-              }`}
-            >
-              <Server className="h-3.5 w-3.5" /> Provider Documentation (Node Operators)
-            </button>
-            <button
-              onClick={() => setTab("client")}
-              className={`inline-flex items-center gap-2 px-4 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                tab === "client"
-                  ? "bg-accent-brand text-white shadow-sm"
-                  : "bg-bg-tertiary text-text-secondary hover:text-text-primary hover:bg-bg-hover"
-              }`}
-            >
-              <Code2 className="h-3.5 w-3.5" /> Client Documentation (API & Developers)
-            </button>
-          </div>
-        </div>
-
         {/* Main Content */}
         <main className="min-h-0 flex-1 overflow-y-auto bg-bg-primary">
           <div className="mx-auto max-w-[1600px] space-y-6 p-4 sm:p-6">
+
+            {/* Top Centered Section Header */}
+            <div className="text-center max-w-2xl mx-auto space-y-2 pt-2">
+              <Badge variant="outline" className="font-mono text-[10px] uppercase tracking-wider text-accent-brand border-accent-brand/30 bg-accent-brand/10">
+                Wybierz sekcję dokumentacji
+              </Badge>
+              <h2 className="text-2xl font-bold tracking-tight text-text-primary sm:text-3xl">
+                Dokumentacja Techniczna SeedInfer
+              </h2>
+              <p className="text-xs sm:text-sm text-text-secondary leading-5">
+                Kompleksowe przewodniki dla operatorów węzłów sprzętowych (Provider) oraz programistów integrujących API (Client).
+              </p>
+            </div>
+
+            {/* TWO LARGE CENTERED SELECTION BUTTONS / CARDS */}
+            <div className="grid gap-4 sm:grid-cols-2 max-w-4xl mx-auto">
+              {/* Provider Card Button */}
+              <button
+                onClick={() => setTab("provider")}
+                className={`relative flex flex-col items-start p-5 rounded-2xl border text-left transition-all duration-200 shadow-md ${
+                  tab === "provider"
+                    ? "border-accent-brand bg-gradient-to-br from-accent-brand/15 via-bg-secondary to-bg-secondary ring-2 ring-accent-brand/40"
+                    : "border-border-dim bg-bg-secondary hover:border-border-default hover:bg-bg-tertiary/40"
+                }`}
+              >
+                <div className="flex items-center justify-between w-full">
+                  <div className={`flex h-11 w-11 items-center justify-center rounded-xl border ${
+                    tab === "provider"
+                      ? "bg-accent-brand text-white border-accent-brand"
+                      : "bg-bg-tertiary text-text-secondary border-border-default"
+                  }`}>
+                    <Server className="h-5 w-5" />
+                  </div>
+                  <Badge
+                    variant={tab === "provider" ? "success" : "outline"}
+                    className="font-mono text-[10px]"
+                  >
+                    {tab === "provider" ? "Aktywna Sekcja" : "Węzły & Sprzęt"}
+                  </Badge>
+                </div>
+
+                <h3 className="mt-4 text-base font-bold text-text-primary flex items-center gap-2">
+                  Provider Documentation
+                  <ArrowRight className={`h-4 w-4 transition-transform ${tab === "provider" ? "translate-x-1 text-accent-brand" : "text-text-tertiary"}`} />
+                </h3>
+                <p className="mt-1 font-mono text-xs text-text-secondary leading-5">
+                  Dla Dostawców Sprzętu i Operatorów Węzłów. Instrukcja instalacji <code className="rounded bg-bg-tertiary px-1">install.sh</code>, wymogi RTX 5090 32GB, archiwum autoryzacji Ed25519, odcisk sprzętowy i FAQ dla dostawców.
+                </p>
+              </button>
+
+              {/* Client Card Button */}
+              <button
+                onClick={() => setTab("client")}
+                className={`relative flex flex-col items-start p-5 rounded-2xl border text-left transition-all duration-200 shadow-md ${
+                  tab === "client"
+                    ? "border-accent-brand bg-gradient-to-br from-accent-brand/15 via-bg-secondary to-bg-secondary ring-2 ring-accent-brand/40"
+                    : "border-border-dim bg-bg-secondary hover:border-border-default hover:bg-bg-tertiary/40"
+                }`}
+              >
+                <div className="flex items-center justify-between w-full">
+                  <div className={`flex h-11 w-11 items-center justify-center rounded-xl border ${
+                    tab === "client"
+                      ? "bg-accent-brand text-white border-accent-brand"
+                      : "bg-bg-tertiary text-text-secondary border-border-default"
+                  }`}>
+                    <Code2 className="h-5 w-5" />
+                  </div>
+                  <Badge
+                    variant={tab === "client" ? "success" : "outline"}
+                    className="font-mono text-[10px]"
+                  >
+                    {tab === "client" ? "Aktywna Sekcja" : "API & Integracja"}
+                  </Badge>
+                </div>
+
+                <h3 className="mt-4 text-base font-bold text-text-primary flex items-center gap-2">
+                  Client Documentation
+                  <ArrowRight className={`h-4 w-4 transition-transform ${tab === "client" ? "translate-x-1 text-accent-brand" : "text-text-tertiary"}`} />
+                </h3>
+                <p className="mt-1 font-mono text-xs text-text-secondary leading-5">
+                  Dla Programistów i Użytkowników API. Integracja OpenAI SDK, przykłady w Python, cURL i JS, specyfikacja endpointu <code className="rounded bg-bg-tertiary px-1">/v1/chat/completions</code>, cenniki i FAQ dla klientów.
+                </p>
+              </button>
+            </div>
+
+            <div className="border-t border-border-dim/60 pt-4" />
 
             {/* ========================================================================= */}
             {/* TAB 1: PROVIDER DOCUMENTATION                                             */}
             {/* ========================================================================= */}
             {tab === "provider" && (
               <div className="space-y-6">
-                {/* Hero Card */}
+                {/* Provider Hero Card */}
                 <Card className="overflow-hidden border border-accent-brand/20 bg-gradient-to-br from-accent-brand/10 via-bg-secondary to-bg-secondary">
                   <CardContent className="p-6">
                     <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
@@ -280,7 +338,7 @@ export default function DocsPage() {
                   </CardContent>
                 </Card>
 
-                {/* Zero-Account Architecture Explanation */}
+                {/* Zero-Account Security Details */}
                 <Card className="border border-border-dim bg-bg-secondary">
                   <CardHeader className="pb-3">
                     <CardTitle className="flex items-center gap-2 text-[13px]">
@@ -445,7 +503,7 @@ export default function DocsPage() {
                       }
                     />
                     <FaqItem
-                      question="Co się stanie, jeśli wyłączę komputery lub stracę połączenie internetowe?"
+                      question="Co się stanie, jeśli wyłączę komputer lub stracę połączenie internetowe?"
                       answer={
                         <p>
                           Bramka SeedInfer po prostu przestanie kierować ruch do Twojego węzła. Nie ma żadnych kar finansowych (slashingu). Wynagrodzenie retencyjne naliczane jest za każdą pełną godzinę dostępności z zachowaniem uptime &ge;50%.
@@ -646,7 +704,7 @@ export default function DocsPage() {
 
             {/* Footer */}
             <div className="border-t border-border-dim pt-4 font-mono text-[10px] leading-4 text-text-tertiary">
-              SeedInfer.com · Documentation (Provider & Client) · Built for Decentralized AI Privacy & Economics
+              SeedInfer.com · Documentation Center (Provider & Client) · Built for Decentralized AI Privacy & Economics
             </div>
           </div>
         </main>
