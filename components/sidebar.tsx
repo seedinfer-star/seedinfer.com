@@ -33,7 +33,6 @@ const useNetwork: NavItem[] = [
 const provide: NavItem[] = [
   { href: "/provider", label: "Become a Provider", icon: Server },
   { href: "/providers", label: "Provider fleet", icon: Server },
-  { href: "/calculator", label: "Calculator", icon: CalculatorIcon },
   { href: "/earn", label: "Earnings", icon: Coins },
 ]
 const build: NavItem[] = [

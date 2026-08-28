@@ -271,10 +271,10 @@ export default function ProviderPage() {
                   </div>
                 </div>
                 <a
-                  href="/calculator"
+                  href="/earn"
                   className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-accent-brand px-4 py-2.5 text-xs font-semibold text-white hover:bg-accent-brand-hover transition-colors shadow-md"
                 >
-                  <CalculatorIcon className="h-4 w-4" /> Open Dedicated Calculator <ArrowUpRight className="h-4 w-4" />
+                  <Coins className="h-4 w-4" /> Open Earnings & Calculator <ArrowUpRight className="h-4 w-4" />
                 </a>
               </div>
             </Card>
