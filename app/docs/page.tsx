@@ -4,12 +4,83 @@ import Link from "next/link"
 import Sidebar from "@/components/sidebar"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Copy, Check, Server, Terminal, Cpu, HardDrive, Zap, FileText, ShieldCheck, Activity, Download, KeyRound, ExternalLink, AlertTriangle, Clock, Globe, Wrench } from "lucide-react"
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
+import {
+  Copy,
+  Check,
+  Server,
+  Terminal,
+  Cpu,
+  HardDrive,
+  Zap,
+  FileText,
+  ShieldCheck,
+  Activity,
+  Download,
+  KeyRound,
+  ExternalLink,
+  AlertTriangle,
+  Clock,
+  Globe,
+  Wrench,
+  Code2,
+  Lock,
+  Layers,
+  HelpCircle,
+  ChevronDown,
+  ChevronUp,
+  Coins,
+  ArrowUpRight
+} from "lucide-react"
 
 const ONE_LINER_RECOMMENDED = `curl -fsSL https://seedinfer.com/install.sh | bash`
 const ONE_LINER_SIMPLE = `curl -fsSL https://seedinfer.com/install.sh | bash -s -- --authkey YOUR_AUTHKEY`
 const ONE_LINER_AUTO = `curl -fsSL https://seedinfer.com/install.sh | bash -s -- --authkey $(curl -s https://seedinfer.com/api/v1/auth/request | jq -r .authkey)`
-const ONE_LINER_CUSTOM = `curl -fsSL https://seedinfer.com/install.sh | bash -s -- --authkey YOUR_AUTHKEY --model seedinfer/nemotron-lightning-1m --gateway https://seedinfer.com --hostname provider-5090`
+
+const PYTHON_EXAMPLE = `import openai
+
+client = openai.OpenAI(
+    base_url="https://seedinfer.com/v1",
+    api_key="sk-seedinfer-demo" # or your API key
+)
+
+response = client.chat.completions.create(
+    model="seedinfer/nemotron-lightning-1m",
+    messages=[
+        {"role": "system", "content": "You are a helpful AI assistant."},
+        {"role": "user", "content": "Explain quantum computing in 2 sentences."}
+    ],
+    temperature=0.7,
+    max_tokens=150
+)
+
+print(response.choices[0].message.content)`
+
+const CURL_EXAMPLE = `curl -X POST https://seedinfer.com/v1/chat/completions \\
+  -H "Content-Type: application/json" \\
+  -H "Authorization: Bearer sk-seedinfer-demo" \\
+  -d '{
+    "model": "seedinfer/nemotron-lightning-1m",
+    "messages": [{"role": "user", "content": "Hello SeedInfer!"}],
+    "stream": false
+  }'`
+
+const JS_EXAMPLE = `import OpenAI from 'openai';
+
+const openai = new OpenAI({
+  baseURL: 'https://seedinfer.com/v1',
+  apiKey: 'sk-seedinfer-demo',
+});
+
+async function main() {
+  const completion = await openai.chat.completions.create({
+    messages: [{ role: 'user', content: 'Hello!' }],
+    model: 'seedinfer/nemotron-lightning-1m',
+  });
+
+  console.log(completion.choices[0].message.content);
+}
+main();`
 
 function CopyButton({ text, label }: { text: string; label?: string }) {
   const [copied, setCopied] = useState(false)
@@ -23,7 +94,7 @@ function CopyButton({ text, label }: { text: string; label?: string }) {
   return (
     <button
       onClick={onCopy}
-      className="inline-flex items-center gap-1.5 rounded-lg border border-border-default bg-bg-tertiary px-2.5 py-1 font-mono text-[11px] text-text-secondary hover:bg-bg-hover hover:text-text-primary"
+      className="inline-flex items-center gap-1.5 rounded-lg border border-border-default bg-bg-tertiary px-2.5 py-1 font-mono text-[11px] text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors"
     >
       {copied ? <Check className="h-3.5 w-3.5 text-accent-green" /> : <Copy className="h-3.5 w-3.5" />}
       {copied ? "Copied" : label || "Copy"}
@@ -34,397 +105,548 @@ function CopyButton({ text, label }: { text: string; label?: string }) {
 function CodeBlock({ code, label }: { code: string; label?: string }) {
   return (
     <div>
-      {label && <div className="mb-1.5 flex items-center justify-between"><span className="font-mono text-[11px] uppercase tracking-wide text-text-tertiary">{label}</span><CopyButton text={code} /></div>}
-      <pre className="overflow-x-auto rounded-xl border border-border-dim bg-bg-primary p-3 font-mono text-xs leading-4 text-text-secondary whitespace-pre-wrap break-all">{code}</pre>
+      {label && (
+        <div className="mb-1.5 flex items-center justify-between">
+          <span className="font-mono text-[11px] uppercase tracking-wide text-text-tertiary">{label}</span>
+          <CopyButton text={code} />
+        </div>
+      )}
+      <pre className="overflow-x-auto rounded-xl border border-border-dim bg-bg-primary p-3.5 font-mono text-xs leading-5 text-text-secondary whitespace-pre-wrap break-all shadow-inner">
+        {code}
+      </pre>
+    </div>
+  )
+}
+
+function FaqItem({ question, answer }: { question: string; answer: React.ReactNode }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="rounded-xl border border-border-dim bg-bg-primary overflow-hidden transition-all">
+      <button
+        onClick={() => setOpen(!open)}
+        className="w-full flex items-center justify-between p-4 text-left font-medium text-text-primary hover:bg-bg-tertiary/50 transition-colors"
+      >
+        <span className="text-sm font-semibold flex items-center gap-2">
+          <HelpCircle className="h-4 w-4 text-accent-brand shrink-0" />
+          {question}
+        </span>
+        {open ? <ChevronUp className="h-4 w-4 text-text-tertiary" /> : <ChevronDown className="h-4 w-4 text-text-tertiary" />}
+      </button>
+      {open && (
+        <div className="px-4 pb-4 pt-1 border-t border-border-dim/50 text-xs leading-5 text-text-secondary font-sans">
+          {answer}
+        </div>
+      )}
     </div>
   )
 }
 
 export default function DocsPage() {
+  const [tab, setTab] = useState<"provider" | "client">("provider")
+
   return (
     <div className="flex h-screen overflow-hidden bg-bg-primary">
       <Sidebar />
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        {/* Header */}
         <header className="flex h-[48px] shrink-0 items-center justify-between border-b border-border-dim bg-bg-secondary px-4">
-          <div className="min-w-0">
-            <h1 className="truncate text-[13px] font-semibold tracking-tight text-text-primary">SeedInfer Docs · Hardware & Setup</h1>
-            <p className="truncate font-mono text-[11px] text-text-tertiary">
-              Required hardware · NVFP4 1M ctx · CUDA 13.3 · RTX 5090 32GB min · 47900/47901 · install.sh
-            </p>
+          <div className="min-w-0 flex items-center gap-3">
+            <h1 className="truncate text-[13px] font-semibold tracking-tight text-text-primary">
+              SeedInfer Documentation
+            </h1>
+            <Badge variant="outline" className="hidden sm:inline-flex font-mono text-[10px] border-accent-brand/30 text-accent-brand">
+              v1.0 Decentralized Network
+            </Badge>
           </div>
           <div className="flex items-center gap-2">
-            <Link href="/providers" className="hidden sm:inline-flex items-center gap-1.5 rounded-lg border border-border-default bg-bg-tertiary px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-bg-hover hover:text-text-primary">
-              <Activity className="h-3.5 w-3.5" /> Fleet
+            <Link
+              href="/provider"
+              className="inline-flex items-center gap-1.5 rounded-lg bg-accent-brand px-3 py-1.5 text-xs font-semibold text-white hover:bg-accent-brand-hover transition-colors shadow-sm"
+            >
+              <Server className="h-3.5 w-3.5" /> Become a Provider
             </Link>
-            <Link href="/provider" className="inline-flex items-center gap-1.5 rounded-lg bg-accent-brand px-3 py-1.5 text-xs font-semibold text-white hover:bg-accent-brand-hover">
-              <Server className="h-3.5 w-3.5" /> Become a Provider →
+            <Link
+              href="/earn"
+              className="hidden sm:inline-flex items-center gap-1.5 rounded-lg border border-border-default bg-bg-tertiary px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-bg-hover hover:text-text-primary"
+            >
+              <Coins className="h-3.5 w-3.5 text-accent-green" /> Calculator & Earnings
             </Link>
           </div>
         </header>
 
+        {/* Sub-Header Tabs */}
+        <div className="border-b border-border-dim bg-bg-secondary/60 px-4 py-2">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setTab("provider")}
+              className={`inline-flex items-center gap-2 px-4 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                tab === "provider"
+                  ? "bg-accent-brand text-white shadow-sm"
+                  : "bg-bg-tertiary text-text-secondary hover:text-text-primary hover:bg-bg-hover"
+              }`}
+            >
+              <Server className="h-3.5 w-3.5" /> Provider Documentation (Node Operators)
+            </button>
+            <button
+              onClick={() => setTab("client")}
+              className={`inline-flex items-center gap-2 px-4 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                tab === "client"
+                  ? "bg-accent-brand text-white shadow-sm"
+                  : "bg-bg-tertiary text-text-secondary hover:text-text-primary hover:bg-bg-hover"
+              }`}
+            >
+              <Code2 className="h-3.5 w-3.5" /> Client Documentation (API & Developers)
+            </button>
+          </div>
+        </div>
+
+        {/* Main Content */}
         <main className="min-h-0 flex-1 overflow-y-auto bg-bg-primary">
           <div className="mx-auto max-w-[1600px] space-y-6 p-4 sm:p-6">
 
-            {/* Hero */}
-            <Card className="overflow-hidden border border-accent-brand/20 bg-gradient-to-br from-accent-brand/10 via-bg-secondary to-bg-secondary">
-              <CardContent className="p-6">
-                <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Badge variant="success" className="gap-1"><ShieldCheck className="h-3 w-3" /> Phase 0 · NVFP4</Badge>
-                      <Badge variant="outline" className="font-mono text-[10px]">seedinfer/nemotron-lightning-1m</Badge>
-                      <Badge variant="outline" className="font-mono text-[10px]">1M ctx · 2M KV</Badge>
-                      <Badge variant="outline" className="font-mono text-[10px] border-accent-brand/30 text-accent-brand">CUDA 13.3 · driver 580.65+</Badge>
-                      <Badge variant="outline" className="font-mono text-[10px]">47900:8000 · 47901:3001</Badge>
-                    </div>
-                    <h2 className="mt-3 text-2xl font-semibold tracking-tight text-text-primary">SeedInfer Docs — run your own node</h2>
-                    <p className="mt-2 max-w-2xl text-sm leading-5 text-text-secondary">
-                      <code className="rounded bg-bg-tertiary px-1 font-mono text-xs">seedinfer/nemotron-lightning-1m</code> (NVIDIA Nemotron 3.5 Lightning 30B A3B NVFP4 — 30B/3B MoE+Mamba, 1M ctx) on <strong className="text-text-primary">RTX 5090 32GB (GB202, Blackwell)</strong>. Earn <strong className="text-text-primary">$0.02 / 1M input</strong> + <strong className="text-text-primary">$0.05 / 1M output</strong>. Tailscale Headscale + vLLM nightly + heartbeat.
-                    </p>
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      <a href="#hardware" className="inline-flex items-center gap-1 rounded-lg border border-border-default bg-bg-tertiary px-3 py-1.5 text-xs font-medium text-text-primary hover:bg-bg-hover">Hardware ↓</a>
-                      <a href="#install" className="inline-flex items-center gap-1 rounded-lg bg-accent-brand px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-brand-hover"><Terminal className="h-3.5 w-3.5" /> One-liner install ↓</a>
-                      <a href="#verify" className="inline-flex items-center gap-1 rounded-lg border border-border-default bg-bg-tertiary px-3 py-1.5 text-xs font-medium text-text-primary hover:bg-bg-hover">Verify ↓</a>
-                      <a href="/provider" className="inline-flex items-center gap-1 font-mono text-xs text-accent-brand hover:underline">/provider → full guide</a>
-                    </div>
-                    <div className="mt-4 grid gap-2 sm:grid-cols-3 max-w-xl">
-                      <div className="rounded-xl border border-border-dim bg-bg-tertiary/60 p-3">
-                        <div className="font-mono text-[10px] uppercase tracking-wide text-text-tertiary">Input</div>
-                        <div className="mt-1 font-mono text-sm font-semibold text-text-primary">$0.02 / 1M</div>
-                        <div className="font-mono text-[10px] text-text-tertiary">prompt tokens</div>
-                      </div>
-                      <div className="rounded-xl border border-border-dim bg-bg-tertiary/60 p-3">
-                        <div className="font-mono text-[10px] uppercase tracking-wide text-text-tertiary">Output</div>
-                        <div className="mt-1 font-mono text-sm font-semibold text-text-primary">$0.05 / 1M</div>
-                        <div className="font-mono text-[10px] text-text-tertiary">completion tokens</div>
-                      </div>
-                      <div className="rounded-xl border border-border-dim bg-bg-tertiary/60 p-3">
-                        <div className="font-mono text-[10px] uppercase tracking-wide text-text-tertiary">Context</div>
-                        <div className="mt-1 font-mono text-sm font-semibold text-text-primary">1M · 2M KV</div>
-                        <div className="font-mono text-[10px] text-text-tertiary">~22-28 GB VRAM</div>
-                      </div>
-                    </div>
-                  </div>
-                  <Card className="w-full shrink-0 border border-border-dim bg-bg-primary/60 lg:w-[380px]">
-                    <CardHeader className="pb-2"><CardTitle className="flex items-center gap-2 text-xs font-mono uppercase tracking-wide text-text-tertiary"><ShieldCheck className="h-3.5 w-3.5" /> Quick requirements</CardTitle></CardHeader>
-                    <CardContent className="space-y-1.5 pt-0 font-mono text-xs">
-                      <div className="flex items-center justify-between rounded-lg bg-bg-tertiary px-2.5 py-2"><span className="text-text-tertiary">Model</span><span className="font-medium text-text-primary">NVFP4 1M $0.02/$0.05</span></div>
-                      <div className="flex items-center justify-between rounded-lg bg-bg-tertiary px-2.5 py-2"><span className="text-text-tertiary">GPU min</span><span className="font-medium text-accent-brand">RTX 5090 32GB</span></div>
-                      <div className="flex items-center justify-between rounded-lg bg-bg-tertiary px-2.5 py-2"><span className="text-text-tertiary">VRAM</span><span className="font-medium text-text-primary">22-28GB (16-22+6 KV)</span></div>
-                      <div className="flex items-center justify-between rounded-lg bg-bg-tertiary px-2.5 py-2"><span className="text-text-tertiary">OS</span><span className="font-medium text-text-primary">Ubuntu 24.04 noble</span></div>
-                      <div className="flex items-center justify-between rounded-lg bg-bg-tertiary px-2.5 py-2"><span className="text-text-tertiary">Driver / CUDA</span><span className="font-medium text-text-primary">580.65+ / 13.3</span></div>
-                      <div className="flex items-center justify-between rounded-lg bg-bg-tertiary px-2.5 py-2"><span className="text-text-tertiary">Ports</span><span className="font-medium text-text-primary">47900:8000 + 47901:3001</span></div>
-                      <div className="flex items-center justify-between rounded-lg bg-bg-tertiary px-2.5 py-2"><span className="text-text-tertiary">Disk</span><span className="font-medium text-text-primary">60GB+ free (df -h)</span></div>
-                      <div className="rounded-lg border border-dashed border-border-default bg-bg-secondary p-2.5 font-mono text-[11px] leading-3 text-text-secondary">NVFP4 flags host 1:1: <code className="rounded bg-bg-tertiary px-1">marlin</code> + <code className="rounded bg-bg-tertiary px-1">flashinfer</code> + <code className="rounded bg-bg-tertiary px-1">fp8</code> · <code>0.93/1048576/128/4096</code></div>
-                    </CardContent>
-                  </Card>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* VRAM math */}
-            <Card id="hardware" className="border border-border-dim bg-bg-secondary">
-              <CardHeader className="pb-3"><CardTitle className="flex items-center gap-2 text-[13px]"><HardDrive className="h-4 w-4 text-accent-brand" /> VRAM Math — Why 32GB is Required</CardTitle></CardHeader>
-              <CardContent className="space-y-3">
-                <div className="grid gap-3 sm:grid-cols-3">
-                  <div className="rounded-xl border border-border-dim bg-bg-primary p-4">
-                    <div className="font-mono text-[10px] uppercase tracking-wide text-text-tertiary">NVFP4 Weights</div>
-                    <div className="mt-1 font-mono text-lg font-semibold text-text-primary">16-22 GB</div>
-                    <div className="mt-1 font-mono text-xs text-text-secondary">W4A16 + FP8 via ModelOpt (vs 66GB BF16). On-disk ~20-30GB download from HF.</div>
-                  </div>
-                  <div className="rounded-xl border border-border-dim bg-bg-primary p-4">
-                    <div className="font-mono text-[10px] uppercase tracking-wide text-text-tertiary">KV cache 1M</div>
-                    <div className="mt-1 font-mono text-lg font-semibold text-text-primary">~6 GB</div>
-                    <div className="mt-1 font-mono text-xs text-text-secondary">FP8 KV, 1M tokens, <code className="rounded bg-bg-tertiary px-1">--kv-cache-dtype fp8</code>. 2M KV max = ~12GB at full buffer.</div>
-                  </div>
-                  <div className="rounded-xl border border-accent-brand/20 bg-accent-brand/10 p-4">
-                    <div className="font-mono text-[10px] uppercase tracking-wide text-accent-brand">Total + headroom</div>
-                    <div className="mt-1 font-mono text-lg font-semibold text-text-primary">22-28 GB</div>
-                    <div className="mt-1 font-mono text-xs text-text-secondary">+ <code>--gpu-memory-utilization 0.93</code> + <code>--max-num-batched-tokens 4096</code> → 32GB provides ~4-10GB headroom. 24GB will OOM without downscaling.</div>
-                  </div>
-                </div>
-                <div className="rounded-lg border border-dashed border-border-default bg-bg-primary p-3 font-mono text-[11px] leading-4 text-text-secondary">
-                  <strong className="text-text-primary">On OOM:</strong> lower <code className="rounded bg-bg-tertiary px-1">VLLM_GPU_MEMORY_UTILIZATION=0.80</code> + <code className="rounded bg-bg-tertiary px-1">VLLM_MAX_MODEL_LEN=32768</code> or <code>131072</code>. Only then is 24GB (3090/4090) stable — see 24GB tier plan below.
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* GPU matrix */}
-            <Card className="border border-border-dim bg-bg-secondary">
-              <CardHeader className="pb-3">
-                <CardTitle className="flex items-center gap-2 text-[13px]"><Cpu className="h-4 w-4 text-accent-brand" /> GPU Matrix — minimum RTX 5090 32GB (Blackwell)</CardTitle>
-                <p className="font-mono text-xs text-text-tertiary">Minimum <strong className="text-text-primary">RTX 5090 32GB (GB202, Blackwell sm_120, 21760 CUDA, 680 Tensor 5th gen, 32GB GDDR7 ~1.8 TB/s)</strong>. NVFP4 host env <code className="rounded bg-bg-tertiary px-1">VLLM_ATTENTION_BACKEND=FLASHINFER</code> + <code className="rounded bg-bg-tertiary px-1">VLLM_NVFP4_GEMM_BACKEND=flashinfer-cutlass</code> + <code className="rounded bg-bg-tertiary px-1">VLLM_MOE_BACKEND=marlin</code> + <code className="rounded bg-bg-tertiary px-1">VLLM_MAMBA_BACKEND=flashinfer</code>. A100/H100 auto-fallback <code>humming</code>.</p>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="overflow-x-auto rounded-xl border border-border-dim">
-                  <table className="w-full text-left font-mono text-xs">
-                    <thead className="bg-bg-tertiary text-[10px] uppercase tracking-wide text-text-tertiary">
-                      <tr><th className="px-3 py-2">GPU</th><th className="px-3 py-2">Arch</th><th className="px-3 py-2">VRAM</th><th className="px-3 py-2">BW</th><th className="px-3 py-2">NVFP4 1M</th><th className="px-3 py-2">Est. tput*</th><th className="px-3 py-2">Status</th></tr>
-                    </thead>
-                    <tbody className="divide-y divide-border-dim text-text-secondary">
-                      <tr className="bg-accent-brand/10 font-medium text-text-primary"><td className="px-3 py-2">RTX 5090 32GB</td><td className="px-3 py-2">GB202 sm_120</td><td className="px-3 py-2">32GB GDDR7</td><td className="px-3 py-2">~1.8 TB/s</td><td className="px-3 py-2">✅ ~22-28GB</td><td className="px-3 py-2">~120-180 tok/s</td><td className="px-3 py-2"><Badge variant="success" className="text-[10px]">minimum</Badge></td></tr>
-                      <tr><td className="px-3 py-2">A100 40GB</td><td className="px-3 py-2">GA100 sm_80</td><td className="px-3 py-2">40GB HBM2e</td><td className="px-3 py-2">1.6 TB/s</td><td className="px-3 py-2">✅ W4A16</td><td className="px-3 py-2">~60-90</td><td className="px-3 py-2"><Badge variant="outline" className="text-[10px]">welcome</Badge></td></tr>
-                      <tr><td className="px-3 py-2">A100 80GB</td><td className="px-3 py-2">GA100</td><td className="px-3 py-2">80GB HBM2e</td><td className="px-3 py-2">2.0 TB/s</td><td className="px-3 py-2">✅</td><td className="px-3 py-2">~70-100</td><td className="px-3 py-2"><Badge variant="outline" className="text-[10px]">welcome</Badge></td></tr>
-                      <tr><td className="px-3 py-2">H100 80GB</td><td className="px-3 py-2">H100 sm_90</td><td className="px-3 py-2">80GB HBM3</td><td className="px-3 py-2">3.0 TB/s</td><td className="px-3 py-2">✅</td><td className="px-3 py-2">~150-220</td><td className="px-3 py-2"><Badge variant="outline" className="text-[10px]">welcome</Badge></td></tr>
-                      <tr><td className="px-3 py-2">L40S 48GB</td><td className="px-3 py-2">AD102 sm_89</td><td className="px-3 py-2">48GB GDDR6</td><td className="px-3 py-2">864 GB/s</td><td className="px-3 py-2">✅</td><td className="px-3 py-2">~80-120</td><td className="px-3 py-2"><Badge variant="outline" className="text-[10px]">welcome</Badge></td></tr>
-                      <tr><td className="px-3 py-2">RTX 6000 Ada 48GB</td><td className="px-3 py-2">AD102</td><td className="px-3 py-2">48GB GDDR6</td><td className="px-3 py-2">960 GB/s</td><td className="px-3 py-2">✅</td><td className="px-3 py-2">~80-120</td><td className="px-3 py-2"><Badge variant="outline" className="text-[10px]">welcome</Badge></td></tr>
-                      <tr><td className="px-3 py-2">RTX 6000 Pro Blackwell</td><td className="px-3 py-2">GB202</td><td className="px-3 py-2">96GB GDDR7</td><td className="px-3 py-2">~1.8 TB/s+</td><td className="px-3 py-2">✅ 96GB</td><td className="px-3 py-2">~130-190</td><td className="px-3 py-2"><Badge variant="outline" className="text-[10px]">welcome</Badge></td></tr>
-                      <tr><td className="px-3 py-2">RTX 4500 Blackwell 32GB</td><td className="px-3 py-2">GB203</td><td className="px-3 py-2">32GB GDDR7</td><td className="px-3 py-2">~1.0 TB/s</td><td className="px-3 py-2">✅</td><td className="px-3 py-2">~90-130</td><td className="px-3 py-2"><Badge variant="outline" className="text-[10px]">welcome</Badge></td></tr>
-                      <tr><td className="px-3 py-2">RTX 5000 Blackwell</td><td className="px-3 py-2">GB203</td><td className="px-3 py-2">32-48GB GDDR7</td><td className="px-3 py-2">~1.2 TB/s</td><td className="px-3 py-2">✅</td><td className="px-3 py-2">~110-160</td><td className="px-3 py-2"><Badge variant="outline" className="text-[10px]">welcome</Badge></td></tr>
-                      <tr className="opacity-60"><td className="px-3 py-2">RTX 3090 24GB ⏳</td><td className="px-3 py-2">GA102 sm_86</td><td className="px-3 py-2">24GB GDDR6X</td><td className="px-3 py-2">936 GB/s</td><td className="px-3 py-2">⚠️ tight 24GB</td><td className="px-3 py-2">~50-80</td><td className="px-3 py-2"><Badge variant="outline" className="text-[10px]">plan</Badge></td></tr>
-                      <tr className="opacity-60"><td className="px-3 py-2">RTX 4090 24GB ⏳</td><td className="px-3 py-2">AD102 sm_89</td><td className="px-3 py-2">24GB GDDR6X</td><td className="px-3 py-2">1.0 TB/s</td><td className="px-3 py-2">⚠️ tight</td><td className="px-3 py-2">~70-100</td><td className="px-3 py-2"><Badge variant="outline" className="text-[10px]">plan</Badge></td></tr>
-                    </tbody>
-                  </table>
-                </div>
-                <div className="rounded-lg border border-dashed border-border-default bg-bg-primary p-3 font-mono text-[11px] leading-4 text-text-secondary">
-                  * Est. tput single-user prefill+decode for Nemotron 30B NVFP4 (W4A16+FP8 KV), batch 1, 1k in / 256 out, no prefix cache. Real throughput depends on marlin (Blackwell FP4 + flashinfer-cutlass) / humming (A100 W4A16) + KV hit.<br />
-                  <strong className="text-text-primary">Eventually 3090/4090 (24GB)</strong> — planned as &quot;community&quot; tier with auto-downscale <code className="rounded bg-bg-tertiary px-1">VLLM_MAX_MODEL_LEN=131072</code> + <code className="rounded bg-bg-tertiary px-1">VLLM_GPU_MEMORY_UTILIZATION=0.85</code>. Currently welcome for testing, but the official minimum is 32GB.
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* OS / Driver / CUDA matrix */}
-            <Card className="border border-border-dim bg-bg-secondary">
-              <CardHeader className="pb-3"><CardTitle className="flex items-center gap-2 text-[13px]"><Wrench className="h-4 w-4 text-accent-brand" /> OS / Driver / CUDA matrix</CardTitle></CardHeader>
-              <CardContent className="space-y-3">
-                <div className="overflow-x-auto rounded-xl border border-border-dim">
-                  <table className="w-full text-left font-mono text-xs">
-                    <thead className="bg-bg-tertiary text-[10px] uppercase tracking-wide text-text-tertiary">
-                      <tr><th className="px-3 py-2">Stack</th><th className="px-3 py-2">Required Version</th><th className="px-3 py-2">Blackwell GB202</th><th className="px-3 py-2">Fallback</th><th className="px-3 py-2">Status</th></tr>
-                    </thead>
-                    <tbody className="divide-y divide-border-dim text-text-secondary">
-                      <tr className="bg-accent-brand/5"><td className="px-3 py-2 font-medium text-text-primary">OS</td><td className="px-3 py-2">Ubuntu 24.04+ (noble) kernel 6.8+</td><td className="px-3 py-2">✅</td><td className="px-3 py-2">Ubuntu 22.04+</td><td className="px-3 py-2"><Badge variant="success" className="text-[10px]">required</Badge></td></tr>
-                      <tr><td className="px-3 py-2">Driver + CUDA</td><td className="px-3 py-2">580.65+ + CUDA 13.3</td><td className="px-3 py-2">✅ native sm_120</td><td className="px-3 py-2">570+ (13.2) PTX JIT</td><td className="px-3 py-2"><Badge variant="success" className="text-[10px]">native</Badge></td></tr>
-                      <tr><td className="px-3 py-2">Driver fallback</td><td className="px-3 py-2">570.86+ + CUDA 13.2</td><td className="px-3 py-2">⚠️ via PTX JIT</td><td className="px-3 py-2">PTX forward compat</td><td className="px-3 py-2"><Badge variant="outline" className="text-[10px]">fallback</Badge></td></tr>
-                      <tr><td className="px-3 py-2">Legacy</td><td className="px-3 py-2">550.90+ + CUDA 12.4</td><td className="px-3 py-2">⚠️ legacy JIT</td><td className="px-3 py-2">no Blackwell nat.</td><td className="px-3 py-2"><Badge variant="outline" className="text-[10px]">legacy</Badge></td></tr>
-                      <tr><td className="px-3 py-2">Docker</td><td className="px-3 py-2">24+ + compose plugin</td><td className="px-3 py-2">✅</td><td className="px-3 py-2">—</td><td className="px-3 py-2"><Badge variant="outline" className="text-[10px]">required</Badge></td></tr>
-                      <tr><td className="px-3 py-2">nvidia-ctk</td><td className="px-3 py-2">nvidia-container-toolkit</td><td className="px-3 py-2">✅</td><td className="px-3 py-2">install auto via install.sh</td><td className="px-3 py-2"><Badge variant="outline" className="text-[10px]">auto</Badge></td></tr>
-                      <tr><td className="px-3 py-2">Tailscale</td><td className="px-3 py-2">1.82+</td><td className="px-3 py-2">✅</td><td className="px-3 py-2">tailnet.seedinfer.com</td><td className="px-3 py-2"><Badge variant="outline" className="text-[10px]">auto</Badge></td></tr>
-                      <tr><td className="px-3 py-2">vLLM</td><td className="px-3 py-2">nightly cu12 (PTX JIT)</td><td className="px-3 py-2">✅ <code>pip install --pre vllm --extra-index-url https://wheels.vllm.ai/nightly</code></td><td className="px-3 py-2">native cu13 when avail.</td><td className="px-3 py-2"><Badge variant="outline" className="text-[10px]">nightly</Badge></td></tr>
-                      <tr><td className="px-3 py-2">Disk</td><td className="px-3 py-2">50GB HF cache + 28GB vLLM</td><td className="px-3 py-2">60GB+ free (df -h)</td><td className="px-3 py-2"><code>df -h</code></td><td className="px-3 py-2"><Badge variant="outline" className="text-[10px]">50GB+</Badge></td></tr>
-                      <tr><td className="px-3 py-2">Ports</td><td className="px-3 py-2">47900:8000 (vLLM) + 47901:3001 (agent)</td><td className="px-3 py-2">host mapping, <code>VLLM_PORT/AGENT_PORT</code> override</td><td className="px-3 py-2">41000+ if busy</td><td className="px-3 py-2"><Badge variant="outline" className="text-[10px]">47900/47901</Badge></td></tr>
-                    </tbody>
-                  </table>
-                </div>
-                <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 p-3 font-mono text-[11px] leading-4 text-text-secondary">
-                  <strong className="text-text-primary">CUDA PTX JIT:</strong> vLLM nightly cu12 wheels run on CUDA 13.3 via forward-compat (driver 580+). No rebuild required. Blackwall sm_120 native PTX only on 580+. Check: <code className="rounded bg-bg-tertiary px-1">nvidia-smi | grep Driver</code> + <code className="rounded bg-bg-tertiary px-1">nvidia-smi --query-gpu=compute_cap --format=csv</code> (12.0 for 5090). With driver &lt;580: warn, &lt;570: warn, &lt;550: error in install.sh/entrypoint.sh.
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Install */}
-            <Card id="install" className="border border-border-dim bg-bg-secondary">
-              <CardHeader className="pb-3">
-                <CardTitle className="flex items-center gap-2 text-[13px]"><Terminal className="h-4 w-4 text-accent-brand" /> Installation — One-liner vs Manual</CardTitle>
-                <p className="font-mono text-xs text-text-tertiary">Terminal command that sets up the environment + verification. Copy and paste on Linux.</p>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid gap-6 lg:grid-cols-2">
-                  <div className="space-y-3">
-                    <CodeBlock label="★ Recommended — one command (auto-authkey + prebuild)" code={ONE_LINER_RECOMMENDED} />
-                    <div className="rounded-lg border border-accent-brand/20 bg-accent-brand/10 p-3 font-mono text-[11px] leading-3 text-text-secondary">
-                      No parameters — <code className="rounded bg-bg-tertiary px-1">install.sh</code> automatically fetches an authkey from <code className="rounded bg-bg-tertiary px-1">/api/v1/auth/request</code> + prebuild{" "}
-                      <code className="rounded bg-bg-tertiary px-1">ghcr.io/seedinfer/provider:cuda13.3-nvfp4</code> ||{" "}
-                      <code className="rounded bg-bg-tertiary px-1">https://seedinfer.com/provider-image.tar.gz</code> (Pi) || build.
-                    </div>
-                    <details className="rounded-xl border border-border-dim bg-bg-primary">
-                      <summary className="cursor-pointer list-none px-3 py-2 font-mono text-xs font-medium text-text-primary">Advanced — custom authkey / model / gateway (expand)</summary>
-                      <div className="space-y-2 border-t border-border-dim p-3">
-                        <CodeBlock label="1 · With key from Generate invite" code={ONE_LINER_SIMPLE} />
-                        <CodeBlock label="2 · Auto-fetch key (jq)" code={ONE_LINER_AUTO} />
-                        <CodeBlock label="3 · Full options + hostname" code={ONE_LINER_CUSTOM} />
-                        <div className="font-mono text-[11px] text-text-tertiary">
-                          ENV: <code className="rounded bg-bg-tertiary px-1">SEEDINFER_PREBUILD_IMAGE</code> <code className="rounded bg-bg-tertiary px-1">SEEDINFER_PREBUILD_URL</code> <code className="rounded bg-bg-tertiary px-1">SEEDINFER_SKIP_PREBUILD=1</code>
+            {/* ========================================================================= */}
+            {/* TAB 1: PROVIDER DOCUMENTATION                                             */}
+            {/* ========================================================================= */}
+            {tab === "provider" && (
+              <div className="space-y-6">
+                {/* Hero Card */}
+                <Card className="overflow-hidden border border-accent-brand/20 bg-gradient-to-br from-accent-brand/10 via-bg-secondary to-bg-secondary">
+                  <CardContent className="p-6">
+                    <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Badge variant="success" className="gap-1">
+                            <ShieldCheck className="h-3 w-3" /> Zero-Account Architecture
+                          </Badge>
+                          <Badge variant="outline" className="font-mono text-[10px]">
+                            Ed25519 Keypair Auth
+                          </Badge>
+                          <Badge variant="outline" className="font-mono text-[10px]">
+                            Hardware Fingerprint Lock
+                          </Badge>
+                          <Badge variant="outline" className="font-mono text-[10px] border-accent-brand/30 text-accent-brand">
+                            CUDA 13.3 · Blackwell GB202
+                          </Badge>
+                        </div>
+                        <h2 className="mt-3 text-2xl font-bold tracking-tight text-text-primary">
+                          Provider Node Setup & Hardware Guide
+                        </h2>
+                        <p className="mt-2 max-w-3xl text-sm leading-6 text-text-secondary">
+                          Host AI models on decentralized P2P inference infrastructure. No email registration required. Your identity is cryptographically bound to your <strong className="text-text-primary">Ed25519 Keypair</strong> and hardware locked via <strong className="text-text-primary">SHA-256 System Fingerprint</strong>.
+                        </p>
+                        <div className="mt-4 flex flex-wrap gap-2">
+                          <a href="#prov-hardware" className="inline-flex items-center gap-1 rounded-lg border border-border-default bg-bg-tertiary px-3 py-1.5 text-xs font-medium text-text-primary hover:bg-bg-hover">
+                            Hardware Specs ↓
+                          </a>
+                          <a href="#prov-install" className="inline-flex items-center gap-1 rounded-lg bg-accent-brand px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-brand-hover">
+                            <Terminal className="h-3.5 w-3.5" /> Quick Install ↓
+                          </a>
+                          <a href="#prov-faq" className="inline-flex items-center gap-1 rounded-lg border border-border-default bg-bg-tertiary px-3 py-1.5 text-xs font-medium text-text-primary hover:bg-bg-hover">
+                            <HelpCircle className="h-3.5 w-3.5 text-accent-brand" /> Provider FAQ ↓
+                          </a>
                         </div>
                       </div>
-                    </details>
-                    <div className="rounded-lg border border-dashed border-border-default bg-bg-primary p-3 font-mono text-[11px] text-text-secondary">
-                      Key <code className="rounded bg-bg-tertiary px-1">YOUR_AUTHKEY</code> → generate at <Link href="/provider" className="text-accent-brand underline">/provider → Generate invite</Link> (valid 24h, tag:provider) — now optional, <code>install.sh</code> auto-fetches if missing. Details at <Link href="/provider" className="text-accent-brand underline">/provider</Link>.
+
+                      <Card className="w-full shrink-0 border border-border-dim bg-bg-primary/60 lg:w-[380px]">
+                        <CardHeader className="pb-2">
+                          <CardTitle className="flex items-center gap-2 text-xs font-mono uppercase tracking-wide text-text-tertiary">
+                            <ShieldCheck className="h-3.5 w-3.5 text-accent-brand" /> Quick Node Specs
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-1.5 pt-0 font-mono text-xs">
+                          <div className="flex items-center justify-between rounded-lg bg-bg-tertiary px-2.5 py-2">
+                            <span className="text-text-tertiary">Minimum GPU</span>
+                            <span className="font-semibold text-accent-brand">RTX 5090 (32GB VRAM)</span>
+                          </div>
+                          <div className="flex items-center justify-between rounded-lg bg-bg-tertiary px-2.5 py-2">
+                            <span className="text-text-tertiary">Auth System</span>
+                            <span className="font-semibold text-text-primary">Ed25519 Keypair (Zero-Account)</span>
+                          </div>
+                          <div className="flex items-center justify-between rounded-lg bg-bg-tertiary px-2.5 py-2">
+                            <span className="text-text-tertiary">Hardware Locking</span>
+                            <span className="font-semibold text-text-primary">SHA-256 GPU/CPU Fingerprint</span>
+                          </div>
+                          <div className="flex items-center justify-between rounded-lg bg-bg-tertiary px-2.5 py-2">
+                            <span className="text-text-tertiary">OS & Driver</span>
+                            <span className="font-semibold text-text-primary">Ubuntu 24.04+ / Driver 580+</span>
+                          </div>
+                          <div className="flex items-center justify-between rounded-lg bg-bg-tertiary px-2.5 py-2">
+                            <span className="text-text-tertiary">Payout Currency</span>
+                            <span className="font-semibold text-accent-green">USDC on Base Network</span>
+                          </div>
+                        </CardContent>
+                      </Card>
                     </div>
-                  </div>
-                  <div className="space-y-3">
-                    <div className="rounded-xl border border-border-dim bg-bg-primary p-4">
-                      <div className="font-mono text-[10px] uppercase tracking-wide text-text-tertiary flex items-center gap-1"><Clock className="h-3 w-3" /> Steps — what install.sh does</div>
-                      <ol className="mt-2 list-decimal list-inside space-y-1 font-mono text-xs text-text-secondary">
-                        <li><code className="rounded bg-bg-tertiary px-1">nvidia-smi</code> check — VRAM ≥32GB, driver 580+, ports 47900/47901 free; auto-fetch authkey from <code className="rounded bg-bg-tertiary px-1">/api/v1/auth/request</code> if --authkey is missing</li>
-                        <li>Installs <code>docker 24+ + nvidia-ctk + tailscale</code> if missing</li>
-                        <li><span className="inline-flex items-center rounded bg-accent-green/10 px-1 py-0.5 text-[10px] font-medium text-accent-green">Default: Container</span> — if host is already on <code className="rounded bg-bg-tertiary px-1">tailscale.com</code> (100.94.x.x) → launches isolated container <code className="rounded bg-bg-tertiary px-1">tailscale-seedinfer</code>. Coexistence of <code className="rounded bg-bg-tertiary px-1">100.94.x.x</code> (host) + <code className="rounded bg-bg-tertiary px-1">100.64.x.x</code> (container, Headscale) — never disconnects home network. Provider agent uses container DNS. Opt-in host mode: <code className="rounded bg-bg-tertiary px-1">--force-host-tailscale</code> or <code className="rounded bg-bg-tertiary px-1">TAILSCALE_USE_CONTAINER=0</code>. If no existing tailnet → host <code className="rounded bg-bg-tertiary px-1">tailscale up --login-server https://tailnet.seedinfer.com</code></li>
-                        <li>Clones <code>provider/</code> → <code>/opt/seedinfer-provider</code>, creates <code>.env</code> (<code>VLLM_MODEL=nvidia/...NVFP4</code>)</li>
-                        <li>Prebuild: <code>docker pull ghcr.io/seedinfer/provider:cuda13.3-nvfp4</code> → <code>curl https://seedinfer.com/provider-image.tar.gz | docker load</code> (Pi) → <code>docker compose up -d --build</code> (fallback) → vLLM auto-download ~30GB → <code>./models/cache</code>. Sidecar compose: <code>docker compose --profile tailscale up -d</code></li>
-                        <li>Heartbeat every 30s to <code>/api/v1/providers/heartbeat</code> → pending → verifying → verified</li>
+                  </CardContent>
+                </Card>
+
+                {/* Zero-Account Architecture Explanation */}
+                <Card className="border border-border-dim bg-bg-secondary">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="flex items-center gap-2 text-[13px]">
+                      <Lock className="h-4 w-4 text-accent-brand" /> Zero-Account Security Architecture (Ed25519 & Fingerprinting)
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <div className="rounded-xl border border-border-dim bg-bg-primary p-4 space-y-2">
+                        <div className="flex items-center gap-2 text-xs font-bold text-text-primary">
+                          <KeyRound className="h-4 w-4 text-accent-brand" /> 1. Ed25519 Cryptographic Keys
+                        </div>
+                        <p className="font-mono text-xs leading-5 text-text-secondary">
+                          Przy pierwszym uruchomieniu plik instalacyjny generuje parę kluczy w <code className="rounded bg-bg-tertiary px-1">/etc/seedinfer/identity.key</code>:
+                        </p>
+                        <ul className="list-disc pl-5 font-mono text-[11px] leading-4 text-text-tertiary space-y-1">
+                          <li><strong>Klucz Prywatny (Private Key):</strong> Zapisany lokalnie z uprawnieniami 0600. Nigdy nie opuszcza Twojego serwera. Służy do podpisywania heartbeatów.</li>
+                          <li><strong>Klucz Publiczny (Public Key):</strong> Twój jedyny identyfikator w sieci (Zero-Account ID). Na ten adres wysyłane są miesięczne wypłaty USDC na Base.</li>
+                        </ul>
+                      </div>
+
+                      <div className="rounded-xl border border-border-dim bg-bg-primary p-4 space-y-2">
+                        <div className="flex items-center gap-2 text-xs font-bold text-text-primary">
+                          <ShieldCheck className="h-4 w-4 text-accent-green" /> 2. Hardware Fingerprint Lock
+                        </div>
+                        <p className="font-mono text-xs leading-5 text-text-secondary">
+                          Agent buduje unikalny odcisk cyfrowy sprzętu na podstawie UUID GPU, serialu płyty i identyfikatora CPU:
+                        </p>
+                        <ul className="list-disc pl-5 font-mono text-[11px] leading-4 text-text-tertiary space-y-1">
+                          <li>Odcisk SHA-256 jest wiązany z Twoim kluczem publicznym podczas pierwszej rejestracji.</li>
+                          <li>Uniemożliwia to sklonowanie kontenera lub uruchomienie wirtualnej kopii węzła na innym komputerze.</li>
+                        </ul>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* VRAM Math & Hardware Specs */}
+                <Card id="prov-hardware" className="border border-border-dim bg-bg-secondary">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="flex items-center gap-2 text-[13px]">
+                      <HardDrive className="h-4 w-4 text-accent-brand" /> VRAM Requirement & GPU Matrix
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="grid gap-3 sm:grid-cols-3">
+                      <div className="rounded-xl border border-border-dim bg-bg-primary p-4">
+                        <div className="font-mono text-[10px] uppercase tracking-wide text-text-tertiary">NVFP4 Model Weights</div>
+                        <div className="mt-1 font-mono text-lg font-semibold text-text-primary">16 - 22 GB</div>
+                        <div className="mt-1 font-mono text-xs text-text-secondary">W4A16 + FP8 via ModelOpt. Ściąganie ~20-30GB z HuggingFace cache.</div>
+                      </div>
+                      <div className="rounded-xl border border-border-dim bg-bg-primary p-4">
+                        <div className="font-mono text-[10px] uppercase tracking-wide text-text-tertiary">KV Cache (1M Context)</div>
+                        <div className="mt-1 font-mono text-lg font-semibold text-text-primary">~6 - 10 GB</div>
+                        <div className="mt-1 font-mono text-xs text-text-secondary">FP8 KV cache z flagami <code className="rounded bg-bg-tertiary px-1">--kv-cache-dtype fp8</code>.</div>
+                      </div>
+                      <div className="rounded-xl border border-accent-brand/20 bg-accent-brand/10 p-4">
+                        <div className="font-mono text-[10px] uppercase tracking-wide text-accent-brand">Total Required Headroom</div>
+                        <div className="mt-1 font-mono text-lg font-semibold text-text-primary">22 - 28 GB</div>
+                        <div className="mt-1 font-mono text-xs text-text-secondary">Rekomendowane 32GB VRAM (RTX 5090) daje 4-10GB zapasu na równoległe zapytania batching.</div>
+                      </div>
+                    </div>
+
+                    <div className="overflow-x-auto rounded-xl border border-border-dim">
+                      <table className="w-full text-left font-mono text-xs">
+                        <thead className="bg-bg-tertiary text-[10px] uppercase tracking-wide text-text-tertiary">
+                          <tr>
+                            <th className="px-3 py-2">Karta GPU</th>
+                            <th className="px-3 py-2">Architektura</th>
+                            <th className="px-3 py-2">VRAM</th>
+                            <th className="px-3 py-2">Wydajność Tokenów</th>
+                            <th className="px-3 py-2">Status Węzła</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-border-dim text-text-secondary">
+                          <tr className="bg-accent-brand/10 font-medium text-text-primary">
+                            <td className="px-3 py-2">NVIDIA RTX 5090</td>
+                            <td className="px-3 py-2">Blackwell GB202</td>
+                            <td className="px-3 py-2">32GB GDDR7 (~1.8 TB/s)</td>
+                            <td className="px-3 py-2">~120-180 tok/s</td>
+                            <td className="px-3 py-2"><Badge variant="success" className="text-[10px]">Oficjalny Minimum</Badge></td>
+                          </tr>
+                          <tr>
+                            <td className="px-3 py-2">NVIDIA A100 80GB / H100 80GB</td>
+                            <td className="px-3 py-2">Hopper / Ampere</td>
+                            <td className="px-3 py-2">80GB HBM3</td>
+                            <td className="px-3 py-2">~150-220 tok/s</td>
+                            <td className="px-3 py-2"><Badge variant="outline" className="text-[10px]">Wspierany Tier Enterprise</Badge></td>
+                          </tr>
+                          <tr className="opacity-70">
+                            <td className="px-3 py-2">NVIDIA RTX 4090 / 3090 (24GB)</td>
+                            <td className="px-3 py-2">Ada / Ampere</td>
+                            <td className="px-3 py-2">24GB GDDR6X</td>
+                            <td className="px-3 py-2">~70-100 tok/s</td>
+                            <td className="px-3 py-2"><Badge variant="outline" className="text-[10px]">Community Tier (Ograniczony Ctx)</Badge></td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Installation Section */}
+                <Card id="prov-install" className="border border-border-dim bg-bg-secondary">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="flex items-center gap-2 text-[13px]">
+                      <Terminal className="h-4 w-4 text-accent-brand" /> Instrukcja Instalacji (Jedna Komenda)
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <CodeBlock label="Rekomendowana komenda uruchomieniowa (Ubuntu 24.04+)" code={ONE_LINER_RECOMMENDED} />
+                    <div className="rounded-lg border border-border-dim bg-bg-primary p-4 space-y-2">
+                      <div className="font-mono text-xs font-bold text-text-primary">Co robi plik install.sh?</div>
+                      <ol className="list-decimal pl-5 font-mono text-xs leading-5 text-text-secondary space-y-1">
+                        <li>Weryfikuje sterownik NVIDIA (Driver ≥580.65, CUDA 13.3) i dostępność wolnego VRAM (&gt;22GB).</li>
+                        <li>Automatycznie pobiera i konfiguruje odizolowany kontener <code className="rounded bg-bg-tertiary px-1">tailscale-seedinfer</code> (zachowując nienaruszoną domową sieć Tailscale 100.94.x.x).</li>
+                        <li>Generuje parę kluczy Ed25519 oraz wylicza unikalny SHA-256 odcisk sprzętowy (Hardware Fingerprint).</li>
+                        <li>Uruchamia vLLM nightly ze wsparciem NVFP4 dla Nemotron 3.5 30B / Gemma 4 i wysyła heartbeat do bramki.</li>
                       </ol>
                     </div>
-                    <Card className="border border-border-dim bg-bg-primary">
-                      <CardHeader className="pb-2"><CardTitle className="text-xs font-mono uppercase tracking-wide text-text-tertiary flex items-center gap-2"><Download className="h-3.5 w-3.5" /> Manual (dev)</CardTitle></CardHeader>
-                      <CardContent className="space-y-2 pt-0">
-                        <pre className="overflow-x-auto rounded-lg bg-bg-tertiary p-2 font-mono text-[11px] text-text-secondary">{`git clone https://github.com/seedinfer/seedinfer.com.git
-cd seedinfer.com
-cp provider/.env.example provider/.env
-# edit TAILSCALE_AUTHKEY, MODEL, SEEDINFER_GATEWAY_URL
-docker compose -f provider/docker-compose.yml up -d --build
-docker logs -f seedinfer-provider | grep -i download
-du -sh ./models/cache
-curl -fsS http://127.0.0.1:47901/health | jq`}</pre>
-                        <pre className="overflow-x-auto rounded-lg bg-bg-tertiary p-2 font-mono text-[11px] text-text-secondary">{`# Tailscale — default container (isolated, coexistence 100.94.x.x + 100.64.x.x):
-docker exec tailscale-seedinfer tailscale status  # container 100.64.x.x (Headscale)
-tailscale status  # host 100.94.x.x (home tailscale intact)
-docker exec tailscale-seedinfer tailscale ip -4  # 100.64.x.x
-tailscale ip -4  # host 100.94.x.x
-ping -c2 gateway.seedinfer.ts.net
-# Sidecar compose: docker compose --profile tailscale up -d
-# volume: tailscale-seedinfer-state:/tailscale  network: seedinfer-tailnet
-# healthcheck: tailscale status  cap_add: [NET_ADMIN, NET_RAW]  device: /dev/net/tun
-# TS_EXTRA_ARGS="--advertise-tags=tag:provider --accept-routes"  TS_LOGIN_SERVER=https://tailnet.seedinfer.com
-# Opt-in host (disconnects tailscale.com): curl ... | bash -s -- --force-host-tailscale`}</pre>
-                      </CardContent>
-                    </Card>
-                    <div className="flex flex-wrap gap-2 font-mono text-xs">
-                      <a href="/install.sh" className="inline-flex items-center gap-1 text-accent-brand hover:underline"><FileText className="h-3.5 w-3.5" /> /install.sh</a>
-                      <span className="text-text-tertiary">·</span>
-                      <a href="/provider.tar.gz" className="text-text-tertiary hover:text-text-primary">/provider.tar.gz</a>
-                      <span className="text-text-tertiary">·</span>
-                      <a href="/api/v1/auth/request" className="text-text-tertiary hover:text-text-primary">/api/v1/auth/request</a>
-                      <span className="text-text-tertiary">·</span>
-                      <Link href="/providers" className="text-accent-brand hover:underline">/providers → fleet</Link>
+                  </CardContent>
+                </Card>
+
+                {/* Provider FAQ */}
+                <Card id="prov-faq" className="border border-border-dim bg-bg-secondary">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="flex items-center gap-2 text-[13px]">
+                      <HelpCircle className="h-4 w-4 text-accent-brand" /> Provider FAQ — Najczęściej Zadawane Pytania
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <FaqItem
+                      question="Jak odbywają się wypłaty wynagrodzenia?"
+                      answer={
+                        <p>
+                          Wypłaty realizowane są w stabilnej kryptowalucie <strong>USDC w sieci Base</strong>. System podlicza godziny przepracowane na gotowości (standby retainer $0.40/dzień) oraz wygenerowany wolumen tokenów i wysyła fundusze 1. dnia każdego miesiąca bezpośrednio na Twój adres klucza publicznego Ed25519.
+                        </p>
+                      }
+                    />
+                    <FaqItem
+                      question="Czy muszę otwierać porty na routerze (Port Forwarding / Public IP)?"
+                      answer={
+                        <p>
+                          <strong>Nie.</strong> Połączenie między bramką SeedInfer a Twoim węzłem odbywa się przez wychodzący zaszyfrowany tunel WireGuard (Tailscale Headscale). Węzeł nie wymaga publicznego adresu IP ani otwartych portów przychodzących.
+                        </p>
+                      }
+                    />
+                    <FaqItem
+                      question="Jak działa blokada sprzętowa (Hardware Fingerprint Lock)?"
+                      answer={
+                        <p>
+                          Podczas pierwszego uruchomienia agent rejestruje unikalny hash sprzętowy powiązany z UUID GPU i procesora. Zapobiega to sytuacji, w której ktoś próbuje sklonować Twój prywatny klucz lub kontener i uruchomić drugi węzeł pod tym samym identyfikatorem.
+                        </p>
+                      }
+                    />
+                    <FaqItem
+                      question="Czy mogę uruchomić węzeł na karcie RTX 4090 lub 3090 (24GB VRAM)?"
+                      answer={
+                        <p>
+                          Tak, ale karta 24GB działa w trybie <i>Community Tier</i>. Wymaga zmniejszenia bufora kontekstu w konfiguracji do <code className="rounded bg-bg-tertiary px-1">VLLM_MAX_MODEL_LEN=131072</code> oraz <code className="rounded bg-bg-tertiary px-1">VLLM_GPU_MEMORY_UTILIZATION=0.80</code>, aby uniknąć błędów Out Of Memory (OOM).
+                        </p>
+                      }
+                    />
+                    <FaqItem
+                      question="Co się stanie, jeśli wyłączę komputery lub stracę połączenie internetowe?"
+                      answer={
+                        <p>
+                          Bramka SeedInfer po prostu przestanie kierować ruch do Twojego węzła. Nie ma żadnych kar finansowych (slashingu). Wynagrodzenie retencyjne naliczane jest za każdą pełną godzinę dostępności z zachowaniem uptime &ge;50%.
+                        </p>
+                      }
+                    />
+                  </CardContent>
+                </Card>
+              </div>
+            )}
+
+            {/* ========================================================================= */}
+            {/* TAB 2: CLIENT DOCUMENTATION                                                */}
+            {/* ========================================================================= */}
+            {tab === "client" && (
+              <div className="space-y-6">
+                {/* Client Hero Card */}
+                <Card className="overflow-hidden border border-accent-brand/20 bg-gradient-to-br from-accent-brand/10 via-bg-secondary to-bg-secondary">
+                  <CardContent className="p-6">
+                    <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Badge variant="success" className="gap-1">
+                            <Zap className="h-3 w-3" /> OpenAI API Compatible
+                          </Badge>
+                          <Badge variant="outline" className="font-mono text-[10px]">
+                            Base URL: https://seedinfer.com/v1
+                          </Badge>
+                          <Badge variant="outline" className="font-mono text-[10px]">
+                            Zero-Data Logging
+                          </Badge>
+                          <Badge variant="outline" className="font-mono text-[10px] border-accent-brand/30 text-accent-brand">
+                            EWMA Low Latency Routing
+                          </Badge>
+                        </div>
+                        <h2 className="mt-3 text-2xl font-bold tracking-tight text-text-primary">
+                          Client API Integration & Developer SDKs
+                        </h2>
+                        <p className="mt-2 max-w-3xl text-sm leading-6 text-text-secondary">
+                          Integrup z siecią SeedInfer w kilka sekund. API jest w 100% zgodne ze specyfikacją OpenAI oraz OpenRouter v2.4. Wystarczy podmienić <code className="rounded bg-bg-tertiary px-1">base_url</code> w standardowym pakiecie <code className="rounded bg-bg-tertiary px-1">openai</code>.
+                        </p>
+                        <div className="mt-4 flex flex-wrap gap-2">
+                          <a href="#cli-quickstart" className="inline-flex items-center gap-1 rounded-lg bg-accent-brand px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-brand-hover">
+                            <Code2 className="h-3.5 w-3.5" /> API Quickstart ↓
+                          </a>
+                          <a href="#cli-models" className="inline-flex items-center gap-1 rounded-lg border border-border-default bg-bg-tertiary px-3 py-1.5 text-xs font-medium text-text-primary hover:bg-bg-hover">
+                            Modele & Cennik ↓
+                          </a>
+                          <a href="#cli-faq" className="inline-flex items-center gap-1 rounded-lg border border-border-default bg-bg-tertiary px-3 py-1.5 text-xs font-medium text-text-primary hover:bg-bg-hover">
+                            <HelpCircle className="h-3.5 w-3.5 text-accent-brand" /> Client FAQ ↓
+                          </a>
+                        </div>
+                      </div>
+
+                      <Card className="w-full shrink-0 border border-border-dim bg-bg-primary/60 lg:w-[380px]">
+                        <CardHeader className="pb-2">
+                          <CardTitle className="flex items-center gap-2 text-xs font-mono uppercase tracking-wide text-text-tertiary">
+                            <Globe className="h-3.5 w-3.5 text-accent-brand" /> API Connection Details
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-1.5 pt-0 font-mono text-xs">
+                          <div className="flex items-center justify-between rounded-lg bg-bg-tertiary px-2.5 py-2">
+                            <span className="text-text-tertiary">Endpoint API</span>
+                            <span className="font-semibold text-accent-brand">https://seedinfer.com/v1</span>
+                          </div>
+                          <div className="flex items-center justify-between rounded-lg bg-bg-tertiary px-2.5 py-2">
+                            <span className="text-text-tertiary">Format Zapytań</span>
+                            <span className="font-semibold text-text-primary">OpenAI / OpenRouter JSON</span>
+                          </div>
+                          <div className="flex items-center justify-between rounded-lg bg-bg-tertiary px-2.5 py-2">
+                            <span className="text-text-tertiary">Streaming (SSE)</span>
+                            <span className="font-semibold text-accent-green">Wspierane (stream: true)</span>
+                          </div>
+                          <div className="flex items-center justify-between rounded-lg bg-bg-tertiary px-2.5 py-2">
+                            <span className="text-text-tertiary">Prywatność Danych</span>
+                            <span className="font-semibold text-text-primary">Zero Logging (RAM Only)</span>
+                          </div>
+                        </CardContent>
+                      </Card>
                     </div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+                  </CardContent>
+                </Card>
 
-            {/* Verify */}
-            <Card id="verify" className="border border-border-dim bg-bg-secondary">
-              <CardHeader className="pb-3"><CardTitle className="flex items-center gap-2 text-[13px]"><ShieldCheck className="h-4 w-4 text-accent-green" /> Verification — health, models, fleet</CardTitle></CardHeader>
-              <CardContent className="space-y-3">
-                <div className="grid gap-3 sm:grid-cols-3">
-                  <div className="rounded-xl border border-border-dim bg-bg-primary p-3">
-                    <div className="font-mono text-[10px] uppercase tracking-wide text-text-tertiary">Lokalnie — vLLM + agent</div>
-                    <pre className="mt-1 overflow-x-auto rounded-lg bg-bg-tertiary p-2 font-mono text-[11px] text-text-secondary">{`curl -fsS http://127.0.0.1:47901/health | jq
-# {"status":"ok","provider_id":"...","vllm_health":{"status":"ok"},"gpu":{"count":1}}
-curl -fsS http://127.0.0.1:47900/v1/models | jq
-curl http://127.0.0.1:47901/v1/chat/completions \\
-  -H "Content-Type: application/json" \\
-  -d '{"model":"seedinfer/nemotron-lightning-1m","messages":[{"role":"user","content":"Hello"}],"max_tokens":32}'`}</pre>
-                    <div className="mt-1 font-mono text-[11px] text-text-tertiary">Host ports: <code className="rounded bg-bg-tertiary px-1">47900:8000</code> vLLM, <code className="rounded bg-bg-tertiary px-1">47901:3001</code> agent. Env override: <code>VLLM_PORT=41000 AGENT_PORT=41001</code>.</div>
-                  </div>
-                  <div className="rounded-xl border border-border-dim bg-bg-primary p-3">
-                    <div className="font-mono text-[10px] uppercase tracking-wide text-text-tertiary">Gateway — heartbeat + verify</div>
-                    <pre className="mt-1 overflow-x-auto rounded-lg bg-bg-tertiary p-2 font-mono text-[11px] text-text-secondary">{`# heartbeat co 30s (agent/main.py)
-POST https://seedinfer.com/api/v1/providers/heartbeat
-# auto-verify po 2 heartbeat (~60s)
-GET https://seedinfer.com/api/v1/providers | jq
-# verification: pending -> verifying -> verified
-# manual verify:
-curl -X POST https://seedinfer.com/api/v1/providers/verify \\
-  -H "Content-Type: application/json" \\
-  -d '{"provider_id":"provider-5090-xxx"}' | jq`}</pre>
-                  </div>
-                  <div className="rounded-xl border border-border-dim bg-bg-primary p-3">
-                    <div className="font-mono text-[10px] uppercase tracking-wide text-text-tertiary">Fleet UI + API</div>
-                    <div className="mt-1 font-mono text-xs leading-4 text-text-secondary">
-                      <code className="rounded bg-bg-tertiary px-1">/providers</code> — pending/verifying opacity 60, verified 🟢 opacity 100 (official node).<br />
-                      <code className="rounded bg-bg-tertiary px-1">GET /api/v1/providers?verified=1</code> — tylko verified.<br />
-                      Pi gateway decyduje <code>verified</code> (nie Headscale ACL).
+                {/* API Code Examples */}
+                <Card id="cli-quickstart" className="border border-border-dim bg-bg-secondary">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="flex items-center gap-2 text-[13px]">
+                      <Code2 className="h-4 w-4 text-accent-brand" /> Przykłady Kodowe (Python, Node.js, cURL)
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <Tabs defaultValue="python" className="w-full">
+                      <TabsList className="bg-bg-tertiary border border-border-dim p-1">
+                        <TabsTrigger value="python" className="text-xs font-mono">Python SDK</TabsTrigger>
+                        <TabsTrigger value="curl" className="text-xs font-mono">cURL</TabsTrigger>
+                        <TabsTrigger value="javascript" className="text-xs font-mono">Node.js / JS</TabsTrigger>
+                      </TabsList>
+                      <TabsContent value="python" className="mt-3">
+                        <CodeBlock label="Python (pip install openai)" code={PYTHON_EXAMPLE} />
+                      </TabsContent>
+                      <TabsContent value="curl" className="mt-3">
+                        <CodeBlock label="Bash / cURL" code={CURL_EXAMPLE} />
+                      </TabsContent>
+                      <TabsContent value="javascript" className="mt-3">
+                        <CodeBlock label="JavaScript (npm install openai)" code={JS_EXAMPLE} />
+                      </TabsContent>
+                    </Tabs>
+                  </CardContent>
+                </Card>
+
+                {/* Models Catalog */}
+                <Card id="cli-models" className="border border-border-dim bg-bg-secondary">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="flex items-center gap-2 text-[13px]">
+                      <Cpu className="h-4 w-4 text-accent-brand" /> Dostępne Modele i Stawki API
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="overflow-x-auto rounded-xl border border-border-dim">
+                      <table className="w-full text-left font-mono text-xs">
+                        <thead className="bg-bg-tertiary text-[10px] uppercase tracking-wide text-text-tertiary">
+                          <tr>
+                            <th className="px-3 py-2">Identyfikator Modelu</th>
+                            <th className="px-3 py-2">Kontekst</th>
+                            <th className="px-3 py-2">Cena Input / 1M</th>
+                            <th className="px-3 py-2">Cena Output / 1M</th>
+                            <th className="px-3 py-2">Specjalizacja</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-border-dim text-text-secondary">
+                          <tr className="bg-accent-brand/5 font-medium text-text-primary">
+                            <td className="px-3 py-2 flex items-center gap-1.5">
+                              <Badge variant="outline" className="text-[10px] bg-accent-brand/10 text-accent-brand">Rekomendowany</Badge>
+                              seedinfer/nemotron-lightning-1m
+                            </td>
+                            <td className="px-3 py-2">1,000,000 tokenów</td>
+                            <td className="px-3 py-2 text-accent-green font-semibold">$0.02</td>
+                            <td className="px-3 py-2 text-accent-green font-semibold">$0.10</td>
+                            <td className="px-3 py-2">Długi kontekst, analiza dokumentów, kodowanie</td>
+                          </tr>
+                          <tr>
+                            <td className="px-3 py-2 font-medium">seedinfer/gemma-4-26b</td>
+                            <td className="px-3 py-2">256,000 tokenów</td>
+                            <td className="px-3 py-2 text-accent-green font-semibold">$0.03</td>
+                            <td className="px-3 py-2 text-accent-green font-semibold">$0.30</td>
+                            <td className="px-3 py-2">Szybkie rozumowanie, zadania wielojęzyczne</td>
+                          </tr>
+                        </tbody>
+                      </table>
                     </div>
-                    <div className="mt-2 rounded-lg bg-bg-tertiary p-2 font-mono text-[11px] text-text-tertiary">Endpoints: <Link href="/api/v1/providers" className="text-accent-brand underline">/api/v1/providers</Link> · <Link href="/api/v1/models" className="text-accent-brand underline">/api/v1/models</Link> · <Link href="/api/v1/pricing" className="text-accent-brand underline">/api/v1/pricing</Link></div>
-                  </div>
-                </div>
-                <div className="rounded-lg border border-border-dim bg-bg-primary p-3">
-                  <div className="font-mono text-[10px] uppercase tracking-wide text-text-tertiary">Pi gateway — Headscale & telemetry</div>
-                  <pre className="mt-1 overflow-x-auto rounded-lg bg-bg-tertiary p-2 font-mono text-[11px] text-text-secondary">{`# Control plane: tailnet.seedinfer.com (Headscale)
-# Authkey: curl -fsSL https://seedinfer.com/api/v1/auth/request | jq
-# Docs: https://seedinfer.com/docs
-curl -fsS https://seedinfer.com/api/v1/providers | jq '.data[] | {id,status,verification}'
-tailscale status  # na providerze
-docker logs -f seedinfer-provider | grep -E "heartbeat|vllm|download"`}</pre>
-                </div>
-              </CardContent>
-            </Card>
+                  </CardContent>
+                </Card>
 
-            {/* Troubleshooting */}
-            <Card className="border border-border-dim bg-bg-secondary">
-              <CardHeader className="pb-3"><CardTitle className="flex items-center gap-2 text-[13px]"><Wrench className="h-4 w-4 text-accent-brand" /> Troubleshooting</CardTitle></CardHeader>
-              <CardContent className="space-y-3">
-                <div className="overflow-x-auto rounded-xl border border-border-dim">
-                  <table className="w-full text-left font-mono text-xs">
-                    <thead className="bg-bg-tertiary text-[10px] uppercase tracking-wide text-text-tertiary">
-                      <tr><th className="px-3 py-2">Symptom</th><th className="px-3 py-2">Cause</th><th className="px-3 py-2">Fix</th></tr>
-                    </thead>
-                    <tbody className="divide-y divide-border-dim text-text-secondary">
-                      <tr><td className="px-3 py-2 font-medium text-text-primary">OOM CUDA</td><td className="px-3 py-2">1M ctx + 0.93 on 24GB, full KV</td><td className="px-3 py-2"><code className="rounded bg-bg-tertiary px-1">VLLM_MAX_MODEL_LEN=32768</code> + <code className="rounded bg-bg-tertiary px-1">VLLM_GPU_MEMORY_UTILIZATION=0.80</code> → restart</td></tr>
-                      <tr><td className="px-3 py-2 font-medium text-text-primary"><code>nvidia-smi</code> missing</td><td className="px-3 py-2">driver &lt;580, missing module</td><td className="px-3 py-2"><code>sudo apt update && sudo apt install nvidia-driver-580 && sudo reboot</code> · fallback 570 / 550 legacy · <code>ubuntu-drivers autoinstall</code></td></tr>
-                      <tr><td className="px-3 py-2 font-medium text-text-primary">docker no nvidia runtime</td><td className="px-3 py-2">missing nvidia-ctk</td><td className="px-3 py-2"><code>sudo apt install nvidia-container-toolkit && sudo nvidia-ctk runtime configure --runtime=docker && sudo systemctl restart docker</code></td></tr>
-                      <tr><td className="px-3 py-2 font-medium text-text-primary">port 47900/47901 in use</td><td className="px-3 py-2"><code>ss -tlnp | grep :4790</code></td><td className="px-3 py-2"><code>VLLM_PORT=41000 AGENT_PORT=41001 curl ... | bash -s -- --authkey XXX</code> (range 479xx busy, use 41000+)</td></tr>
-                      <tr><td className="px-3 py-2 font-medium text-text-primary">disk full / no space</td><td className="px-3 py-2">HF cache 60GB + vLLM 28GB</td><td className="px-3 py-2"><code>df -h</code> · <code>docker system prune -a</code> · <code>rm -rf ./models/cache/.../snapshots</code> · check 60GB+ free</td></tr>
-                      <tr><td className="px-3 py-2 font-medium text-text-primary">vLLM down in /health</td><td className="px-3 py-2">HF model missing, QUANTIZATION mismatch</td><td className="px-3 py-2"><code>docker logs seedinfer-provider --tail 100</code> · <code>VLLM_QUANTIZATION=modelopt</code> (not modelopt_fp4) + <code>--kv-cache-dtype fp8</code> auto</td></tr>
-                      <tr><td className="px-3 py-2 font-medium text-text-primary">tailscale invalid authkey</td><td className="px-3 py-2">key expired (24h)</td><td className="px-3 py-2">New key: <code>curl -fsSL https://seedinfer.com/api/v1/auth/request | jq</code> + <code>docker exec tailscale-seedinfer tailscale up --authkey NEW</code> (container) or <code>tailscale up --authkey NEW</code> (host) — details <a href="/docs" className="text-accent-brand underline">/docs</a></td></tr>
-                      <tr><td className="px-3 py-2 font-medium text-text-primary">host already on tailscale.com 100.94.x.x</td><td className="px-3 py-2">home tailnet, preserve connection</td><td className="px-3 py-2"><span className="inline-flex items-center rounded bg-accent-green/10 px-1 py-0.5 text-[10px] font-medium text-accent-green">Default: Container</span> — <code>install.sh</code> launches isolated container <code className="rounded bg-bg-tertiary px-1">tailscale-seedinfer</code>. Coexistence of <code>100.94.x.x</code> (host) + <code>100.64.x.x</code> (container). Provider agent uses container interface. Compose alternative: <code>docker compose --profile tailscale up -d</code>. Opt-in host mode: <code>--force-host-tailscale</code> or <code>TAILSCALE_USE_CONTAINER=0</code></td></tr>
-                      <tr><td className="px-3 py-2 font-medium text-text-primary">tailscale-seedinfer won't start</td><td className="px-3 py-2">volume/network/authkey</td><td className="px-3 py-2"><code>docker logs tailscale-seedinfer</code> · <code>docker volume create tailscale-seedinfer-state</code> · <code>docker network create seedinfer-tailnet</code> · check <code>TS_AUTHKEY</code>/<code>TS_LOGIN_SERVER</code> · healthcheck <code>tailscale status</code></td></tr>
-                      <tr><td className="px-3 py-2 font-medium text-text-primary">heartbeat 401/404</td><td className="px-3 py-2">gateway path fallback</td><td className="px-3 py-2">Agent fallback to <code>/api/providers/heartbeat</code> — log warning, non-critical · check <code>SEEDINFER_GATEWAY_URL</code></td></tr>
-                      <tr><td className="px-3 py-2 font-medium text-text-primary">chat_template error</td><td className="px-3 py-2">jinja missing</td><td className="px-3 py-2">HF <code>tokenizer_config.json</code> jinja auto from nvidia — do not overwrite · fallback <code>./provider/assets:/qwen_setup:ro</code> · <code>VLLM_CHAT_TEMPLATE=/qwen_setup/...</code></td></tr>
-                    </tbody>
-                  </table>
-                </div>
-                <div className="rounded-lg border border-dashed border-border-default bg-bg-primary p-3 font-mono text-[11px] leading-4 text-text-secondary">
-                  Logs: <code className="rounded bg-bg-tertiary px-1">docker compose -f provider/docker-compose.yml logs -f</code> · <code className="rounded bg-bg-tertiary px-1">docker exec tailscale-seedinfer tailscale status</code> (container 100.64.x.x) · <code className="rounded bg-bg-tertiary px-1">tailscale status</code> (host 100.94.x.x intact) · <code className="rounded bg-bg-tertiary px-1">docker logs tailscale-seedinfer</code> · <code className="rounded bg-bg-tertiary px-1">curl -fsS http://127.0.0.1:47901/metrics | jq</code> · <code className="rounded bg-bg-tertiary px-1">nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv</code> · <code className="rounded bg-bg-tertiary px-1">df -h && du -sh ./models/cache</code>
-                </div>
-              </CardContent>
-            </Card>
+                {/* Client FAQ */}
+                <Card id="cli-faq" className="border border-border-dim bg-bg-secondary">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="flex items-center gap-2 text-[13px]">
+                      <HelpCircle className="h-4 w-4 text-accent-brand" /> Client FAQ — Najczęściej Zadawane Pytania
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <FaqItem
+                      question="Czy moje dane (prompty i odpowiedzi) są zapisywane na dyskach węzłów?"
+                      answer={
+                        <p>
+                          <strong>Nie.</strong> Architektura SeedInfer przestrzega zasady <i>Zero-Data Logging</i>. Prompty są przetwarzane wyłącznie w pamięci ulotnej RAM/VRAM karty graficznej. Żaden węzeł nie posiada uprawnień ani możliwości zapisywania treści zapytań na dysku.
+                        </p>
+                      }
+                    />
+                    <FaqItem
+                      question="Czy SeedInfer współpracuje z narzędziami takimi jak LangChain, AutoGen lub OpenCode?"
+                      answer={
+                        <p>
+                          Tak! Ponieważ API używa standardowego protokołu OpenAI Chat Completions, wystarczy ustawić zmienną środowiskową <code className="rounded bg-bg-tertiary px-1">OPENAI_BASE_URL=https://seedinfer.com/v1</code> oraz podać dowolny klucz API w klauzulach konfiguracji.
+                        </p>
+                      }
+                    />
+                    <FaqItem
+                      question="Jak routing ewaluuje opóźnienia (latency) między dostawcami?"
+                      answer={
+                        <p>
+                          Bramka SeedInfer używa algorytmu <strong>EWMA (Exponentially Weighted Moving Average)</strong> do ciągłego monitorowania czasu odpowiedzi (Time to First Token - TTFT) oraz przepustowości aktywnych węzłów. Zapytania są dynamicznie kierowane do najbliższego i najbardziej optymalnego dostawcy.
+                        </p>
+                      }
+                    />
+                    <FaqItem
+                      question="Skąd mam wziąć Klucz API (API Key)?"
+                      answer={
+                        <p>
+                          W obecnej fazie testów dostępny jest demonstracyjny publiczny klucz <code className="rounded bg-bg-tertiary px-1">sk-seedinfer-demo</code>. Możesz również wygenerować własny klucz w konsoli deweloperskiej w zakładce <Link href="/api-console" className="text-accent-brand underline">API Console</Link>.
+                        </p>
+                      }
+                    />
+                  </CardContent>
+                </Card>
+              </div>
+            )}
 
-            {/* Files & Endpoints */}
-            <Card className="border border-border-dim bg-bg-secondary">
-              <CardHeader className="pb-3"><CardTitle className="flex items-center gap-2 text-[13px]"><FileText className="h-4 w-4 text-accent-brand" /> Pliki, env, endpoints</CardTitle></CardHeader>
-              <CardContent className="space-y-3">
-                <div className="grid gap-3 sm:grid-cols-3">
-                  <a href="/provider.tar.gz" className="rounded-xl border border-accent-brand/20 bg-accent-brand/10 p-4 hover:bg-accent-brand/15">
-                    <div className="flex items-center gap-2 font-medium text-text-primary"><Download className="h-4 w-4" /> provider.tar.gz</div>
-                    <div className="mt-1 font-mono text-xs text-text-secondary">Full provider/ pack — Dockerfile.cuda + compose + agent</div>
-                    <div className="mt-2 font-mono text-[11px] text-accent-brand">https://seedinfer.com/provider.tar.gz →</div>
-                  </a>
-                  <a href="/install.sh" className="rounded-xl border border-border-dim bg-bg-primary p-4 hover:bg-bg-tertiary">
-                    <div className="flex items-center gap-2 font-medium text-text-primary"><FileText className="h-4 w-4" /> install.sh</div>
-                    <div className="mt-1 font-mono text-xs text-text-secondary">One-liner plug-and-play ~279 linii · NVFP4</div>
-                    <div className="mt-2 font-mono text-[11px] text-text-tertiary">https://seedinfer.com/install.sh</div>
-                  </a>
-                  <div className="rounded-xl border border-border-dim bg-bg-primary p-4">
-                    <div className="flex items-center gap-2 font-medium text-text-primary"><Server className="h-4 w-4" /> Control plane</div>
-                    <div className="mt-1 font-mono text-xs text-text-secondary">Headscale tailnet.seedinfer.com (WireGuard) · Gateway https://seedinfer.com</div>
-                    <div className="mt-2 font-mono text-[11px] text-accent-brand">docs.seedinfer.com /docs →</div>
-                  </div>
-                </div>
-                <div className="overflow-x-auto rounded-xl border border-border-dim">
-                  <table className="w-full text-left font-mono text-xs">
-                    <thead className="bg-bg-tertiary text-[10px] uppercase tracking-wide text-text-tertiary">
-                      <tr><th className="px-3 py-2">ENV</th><th className="px-3 py-2">Default</th><th className="px-3 py-2">Opis (host 1:1 RTX 5090 GB202)</th></tr>
-                    </thead>
-                    <tbody className="divide-y divide-border-dim text-text-secondary">
-                      <tr><td className="px-3 py-2">VLLM_MODEL</td><td className="px-3 py-2">nvidia/...NVFP4</td><td className="px-3 py-2">HF repo NVFP4 (plug-and-play auto-download)</td></tr>
-                      <tr><td className="px-3 py-2">MODEL</td><td className="px-3 py-2">seedinfer/nemotron-lightning-1m</td><td className="px-3 py-2">logiczny alias via <code>--served-model-name</code></td></tr>
-                      <tr><td className="px-3 py-2">VLLM_QUANTIZATION</td><td className="px-3 py-2">modelopt</td><td className="px-3 py-2">compressed-tensors ModelOpt NVFP4 (nie modelopt_fp4/auto)</td></tr>
-                      <tr><td className="px-3 py-2">VLLM_KV_CACHE_DTYPE</td><td className="px-3 py-2">fp8</td><td className="px-3 py-2">FP8 KV (nie auto)</td></tr>
-                      <tr><td className="px-3 py-2">VLLM_MOE_BACKEND</td><td className="px-3 py-2">marlin</td><td className="px-3 py-2">Blackwell FP4 native · A100/H100 → humming</td></tr>
-                      <tr><td className="px-3 py-2">VLLM_MAMBA_BACKEND</td><td className="px-3 py-2">flashinfer</td><td className="px-3 py-2">host 1:1</td></tr>
-                      <tr><td className="px-3 py-2">VLLM_ATTENTION_BACKEND</td><td className="px-3 py-2">FLASHINFER</td><td className="px-3 py-2">host 1:1</td></tr>
-                      <tr><td className="px-3 py-2">VLLM_GPU_MEMORY_UTILIZATION</td><td className="px-3 py-2">0.93</td><td className="px-3 py-2">host 1:1 dla 32GB (nie 0.90)</td></tr>
-                      <tr><td className="px-3 py-2">VLLM_MAX_MODEL_LEN</td><td className="px-3 py-2">1048576</td><td className="px-3 py-2">1M ctx (2M KV)</td></tr>
-                      <tr><td className="px-3 py-2">VLLM_PORT / AGENT_PORT</td><td className="px-3 py-2">47900 / 47901</td><td className="px-3 py-2">host→container 8000/3001, env override</td></tr>
-                      <tr><td className="px-3 py-2">TAILSCALE_* </td><td className="px-3 py-2">tailnet.seedinfer.com</td><td className="px-3 py-2">Headscale login-server + tag:provider</td></tr>
-                    </tbody>
-                  </table>
-                </div>
-                <div className="flex flex-wrap gap-2 font-mono text-xs">
-                  <Link href="/api/v1/models" className="rounded bg-bg-tertiary px-2 py-1 text-text-secondary hover:text-text-primary">/api/v1/models</Link>
-                  <Link href="/api/v1/pricing" className="rounded bg-bg-tertiary px-2 py-1 text-text-secondary hover:text-text-primary">/api/v1/pricing</Link>
-                  <Link href="/api/v1/providers" className="rounded bg-bg-tertiary px-2 py-1 text-text-secondary hover:text-text-primary">/api/v1/providers</Link>
-                  <Link href="/api/v1/telemetry" className="rounded bg-bg-tertiary px-2 py-1 text-text-secondary hover:text-text-primary">/api/v1/telemetry</Link>
-                  <a href="/install.sh" className="rounded bg-accent-brand px-2 py-1 text-white hover:bg-accent-brand-hover">/install.sh</a>
-                  <a href="/provider.tar.gz" className="rounded bg-bg-tertiary px-2 py-1 text-text-secondary hover:text-text-primary">/provider.tar.gz</a>
-                </div>
-              </CardContent>
-            </Card>
-
+            {/* Footer */}
             <div className="border-t border-border-dim pt-4 font-mono text-[10px] leading-4 text-text-tertiary">
-              SeedInfer.com · Docs · Faza 0 CUDA — <Link href="/install.sh" className="text-accent-brand hover:underline">/install.sh</Link> · <Link href="/provider.tar.gz" className="text-accent-brand hover:underline">/provider.tar.gz</Link> · <Link href="/api/v1/auth/request" className="text-accent-brand hover:underline">/api/v1/auth/request</Link> · <Link href="/api/v1/providers" className="text-accent-brand hover:underline">/api/v1/providers</Link> · <Link href="/providers" className="text-accent-brand hover:underline">/providers</Link> · <Link href="/provider" className="text-accent-brand hover:underline">/provider</Link> · <a href="/docs" className="text-accent-brand underline">docs.seedinfer.com /docs</a>
+              SeedInfer.com · Documentation (Provider & Client) · Built for Decentralized AI Privacy & Economics
             </div>
           </div>
         </main>
