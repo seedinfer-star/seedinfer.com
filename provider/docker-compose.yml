@@ -90,7 +90,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 48g
+          memory: 20g
         reservations:
           devices:
             - driver: nvidia
@@ -162,3 +162,4 @@ volumes:
 networks:
   seedinfer-tailnet:
     name: seedinfer-tailnet
+    external: true

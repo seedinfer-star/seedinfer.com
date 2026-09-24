@@ -4,14 +4,13 @@ set -euo pipefail
 # SeedInfer provider entrypoint — Gemma 4 26B A4B NVFP4 (1:1 z DiffusionGemma Studio)
 # Host reference (jakub-b550m RTX 5090 32GB GB202)
 
-MODEL="${MODEL:-nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4}"
-HF_DIR_NAME="models--$(echo "$MODEL" | sed 's/\//--/g')"
-VLLM_MODEL="${VLLM_MODEL:-$MODEL}"
+MODEL="${MODEL:-google/gemma-4-26b-a4b-nvfp4}"
+VLLM_MODEL="${VLLM_MODEL:-/models/Gemma-4-26B-A4B-NVFP4}"
 
-# Auto-detect local snapshot if VLLM_MODEL is not a direct directory
+# Auto-detect local snapshot if /models/Gemma-4-26B-A4B-NVFP4 is not present
 if [[ ! -d "$VLLM_MODEL" || ! -f "$VLLM_MODEL/config.json" ]]; then
   _SNAP_FOUND=false
-  for _cache_root in "/mnt/d/hf_cache" "/root/.cache/huggingface" "/tmp/hf_home"; do
+  for _cache_root in "/mnt/d/models/hf/Gemma-4-26B-A4B-NVFP4" "/models/Gemma-4-26B-A4B-NVFP4" "/mnt/d/hf_cache" "/root/.cache/huggingface" "/tmp/hf_home"; do
     if [[ -f "${_cache_root}/config.json" ]] && python3 -m json.tool "${_cache_root}/config.json" >/dev/null 2>&1 && [[ -f "${_cache_root}/tokenizer.json" || -f "${_cache_root}/tokenizer.model" || -f "${_cache_root}/model.safetensors.index.json" ]]; then
       echo "[entrypoint] Found direct model directory: $_cache_root"
       VLLM_MODEL="$_cache_root"
@@ -19,11 +18,11 @@ if [[ ! -d "$VLLM_MODEL" || ! -f "$VLLM_MODEL/config.json" ]]; then
       _SNAP_FOUND=true
       break
     fi
-    _snap_parent="${_cache_root}/hub/${HF_DIR_NAME}/snapshots"
+    _snap_parent="${_cache_root}/hub/models--nvidia--Gemma-4-26B-A4B-NVFP4/snapshots"
     if [[ -d "$_snap_parent" ]]; then
       _snap=$(find "$_snap_parent" -maxdepth 1 -mindepth 1 -type d 2>/dev/null | head -n1)
-      if [[ -n "$_snap" && -f "$_snap/config.json" ]] && python3 -m json.tool "$_snap/config.json" >/dev/null 2>&1; then
-        echo "[entrypoint] Found local model snapshot: $_snap — using mmap zero-copy"
+      if [[ -n "$_snap" && -f "$_snap/config.json" ]] && python3 -m json.tool "$_snap/config.json" >/dev/null 2>&1 && [[ -f "$_snap/tokenizer.json" || -f "$_snap/tokenizer.model" || -f "$_snap/model.safetensors.index.json" ]]; then
+        echo "[entrypoint] Found local Gemma 4 snapshot: $_snap — using mmap zero-copy"
         VLLM_MODEL="$_snap"
         export HF_HUB_OFFLINE=1
         _SNAP_FOUND=true
@@ -32,7 +31,7 @@ if [[ ! -d "$VLLM_MODEL" || ! -f "$VLLM_MODEL/config.json" ]]; then
     fi
   done
   if [[ "$_SNAP_FOUND" != "true" ]]; then
-    VLLM_MODEL="$MODEL"
+    VLLM_MODEL="nvidia/Gemma-4-26B-A4B-NVFP4"
     export HF_HUB_OFFLINE=0
   fi
 fi
@@ -119,6 +118,7 @@ VLLM_ARGS=(
   --host 0.0.0.0
   --port "$VLLM_PORT"
   --served-model-name "$MODEL"
+  --hf-overrides '{"architectures": ["Gemma4ForCausalLM"]}'
   --quantization "$VLLM_QUANTIZATION"
   --dtype "$VLLM_DTYPE"
   --kv-cache-dtype "$VLLM_KV_CACHE_DTYPE"
@@ -131,6 +131,11 @@ VLLM_ARGS=(
   --enable-chunked-prefill
   --max-num-batched-tokens "$VLLM_MAX_BATCHED_TOKENS"
   --scheduling-policy "$VLLM_SCHEDULING_POLICY"
+  --enable-auto-tool-choice
+  --tool-call-parser gemma4
+  --reasoning-parser gemma4
+  --override-generation-config '{"max_new_tokens": null, "max_denoising_steps": 32}'
+  --default-chat-template-kwargs '{"enable_thinking":true}'
   --trust-remote-code
   --language-model-only
 )

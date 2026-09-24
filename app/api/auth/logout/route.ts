@@ -47,7 +47,9 @@ async function doLogout(req: Request): Promise<NextResponse> {
   const url = new URL(req.url);
   const wantRedirect = url.searchParams.get("redirect") === "1" || accept.includes("text/html");
   if (wantRedirect) {
-    const r2 = NextResponse.redirect(new URL("/login", url.origin).toString(), 302);
+    // Behind the tunnel req.url is the bind address (0.0.0.0:3002) — redirect to the public origin.
+    const publicOrigin = (process.env.NEXT_PUBLIC_SITE_URL || "https://seedinfer.com").replace(/\/+$/, "");
+    const r2 = NextResponse.redirect(`${publicOrigin}/login`, 302);
     r2.headers.set("Set-Cookie", clearSessionCookie());
     // also clear oauth cookies
     const clr = `Path=/; HttpOnly; SameSite=Lax; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT`;

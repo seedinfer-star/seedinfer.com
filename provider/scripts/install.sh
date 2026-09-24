@@ -10,8 +10,8 @@ set -euo pipefail
 
 GATEWAY="https://seedinfer.com"
 LOGIN_SERVER="https://tailnet.seedinfer.com"
-MODEL="nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4"
-VLLM_MODEL="nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4"
+MODEL="google/gemma-4-26b-a4b-nvfp4"
+VLLM_MODEL="google/gemma-4-26b-a4b-nvfp4"
 AUTHKEY=""
 # --- HOSTNAME sanitization (DNS label RFC1123: [a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?) ---
 # FIX: cut -c1-12 na "jakub-B550M-AORUS-ELITE" dawał "jakub-B550M-" kończące się "-" -> invalid DNS label.
@@ -933,8 +933,6 @@ done
 
 # 6) Uruchom provider (jeśli compose istnieje) — z prebuild pull/load logic
 if [[ -n "$COMPOSE_FILE" && -f "$COMPOSE_FILE" ]]; then
-  # Upewnij się że zewnętrzna sieć docker seedinfer-tailnet istnieje (wymagane przez compose external: true)
-  $DOCKER network create seedinfer-tailnet >/dev/null 2>&1 || true
   echo "-- prebuild check (ghcr -> Pi tar -> local build) --"
   # Ustal DOCKER already
   PREBUILD_OK=false

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server"
+import { GET as serveInstallScript } from "@/app/install.sh/route"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
@@ -13,38 +14,27 @@ export async function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: CORS_HEADERS })
 }
 
-// Alias for /install.sh — redirect or same content
-// GET /api/install -> 308 to /install.sh for curl -fsSL compatibility, also serves content on follow
+// Public origin for redirects. Behind the Cloudflare tunnel req.url is the bind
+// address (e.g. http://0.0.0.0:3002), which must never leak into a Location header.
+const PUBLIC_ORIGIN = (process.env.NEXT_PUBLIC_SITE_URL || "https://seedinfer.com").replace(/\/+$/, "")
+
+// Alias for /install.sh
+// Browsers get a 308 to the canonical public URL; curl / shell clients get the script body
+// directly (served by the same handler as /install.sh, no loopback HTTP round-trip).
 export async function GET(req: Request) {
   const url = new URL(req.url)
-  // If client follows redirect, serve same as /install.sh via internal fetch
-  // For direct curl without -L, provide 308; but curl -fsSL follows, so redirect is fine.
-  // To support both, check Accept: if shell/script prefer content; default redirect.
   const accept = req.headers.get("accept") || ""
   const userAgent = req.headers.get("user-agent") || ""
   const isCurl = userAgent.includes("curl") || accept.includes("shell") || url.searchParams.has("raw")
 
   if (!isCurl) {
-    // Browser -> redirect to /install.sh for canonical
-    return NextResponse.redirect(new URL("/install.sh", url.origin), 308)
+    return NextResponse.redirect(`${PUBLIC_ORIGIN}/install.sh`, 308)
   }
 
-  // For curl, proxy to /install.sh handler internally
   try {
-    const origin = url.origin
-    const r = await fetch(new URL("/install.sh", origin).toString(), { cache: "no-store" } as any)
-    const text = await r.text()
-    return new NextResponse(text, {
-      status: 200,
-      headers: {
-        "Content-Type": "text/x-shellscript; charset=utf-8",
-        "Cache-Control": "no-store, max-age=0",
-        "Content-Disposition": 'inline; filename="install.sh"',
-        ...CORS_HEADERS,
-      },
-    })
+    return await serveInstallScript()
   } catch {
-    return NextResponse.redirect(new URL("/install.sh", url.origin), 307)
+    return NextResponse.redirect(`${PUBLIC_ORIGIN}/install.sh`, 307)
   }
 }
 
