@@ -85,16 +85,23 @@ async function tryLoadJsonl(): Promise<void> {
     const text = fs.readFileSync(path, "utf8")
     const lines = text.trim().split("\n").filter(Boolean).slice(-10000) // cap 10k last
     const parsed: TelemetryEvent[] = []
+    const now = Date.now()
+    const maxAgeMs = 24 * 60 * 60 * 1000 // 24 hours retention for in-memory events
     for (const l of lines) {
       try {
         const j = JSON.parse(l)
-        if (j && j.timestamp && j.provider_id) parsed.push(j)
+        if (j && j.timestamp && j.provider_id) {
+          const eventTime = new Date(j.timestamp).getTime()
+          if (!Number.isNaN(eventTime) && (now - eventTime) <= maxAgeMs) {
+            parsed.push(j)
+          }
+        }
       } catch {}
     }
     const store = g.__seedinferTelemetry
     if (store) {
-      store.events = parsed.slice(-5000) // keep last 5k in memory
-      console.log(`[telemetry-store] loaded ${parsed.length} events from ${path}, kept ${store.events.length}`)
+      store.events = parsed.slice(-5000) // keep last 5k recent in memory
+      console.log(`[telemetry-store] loaded ${parsed.length} recent events (<24h) from ${path}, kept ${store.events.length}`)
     }
   } catch (e: any) {
     console.warn(`[telemetry-store] tryLoadJsonl skip: ${e?.message || e}`)

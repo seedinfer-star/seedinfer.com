@@ -28,9 +28,9 @@ import { QRCodeSVG } from "qrcode.react";
 // Constants
 // ---------------------------------------------------------------------------
 const PRESETS = [
-  { cents: 100, label: "$1", tier: "GO (3x)", note: "$3.00 API usage" },
-  { cents: 500, label: "$5", tier: "GOAT (4x)", note: "$20.00 API usage" },
-  { cents: 1000, label: "$10", tier: "PRO (5x)", note: "$50.00 API usage" },
+  { cents: 100, label: "$1", tier: "GO (2x)", note: "$2.00 API usage" },
+  { cents: 500, label: "$5", tier: "GOAT (3x)", note: "$15.00 API usage" },
+  { cents: 1000, label: "$10", tier: "PRO (4x)", note: "$40.00 API usage" },
 ] as const;
 
 const CHAIN_KEYS: ChainKey[] = ["eth", "arbitrum", "polygon", "base", "bnb", "hyperevm", "solana"];
@@ -535,8 +535,8 @@ export default function CryptoGateway() {
             </Badge>
           </div>
           <p className="font-mono text-[10px] leading-4 text-text-tertiary">
-            Pay-as-you-go <span className="font-semibold text-text-secondary">$0.02</span>/1M input ·{" "}
-            <span className="font-semibold text-text-secondary">$0.05</span>/1M output · EVM + Solana · single
+            Pay-as-you-go <span className="font-semibold text-text-secondary">$0.03</span>/1M input ·{" "}
+            <span className="font-semibold text-text-secondary">$0.20</span>/1M output · EVM + Solana · single
             watch-only wallet per chain
           </p>
           <div className="mt-2 rounded-lg border border-dashed border-border-default bg-bg-primary/50 p-2 font-mono text-[10px] leading-3 text-text-tertiary">
@@ -1059,7 +1059,7 @@ export default function CryptoGateway() {
           <div className="flex items-start gap-2">
             <Coins className="h-3.5 w-3.5 shrink-0 text-accent-green" />
             <div>
-              Pricing: seedinfer/nemotron-lightning-1m — $0.02 / 1M input · $0.05 / 1M output · 1M ctx ·{" "}
+              Pricing: google/gemma-4-26b-a4b-nvfp4 — $0.03 / 1M input · $0.20 / 1M output · 1M ctx ·{" "}
               <span className="text-text-secondary">Pay with USDC/USDT or native on any of 7 chains.</span>
             </div>
           </div>

@@ -12,7 +12,7 @@ import type { GatewayProvider } from "@/lib/api"
 
 const ONE_LINER_SIMPLE = `curl -fsSL https://seedinfer.com/install.sh | bash -s -- --authkey YOUR_AUTHKEY`
 const ONE_LINER_AUTO = `curl -fsSL https://seedinfer.com/install.sh | bash -s -- --authkey $(curl -s https://seedinfer.com/api/v1/auth/request | jq -r .authkey)`
-const ONE_LINER_CUSTOM = `curl -fsSL https://seedinfer.com/install.sh | bash -s -- --authkey YOUR_AUTHKEY --model seedinfer/nemotron-lightning-1m --gateway https://seedinfer.com --hostname provider-5090`
+const ONE_LINER_CUSTOM = `curl -fsSL https://seedinfer.com/install.sh | bash -s -- --authkey YOUR_AUTHKEY --model google/gemma-4-26b-a4b-nvfp4 --gateway https://seedinfer.com --hostname provider-5090`
 
 function CopyButton({ text, label }: { text: string; label?: string }) {
   const [copied, setCopied] = useState(false)
@@ -78,7 +78,7 @@ export default function ProvidersPage() {
           <div className="min-w-0">
             <h1 className="truncate text-[13px] font-semibold tracking-tight text-text-primary">SeedInfer Providers · Become a node</h1>
             <p className="truncate font-mono text-[11px] text-text-tertiary">
-              Gateway fleet <code className="rounded bg-bg-tertiary px-1">/api/v1/providers</code> · NVFP4 1M ctx $0.02/$0.05 · CUDA 13.3 · 47900/47901 · {gateway?.length ?? 0} nodes · last fetch {lastFetch || "—"}
+              Gateway fleet <code className="rounded bg-bg-tertiary px-1">/api/v1/providers</code> · NVFP4 1M ctx $0.03/$0.20 · CUDA 13.3 · 47900/47901 · {gateway?.length ?? 0} nodes · last fetch {lastFetch || "—"}
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -87,6 +87,12 @@ export default function ProvidersPage() {
               className="hidden sm:inline-flex items-center gap-1.5 rounded-lg border border-border-default bg-bg-tertiary px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-bg-hover hover:text-text-primary"
             >
               <FileText className="h-3.5 w-3.5" /> Docs
+            </Link>
+            <Link
+              href="/provider/portal"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-border-default bg-bg-tertiary px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-bg-hover hover:text-text-primary"
+            >
+              <KeyRound className="h-3.5 w-3.5 text-accent-brand" /> Provider Portal
             </Link>
             <Link
               href="/provider"
@@ -113,8 +119,8 @@ export default function ProvidersPage() {
                   <Badge variant="success" className="gap-1">
                     <ShieldCheck className="h-3 w-3" /> NVFP4 · 1M ctx
                   </Badge>
-                  <Badge variant="outline" className="font-mono text-[10px]">seedinfer/nemotron-lightning-1m</Badge>
-                  <Badge variant="outline" className="font-mono text-[10px] border-accent-brand/30 text-accent-brand">$0.02 / $0.05 per 1M</Badge>
+                  <Badge variant="outline" className="font-mono text-[10px]">google/gemma-4-26b-a4b-nvfp4</Badge>
+                  <Badge variant="outline" className="font-mono text-[10px] border-accent-brand/30 text-accent-brand">$0.03 / $0.20 per 1M</Badge>
                   <Badge variant="outline" className="font-mono text-[10px]">CUDA 13.3 · driver 580+</Badge>
                   <Badge variant="outline" className="font-mono text-[10px]">47900:8000 + 47901:3001</Badge>
                   <span className="ml-auto flex items-center gap-2">
@@ -191,7 +197,7 @@ export default function ProvidersPage() {
                       <CardContent className="space-y-1.5 pt-0 font-mono text-xs">
                         <div className="flex items-center justify-between rounded-lg bg-bg-tertiary px-2.5 py-2">
                           <span className="text-text-tertiary">Model</span>
-                          <span className="font-medium text-text-primary">NVFP4 · 1M ctx $0.02/$0.05</span>
+                          <span className="font-medium text-text-primary">NVFP4 · 1M ctx $0.03/$0.20</span>
                         </div>
                         <div className="flex items-center justify-between rounded-lg bg-bg-tertiary px-2.5 py-2">
                           <span className="text-text-tertiary">GPU min</span>
@@ -229,6 +235,10 @@ export default function ProvidersPage() {
                           <span className="text-text-tertiary">Net</span>
                           <span className="font-medium text-text-primary">UDP 41641</span>
                         </div>
+                        <div className="flex items-center justify-between rounded-lg bg-bg-tertiary px-2.5 py-2 border border-accent-brand/20 bg-accent-brand/5">
+                          <span className="text-text-tertiary">Payout Wallet</span>
+                          <span className="font-medium text-accent-green">Base Chain (EVM 0x...)</span>
+                        </div>
                         <div className="rounded-lg border border-dashed border-border-default bg-bg-secondary p-2.5 font-mono text-[11px] leading-3 text-text-secondary">
                           <strong className="text-text-primary">Flags host 1:1:</strong> marlin + flashinfer + fp8 · 0.93 · 1048576 · 128 · 4096 · <code className="rounded bg-bg-tertiary px-1">VLLM_ATTENTION_BACKEND=FLASHINFER</code> +{" "}
                           <code className="rounded bg-bg-tertiary px-1">tailscale</code> auto.
@@ -247,7 +257,7 @@ export default function ProvidersPage() {
 curl -fsS http://127.0.0.1:47900/v1/models | jq
 curl http://127.0.0.1:47901/v1/chat/completions \\
   -H "Content-Type: application/json" \\
-  -d '{"model":"seedinfer/nemotron-lightning-1m","messages":[{"role":"user","content":"ping"}],"max_tokens":32}'`}</pre>
+  -d '{"model":"google/gemma-4-26b-a4b-nvfp4","messages":[{"role":"user","content":"ping"}],"max_tokens":32}'`}</pre>
                       <p className="mt-1 font-mono text-[11px] text-text-tertiary">
                         Fleet: <code className="rounded bg-bg-tertiary px-1">GET /api/v1/providers</code> · heartbeat co 30s · auto-verify po 2 heartbeat.
                       </p>

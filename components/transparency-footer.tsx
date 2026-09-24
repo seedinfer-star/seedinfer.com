@@ -3,6 +3,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Copy, Wallet, Shield, ExternalLink } from "lucide-react"
 import { useState } from "react"
+import Link from "next/link"
 
 type WalletAddr = {
   chain: string
@@ -157,7 +158,7 @@ export default function TransparencyFooter() {
       <Card className="border border-border-dim bg-bg-secondary/60">
         <CardContent className="flex flex-wrap items-center justify-between gap-3 p-3">
           <div className="font-mono text-[11px] leading-4 text-text-secondary">
-            SeedInfer.com · Private inference on verified hardware ·{" "}
+            SeedInfer.com · P2P inference on verified hardware ·{" "}
             <span className="text-text-tertiary">All payouts & attestations verifiable on-chain.</span>
           </div>
           <div className="flex items-center gap-2 text-xs">
@@ -172,6 +173,14 @@ export default function TransparencyFooter() {
             <a href="#" className="inline-flex items-center gap-1 text-accent-brand hover:underline">
               Attestation log <ExternalLink className="h-3 w-3" />
             </a>
+            <span className="text-border-default">·</span>
+            <Link href="/privacy" className="inline-flex items-center gap-1 text-accent-brand hover:underline">
+              Privacy Policy
+            </Link>
+            <span className="text-border-default">·</span>
+            <Link href="/terms" className="inline-flex items-center gap-1 text-accent-brand hover:underline">
+              Terms of Service
+            </Link>
           </div>
         </CardContent>
       </Card>
@@ -182,8 +191,7 @@ export default function TransparencyFooter() {
         <code className="rounded bg-bg-tertiary px-1 py-0.5">PAYMENT_ADDRESS</code>{" "}
         <code className="rounded bg-bg-tertiary px-1 py-0.5">SOLANA_ADDRESS</code> /{" "}
         <code className="rounded bg-bg-tertiary px-1 py-0.5">NEXT_PUBLIC_PAYMENT_ADDRESS</code>{" "}
-        <code className="rounded bg-bg-tertiary px-1 py-0.5">NEXT_PUBLIC_SOL_ADDRESS</code>. HyperEVM explorer link is placeholder —{" "}
-        <span className="italic">Element requires refinement</span> for final Hyperliquid explorer URL.
+        <code className="rounded bg-bg-tertiary px-1 py-0.5">NEXT_PUBLIC_SOL_ADDRESS</code>. HyperEVM explorer link points to official Hyperliquid network explorer.
       </p>
     </div>
   )

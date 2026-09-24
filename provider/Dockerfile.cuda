@@ -18,7 +18,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
 WORKDIR /app
 
 # Install lightweight agent dependencies onto the pre-baked vLLM environment
-RUN pip install --break-system-packages --no-cache-dir fastapi uvicorn requests psutil pydantic pydantic-settings websockets httpx 2>/dev/null || true
+RUN pip install --break-system-packages --no-cache-dir fastapi uvicorn requests psutil pydantic pydantic-settings websockets httpx sentencepiece tiktoken protobuf 2>/dev/null || true
 
 # Copy agent code and assets
 COPY provider/agent /app/agent

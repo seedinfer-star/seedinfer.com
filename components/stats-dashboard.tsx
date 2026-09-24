@@ -52,7 +52,7 @@ export default function StatsDashboard() {
           <div className="min-w-0">
             <h1 className="truncate text-[13px] font-semibold tracking-tight text-text-primary">Network stats</h1>
             <p className="truncate font-mono text-[11px] text-text-tertiary">
-              SeedInfer private inference · live from /api/stats · cache 15s
+              SeedInfer P2P inference · live from /api/stats · cache 15s
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -106,8 +106,8 @@ export default function StatsDashboard() {
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="inline-flex items-center gap-1 rounded-full bg-accent-green/15 px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide text-accent-green">NVFP4 · 1M ctx</span>
-                    <span className="inline-flex items-center rounded-full border border-border-dim bg-bg-tertiary px-2 py-0.5 font-mono text-[10px] text-text-secondary">$0.02 / $0.05 per 1M</span>
+                    <span className="inline-flex items-center gap-1 rounded-full bg-accent-green/15 px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide text-accent-green">Gemma 4 NVFP4 · 1M ctx</span>
+                    <span className="inline-flex items-center rounded-full border border-border-dim bg-bg-tertiary px-2 py-0.5 font-mono text-[10px] text-text-secondary">$0.03 / $0.20 per 1M</span>
                     <span className="inline-flex items-center rounded-full border border-border-dim bg-bg-tertiary px-2 py-0.5 font-mono text-[10px] text-text-secondary">CUDA 13.3 · 580+ · 47900/47901</span>
                     <span className="hidden sm:inline font-mono text-[11px] text-text-tertiary">RTX 5090 32GB min · Ubuntu 24.04 · 50GB HF · 60GB+ free</span>
                   </div>

@@ -70,14 +70,18 @@ export default function SettingsPage() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <div className="rounded-xl border border-border-dim bg-bg-primary p-3">
+                  {/* Pay-As-You-Go Key */}
+                  <div className="rounded-xl border border-border-dim bg-bg-primary p-3 space-y-2">
                     <div className="flex items-center justify-between gap-2">
-                      <div className="font-mono text-[10px] uppercase tracking-wide text-text-tertiary">Default key</div>
-                      <Badge variant="success" className="font-mono text-[9px]">active</Badge>
+                      <div className="font-mono text-[10px] uppercase tracking-wide text-text-tertiary">Pay-As-You-Go Key (sk_live_...)</div>
+                      <div className="flex items-center gap-1.5">
+                        <Badge variant="outline" className="font-mono text-[9px] border-accent-green/30 text-accent-green">Standard SLA Priority</Badge>
+                        <Badge variant="success" className="font-mono text-[9px]">active</Badge>
+                      </div>
                     </div>
-                    <div className="mt-2 flex items-center gap-2">
+                    <div className="flex items-center gap-2">
                       <Input
-                        value={revealed ? mockKey : "•".repeat(32)}
+                        value={revealed ? "sk_live_8f9a2b1c4e7d3019284756" : "•".repeat(32)}
                         readOnly
                         className="h-9 flex-1 font-mono text-xs"
                       />
@@ -96,9 +100,36 @@ export default function SettingsPage() {
                         {copied ? "Copied" : "Copy"}
                       </button>
                     </div>
-                    <p className="mt-2 font-mono text-[11px] text-text-tertiary">
-                      Use as <code className="rounded bg-bg-tertiary px-1">Authorization: Bearer $SEEDINFER_API_KEY</code> for{" "}
-                      <code className="rounded bg-bg-tertiary px-1">POST /v1/chat/completions</code>.
+                    <p className="font-mono text-[11px] text-text-tertiary">
+                      Direct credit balance usage. Priority: <code className="rounded bg-bg-tertiary px-1 text-accent-green">standard</code> (Top priority on Orange Pi 4 Pro router).
+                    </p>
+                  </div>
+
+                  {/* Subscription Dedicated Key */}
+                  <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-3 space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="font-mono text-[10px] uppercase tracking-wide text-amber-500 font-semibold">Subscription Dedicated Key (sk_sub_...)</div>
+                      <div className="flex items-center gap-1.5">
+                        <Badge variant="outline" className="font-mono text-[9px] border-amber-500/30 text-amber-500">Lowest / Background Priority</Badge>
+                        <Badge variant="outline" className="font-mono text-[9px] border-border-default">Tier GO 2x</Badge>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        value={revealed ? "sk_sub_go_7483920194857639201" : "•".repeat(32)}
+                        readOnly
+                        className="h-9 flex-1 font-mono text-xs"
+                      />
+                      <button
+                        onClick={copy}
+                        className="inline-flex items-center gap-1 rounded-lg border border-border-default bg-bg-tertiary px-3 py-2 text-xs font-medium text-text-secondary hover:bg-bg-hover"
+                      >
+                        {copied ? <Check className="h-3.5 w-3.5 text-accent-green" /> : <Copy className="h-3.5 w-3.5" />}
+                        {copied ? "Copied" : "Copy"}
+                      </button>
+                    </div>
+                    <p className="font-mono text-[11px] text-text-tertiary">
+                      Dedicated subscription key. Priority: <code className="rounded bg-bg-tertiary px-1 text-amber-500">background</code> (Lowest priority on Orange Pi 4 Pro router).
                     </p>
                   </div>
 

@@ -65,7 +65,7 @@ function LoginInner() {
         <header className="flex h-[48px] shrink-0 items-center justify-between border-b border-border-dim bg-bg-secondary px-4">
           <div className="min-w-0">
             <h1 className="truncate text-[13px] font-semibold tracking-tight text-text-primary">Sign in</h1>
-            <p className="truncate font-mono text-[11px] text-text-tertiary">SeedInfer — Private inference · billing requires JWT</p>
+            <p className="truncate font-mono text-[11px] text-text-tertiary">SeedInfer — P2P inference · billing requires JWT</p>
           </div>
           <Link
             href="/register"

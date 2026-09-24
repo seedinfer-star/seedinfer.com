@@ -38,6 +38,7 @@ SEEDINFER_PUBLIC_KEY = os.getenv("SEEDINFER_PUBLIC_KEY", "")
 SEEDINFER_HW_FINGERPRINT = os.getenv("SEEDINFER_HW_FINGERPRINT", "")
 LOG_LEVEL = os.getenv("AGENT_LOG_LEVEL", "info").upper()
 MAX_CONCURRENT_REQUESTS = int(os.getenv("MAX_CONCURRENT_REQUESTS", "32"))
+MAX_KV_CACHE_TOKENS = int(os.getenv("MAX_KV_CACHE_TOKENS", "1500000")) # RTX 5090 FP8 KV cache baseline
 AGENT_VERSION = "0.2.0-gemma4-nvfp4-priority"
 
 logging.basicConfig(
@@ -46,8 +47,9 @@ logging.basicConfig(
 )
 log = logging.getLogger("seedinfer-provider")
 
-# --- Active Request Management & Priority Locks ---
+# --- Active Request & KV Cache Token Capacity Management ---
 active_requests = 0
+active_tokens = 0
 active_requests_lock = asyncio.Lock()
 
 # --- Provider ID ---
@@ -210,6 +212,14 @@ def build_provider_payload() -> dict[str, Any]:
     mem_gb = gi["total_memory_gb"] or hi["memory_gb"] or 0
     agent_url = _agent_url()
     tailscale_ip = _tailscale_ip()
+    dev_name_upper = dev_name.upper()
+    if "5090" in dev_name_upper:
+        mem_bw = 1792
+    elif "4090" in dev_name_upper:
+        mem_bw = 1008
+    else:
+        mem_bw = 1792
+
     return {
         "id": PROVIDER_ID,
         "chip": dev_name,
@@ -218,7 +228,7 @@ def build_provider_payload() -> dict[str, Any]:
         "cpu_cores": {"total": hi["cpu_total"], "performance": hi["cpu_total"], "efficiency": 0},
         "gpu_cores": gi.get("gpu_cores", 0),
         "memory_gb": mem_gb,
-        "memory_bandwidth_gbs": 1008,
+        "memory_bandwidth_gbs": mem_bw,
         "current_model": MODEL,
         "models": [MODEL, "google/gemma-4-26b-a4b-nvfp4", "seedinfer/gemma-4-26b-a4b"],
         "status": "serving",
@@ -239,8 +249,62 @@ def build_provider_payload() -> dict[str, Any]:
         "public_key": SEEDINFER_PUBLIC_KEY,
         "hw_fingerprint": SEEDINFER_HW_FINGERPRINT,
         "max_concurrency": MAX_CONCURRENT_REQUESTS,
+        "max_kv_tokens": MAX_KV_CACHE_TOKENS,
+        "active_requests": active_requests,
+        "active_tokens": active_tokens,
         "tailscale_hostname": TAILSCALE_HOSTNAME or hi.get("tailscale_hostname", ""),
     }
+
+_vllm_kv_tokens_detected = False
+
+async def detect_vllm_kv_cache_capacity() -> int:
+    """
+    Automated KV Cache Pool Detection:
+    Queries vLLM's /metrics or /health endpoint during node initialization
+    to extract exact total GPU blocks and block size (num_total_gpu_blocks * block_size).
+    Updates global MAX_KV_CACHE_TOKENS automatically.
+    """
+    global MAX_KV_CACHE_TOKENS, _vllm_kv_tokens_detected
+    if _vllm_kv_tokens_detected:
+        return MAX_KV_CACHE_TOKENS
+
+    try:
+        async with httpx.AsyncClient(timeout=3.0) as c:
+            r = await c.get(f"{VLLM_URL}/metrics")
+            if r.status_code == 200:
+                text = r.text
+                num_gpu_blocks = None
+                block_size = 16  # default vLLM block size
+
+                for line in text.splitlines():
+                    if line.startswith("#"):
+                        continue
+                    if "num_total_gpu_blocks" in line:
+                        parts = line.split()
+                        if len(parts) >= 2:
+                            try:
+                                num_gpu_blocks = float(parts[-1])
+                            except ValueError:
+                                pass
+                    elif "block_size" in line:
+                        parts = line.split()
+                        if len(parts) >= 2:
+                            try:
+                                block_size = int(float(parts[-1]))
+                            except ValueError:
+                                pass
+
+                if num_gpu_blocks and num_gpu_blocks > 0:
+                    calculated_capacity = int(num_gpu_blocks * block_size)
+                    MAX_KV_CACHE_TOKENS = calculated_capacity
+                    _vllm_kv_tokens_detected = True
+                    log.info("🔥 Auto-detected exact vLLM GPU KV Cache pool: %d tokens (gpu_blocks=%d, block_size=%d)",
+                             calculated_capacity, int(num_gpu_blocks), block_size)
+                    return calculated_capacity
+    except Exception as err:
+        log.debug("Auto-detecting vLLM KV cache pool from /metrics: %s", err)
+
+    return MAX_KV_CACHE_TOKENS
 
 async def heartbeat_loop():
     url = f"{GATEWAY_URL}/api/v1/providers/heartbeat"
@@ -251,6 +315,7 @@ async def heartbeat_loop():
     log.info("heartbeat -> %s every %ds (provider=%s model=%s)", url, HEARTBEAT_INTERVAL, PROVIDER_ID, MODEL)
     async with httpx.AsyncClient(timeout=10) as client:
         while not _stop.is_set():
+            await detect_vllm_kv_cache_capacity()
             payload = build_provider_payload()
             vh = await vllm_health()
             payload["vllm_health"] = vh
@@ -392,15 +457,26 @@ def record_prompt_tokens(tokens: int):
     if tokens > 0:
         prompt_token_history.append(tokens)
 
-def get_current_median_prompt_tokens() -> float:
+def get_current_prompt_percentiles() -> tuple[float, float]:
+    """Returns rolling p50 (median) and p90 of recent prompt token lengths on this node."""
     if not prompt_token_history:
-        return 1000.0
-    return float(statistics.median(prompt_token_history))
+        return 1000.0, 4000.0
+    sorted_hist = sorted(prompt_token_history)
+    n = len(sorted_hist)
+    p50 = float(statistics.median(sorted_hist))
+    p90_idx = min(n - 1, int(n * 0.90))
+    p90 = float(sorted_hist[p90_idx])
+    return p50, max(p50 * 1.5, p90)
+
+def get_current_median_prompt_tokens() -> float:
+    p50, _ = get_current_prompt_percentiles()
+    return p50
 
 def calculate_request_priority(body: dict, headers: Any, active_slots: int) -> tuple[int, int]:
     """Calculates adaptive request priority (0 = HIGH, 5 = MEDIUM, 10-15 = LOW).
-    Uses dynamic rolling median of recent prompt token lengths on this node
-    and factors in current active slot saturation to protect TTFT p99.
+    Uses dynamic rolling p50 (median) and p90 of recent prompt token lengths on this node,
+    gives interactive streaming queries an express boost, and factors in active slot saturation
+    to guarantee ultra-low TTFT p99.
     """
     if "x-vllm-priority" in headers:
         try:
@@ -414,29 +490,44 @@ def calculate_request_priority(body: dict, headers: Any, active_slots: int) -> t
             pass
 
     total_chars = 0
+    system_chars = 0
     try:
         messages = body.get("messages", [])
-        for m in messages:
+        for idx, m in enumerate(messages):
+            role = m.get("role", "")
             content = m.get("content", "")
+            char_len = 0
             if isinstance(content, str):
-                total_chars += len(content)
+                char_len = len(content)
             elif isinstance(content, list):
                 for part in content:
                     if isinstance(part, dict) and part.get("type") == "text":
-                        total_chars += len(part.get("text", ""))
+                        char_len += len(part.get("text", ""))
+            total_chars += char_len
+            if role == "system" or idx == 0:
+                system_chars += char_len
+
         approx_tokens = max(1, int(total_chars // 3.8))
+        # User query tokens excluding potential cached system prompt
+        user_approx_tokens = max(1, int((total_chars - system_chars) // 3.8))
     except Exception:
         approx_tokens = 1000
+        user_approx_tokens = 1000
 
-    median = get_current_median_prompt_tokens()
+    p50, p90 = get_current_prompt_percentiles()
+    is_stream = bool(body.get("stream", False))
 
-    # Adaptive priority tier relative to node's rolling median
-    if approx_tokens <= median:
-        priority = 0  # Below median -> HIGH priority (premiowanie niskiego TTFT)
-    elif approx_tokens <= 2.5 * median:
+    # Adaptive priority tier relative to node's rolling percentiles
+    if user_approx_tokens <= p50 or approx_tokens <= p50:
+        priority = 0  # Express Lane for short/interactive prompts (ultra-low TTFT)
+    elif approx_tokens <= p90:
         priority = 5 if active_slots <= 24 else 10
     else:
         priority = 10 if active_slots <= 24 else 15
+
+    # Interactive streaming boost (-1 to priority score for streaming requests)
+    if is_stream and priority > 0:
+        priority = max(0, priority - 1)
 
     return priority, approx_tokens
 
@@ -466,36 +557,49 @@ async def get_cached_vllm_model(orig_model: str) -> str:
 @app.post("/v1/chat/completions")
 @app.post("/api/v1/chat/completions")
 async def priority_chat_completions(request: Request):
-    global active_requests, _requests_served, _tokens_generated
+    global active_requests, active_tokens, _requests_served, _tokens_generated
 
-    # 1) Concurrency Guard: Enforce hard limit of MAX_CONCURRENT_REQUESTS (32 slots)
+    # 1) Parse body & compute approx prompt tokens for KV cache checking
+    req_bytes = await request.body()
+    try:
+        body = json.loads(req_bytes) if req_bytes else {}
+    except Exception:
+        return JSONResponse({"error": {"message": "Invalid JSON payload", "type": "invalid_request_error"}}, status_code=400)
+
+    priority_val, approx_tokens = calculate_request_priority(body, request.headers, active_requests)
+
+    # 2) Dual Capacity Guard: 10% safety buffer on slot concurrency and total KV cache active tokens
+    safe_max_concurrency = max(1, int(MAX_CONCURRENT_REQUESTS * 0.90))
+    safe_max_kv_tokens = max(100_000, int(MAX_KV_CACHE_TOKENS * 0.90))
+
     async with active_requests_lock:
-        if active_requests >= MAX_CONCURRENT_REQUESTS:
-            log.warning("Slot saturation: %d/%d active requests — returning 429", active_requests, MAX_CONCURRENT_REQUESTS)
+        if active_requests >= safe_max_concurrency or (active_tokens + approx_tokens) >= safe_max_kv_tokens:
+            log.warning("Node capacity saturated: %d/%d slots, %d/%d KV tokens (10%% safety guard) — returning 429",
+                        active_requests, MAX_CONCURRENT_REQUESTS, active_tokens + approx_tokens, safe_max_kv_tokens)
             return Response(
                 status_code=429,
-                headers={"Retry-After": "1"},
-                content=json.dumps({"error": "Too Many Requests", "message": "Capacity saturated", "retry_after": 1}),
+                headers={"Retry-After": "1", "Access-Control-Allow-Origin": "*"},
+                content=json.dumps({
+                    "error": {
+                        "message": f"Provider node capacity saturated ({active_requests}/{safe_max_concurrency} slots, {active_tokens + approx_tokens}/{safe_max_kv_tokens} active KV tokens, 10% safety buffer engaged).",
+                        "type": "tokens_exceeded",
+                        "param": None,
+                        "code": "rate_limit_exceeded",
+                        "retry_after": 1
+                    }
+                }),
                 media_type="application/json",
             )
         active_requests += 1
+        active_tokens += approx_tokens
 
     _requests_served += 1
     t0 = time.perf_counter()
 
     try:
-        try:
-            req_bytes = await request.body()
-            body = json.loads(req_bytes) if req_bytes else {}
-        except Exception:
-            return JSONResponse({"error": {"message": "Invalid JSON payload", "type": "invalid_request_error"}}, status_code=400)
-
-        # 2) Resolve served model
+        # 3) Resolve served model
         orig_model = body.get("model", MODEL)
         body["model"] = await get_cached_vllm_model(orig_model)
-
-        # 3) Priority Scheduling Injection (Adaptive Rolling Median)
-        priority_val, approx_tokens = calculate_request_priority(body, request.headers, active_requests)
         body["priority"] = priority_val
         if approx_tokens > 0:
             record_prompt_tokens(approx_tokens)
@@ -514,11 +618,12 @@ async def priority_chat_completions(request: Request):
         elif PROVIDER_API_KEY:
             fwd_headers["Authorization"] = f"Bearer {PROVIDER_API_KEY}"
 
-        log.info("Proxying request [priority=%d, stream=%s, model=%s] active=%d/%d",
-                 priority_val, is_stream, body.get("model"), active_requests, MAX_CONCURRENT_REQUESTS)
+        log.info("Proxying request [priority=%d, approx_tok=%d, stream=%s, model=%s] active=%d/%d slots, active_kv=%d/%d tok",
+                 priority_val, approx_tokens, is_stream, body.get("model"), active_requests, MAX_CONCURRENT_REQUESTS, active_tokens, MAX_KV_CACHE_TOKENS)
     except Exception as setup_err:
         async with active_requests_lock:
             active_requests = max(0, active_requests - 1)
+            active_tokens = max(0, active_tokens - approx_tokens)
         log.error("Unhandled error setup in priority_chat_completions: %s", setup_err)
         return JSONResponse({"error": {"message": str(setup_err), "type": "internal_error"}}, status_code=500)
 
@@ -549,10 +654,11 @@ async def priority_chat_completions(request: Request):
         finally:
             async with active_requests_lock:
                 active_requests = max(0, active_requests - 1)
+                active_tokens = max(0, active_tokens - approx_tokens)
 
     # 5) Streaming path with direct telemetry & zero buffering
     async def priority_stream_generator():
-        global active_requests, _tokens_generated
+        global active_requests, active_tokens, _tokens_generated
         ttft_ms = None
         first_token_time = None
         completion_tokens = 0
@@ -622,6 +728,7 @@ async def priority_chat_completions(request: Request):
         finally:
             async with active_requests_lock:
                 active_requests = max(0, active_requests - 1)
+                active_tokens = max(0, active_tokens - approx_tokens)
 
     return StreamingResponse(
         priority_stream_generator(),

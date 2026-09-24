@@ -49,25 +49,19 @@ export default function Economics() {
               </div>
             </div>
 
-            {/* Card C — Power */}
+            {/* Card C — Power & Retainer */}
             <div className="rounded-xl border border-border-dim bg-bg-primary p-4">
               <div className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.14em] text-text-tertiary">
-                <Zap className="h-3.5 w-3.5" /> Power
+                <Zap className="h-3.5 w-3.5 text-accent-amber" /> Power & Retainer
               </div>
-              <div className="mt-2 text-sm font-semibold leading-4 text-text-primary">Electricity = dominant cost</div>
+              <div className="mt-2 text-sm font-semibold leading-4 text-text-primary">$0.40/day Guaranteed Retainer</div>
               <p className="mt-1.5 font-mono text-[11px] leading-4 text-text-secondary">
-                At scale, power dominates unit cost. Builder price covers electricity + profit split.
+                Active nodes receive a guaranteed $0.40/day retainer to cover baseline electricity. Fair, cooperative routing eliminates zero-sum rat races over bandwidth or location.
               </p>
-              <div className="mt-3">
-                <div className="flex items-center justify-between font-mono text-[10px] text-text-tertiary">
-                  <span>Builder</span>
-                  <span>Provider</span>
-                </div>
-                {/* Placeholder where live cost split chart would be */}
-                <div className="mt-1.5 flex h-10 items-center justify-center rounded-lg border border-dashed border-border-default bg-bg-secondary px-3">
-                  <span className="font-mono text-xs text-text-tertiary">Element requires refinement</span>
-                </div>
-                <p className="mt-1 font-mono text-[10px] leading-3 text-text-tertiary">Builder → Provider split · live metering pending</p>
+              <div className="mt-3 flex flex-wrap gap-1 font-mono text-[10px]">
+                <span className="rounded bg-accent-amber/10 px-2 py-1 font-medium text-accent-amber">$0.40/day guaranteed</span>
+                <span className="rounded bg-bg-secondary px-2 py-1 text-text-tertiary">Fair routing</span>
+                <span className="rounded bg-bg-secondary px-2 py-1 text-text-tertiary">No spec rat-race</span>
               </div>
             </div>
           </div>
@@ -76,36 +70,37 @@ export default function Economics() {
         {/* Right — econ card */}
         <div className="col-span-12 lg:col-span-4">
           <div className="rounded-xl border border-border-dim bg-bg-primary p-5">
-            <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-text-tertiary">Revenue split</p>
-            <div className="mt-3 space-y-3 font-mono text-xs">
-              <div className="flex items-center justify-between rounded-lg bg-bg-secondary px-3 py-2.5">
-                <span className="text-text-tertiary">Builder pays</span>
-                <span className="font-semibold text-text-primary">$0.02 in / $0.05 out · 1M</span>
+            <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-text-tertiary">Cooperative Revenue Split</p>
+            <div className="mt-3 space-y-2.5 font-mono text-xs">
+              <div className="flex items-center justify-between rounded-lg bg-bg-secondary px-3 py-2">
+                <span className="text-text-tertiary">API Tokens & Subscriptions</span>
+                <span className="font-semibold text-text-primary">$0.03 in / $0.20 out · 1M</span>
               </div>
               <div className="flex items-center justify-center text-text-tertiary">↓</div>
+              <div className="flex items-center justify-between rounded-lg border border-accent-amber/20 bg-accent-amber/10 px-3 py-2">
+                <span className="text-text-secondary">Network Retainer</span>
+                <span className="font-semibold text-accent-amber">$0.40/day / active node</span>
+              </div>
+              <div className="flex items-center justify-center text-text-tertiary">↓ Net Profit Pool</div>
               <div className="rounded-lg border border-accent-green/20 bg-accent-green/10 px-3 py-3">
                 <div className="flex items-center justify-between">
-                  <span className="text-text-secondary">Provider</span>
-                  <span className="font-semibold text-accent-green">~60%</span>
+                  <span className="text-text-secondary">Providers Pool</span>
+                  <span className="font-semibold text-accent-green">99% Net Profit</span>
                 </div>
                 <div className="mt-2 h-2 overflow-hidden rounded-full bg-bg-secondary">
-                  <div className="h-full w-[60%] rounded-full bg-accent-green" />
+                  <div className="h-full w-[99%] rounded-full bg-accent-green" />
                 </div>
-                <p className="mt-1.5 text-[11px] leading-3 text-text-tertiary">share of gross · electricity-first margin</p>
+                <p className="mt-1.5 text-[11px] leading-3 text-text-tertiary">Distributed evenly via load-balanced routing</p>
               </div>
               <div className="flex items-center justify-center text-text-tertiary">↓</div>
-              <div className="flex items-center justify-between rounded-lg bg-bg-secondary px-3 py-2.5">
-                <span className="text-text-tertiary">Network</span>
-                <span className="font-medium text-text-secondary">remainder · infra & fallback</span>
+              <div className="flex items-center justify-between rounded-lg bg-bg-secondary px-3 py-2">
+                <span className="text-text-tertiary">Network Protocol</span>
+                <span className="font-medium text-text-secondary">1% profit · R&amp;D &amp; infra</span>
               </div>
             </div>
 
-            {/* Placeholder for live revenue chart */}
-            <div className="mt-4 flex h-[84px] items-center justify-center rounded-lg border border-dashed border-border-default bg-bg-secondary">
-              <span className="font-mono text-xs text-text-tertiary">Element requires refinement</span>
-            </div>
-            <p className="mt-2 text-center font-mono text-[10px] leading-3 text-text-tertiary">
-              Live payout curve requires verified metering
+            <p className="mt-4 text-center font-mono text-[10px] leading-4 text-text-tertiary">
+              Cooperative design: 99% of net profits (after network maintenance and guaranteed $0.40/day power retainers) go directly to hosts, while 1% powers network development.
             </p>
           </div>
         </div>

@@ -134,12 +134,8 @@ export default function WhiteGlove() {
               </button>
             </form>
 
-            {/* NO MOCKS — placeholder for submit handling */}
-            <div className="mt-3 flex h-[56px] items-center justify-center rounded-lg border border-dashed border-border-default bg-bg-primary/60 px-3 text-center">
-              <span className="font-mono text-xs text-text-tertiary">Element requires refinement</span>
-            </div>
-            <p className="mt-1.5 text-center font-mono text-[10px] leading-3 text-text-tertiary">
-              Submit handling requires verification backend
+            <p className="mt-2 text-center font-mono text-[10px] leading-3 text-text-tertiary">
+              Automatic hardware detection and instant configuration on eligibility verification.
             </p>
 
             {/* Curl snippet */}

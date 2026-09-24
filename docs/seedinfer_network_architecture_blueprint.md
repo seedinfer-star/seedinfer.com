@@ -1,101 +1,23 @@
-# Architecture Blueprint: High-Performance Network & Dynamic Dispatcher for SeedInfer
-
-> [!IMPORTANT]
-> Niniejszy dokument stanowi wiążącą specyfikację techniczną i architektoniczną dla silnika routingu, bezpiecznego wpinania węzłów GPU (Provider Nodes) oraz wydajnego przesyłania strumieniowego zapytań LLM w sieci **SeedInfer**.
-
----
-
-## 1. Zasada Zero-Buffering Direct Pass-Through Streaming (Minimizing TTFT)
-
-Aby zagwarantować minimalne opóźnienie **TTFT (Time To First Token)** na procesorach ARM (Orange Pi 4 Pro) oraz docelowych klastrach chmurowych, zabrania się pełnego buforowania odpowiedzi z węzłów LLM w pamięci Gatewaya.
-
-### Przepływ Strumienia:
-1. **Direct Chunk Passthrough**: Chunks zwracane przez silnik vLLM (`text/event-stream`) są natychmiast przekazywane do klienta końcowego.
-2. **Nagłówki sterujące proxy**:
-   - `X-Accel-Buffering: no`
-   - `Cache-Control: no-cache`
-   - `Connection: keep-alive`
-3. **Flushing w czasie rzeczywistym**: W natywnym proxy (Go/Rust) parametr `FlushInterval` jest ustawiony na `-1` (natychmiastowy flush po odebraniu każdego pakietu SSE).
-
----
-
-## 2. In-Memory Tracking & Algorytm P2C (Power of Two Random Choices)
-
-### Eliminacja Pollingu (No Active Polling)
-- **Zabronione**: Polling tysięcy węzłów co 500ms w celu odpytania o stan VRAM, kolejki i KV Cache. Przy 1000 węzłach generuje to ponad **2000 RPS** zbędnego ruchu wewnętrznego i drastycznie obciąża procesor routera.
-- **Rozwiązanie**: **In-Memory Tracking**. Gateway utrzymuje stan obciążenia wyłącznie w pamięci RAM procesa.
-
-### Zasada działania In-Memory Tracking:
-1. Podczas przybycia żądania HTTP, router wyznacza docelowy węzeł i **inkrementuje** w pamięci RAM licznik `concurrentRequests` (atomowo / bez blokad locks).
-2. Odpowiedź przesyłana jest strumieniowo (SSE).
-3. Po rozłączeniu klienta lub zakończeniu strumienia, router **dekrementuje** licznik `concurrentRequests`.
-
-### Algorytm P2C + Least Outstanding Requests (LOR) + Ping Penalty:
-```
-Pula Zweryfikowanych Węzłów (Status: serving)
-                │
-                ├─► Losowy Wybór Węzła A (Candidate 1)
-                ├─► Losowy Wybór Węzła B (Candidate 2)
-                │
-                ▼
-        Porównanie concurrentRequests (RAM)
-                │
-                ├─► (concA < concB) ──► Wybierz Węzeł A
-                ├─► (concB < concA) ──► Wybierz Węzeł B
-                │
-                └─► (Remis concA == concB)
-                        │
-                        ▼
-                Porównanie EWMA TTFT / Ping (ms)
-                        │
-                        └─► Wybierz węzeł o niższym opóźnieniu
-```
-
----
-
-## 3. Dedykowany Lekki Balancer w Go / Rust (Zero Python GIL Overhead)
-
-Aby wyeliminować wąskie gardło pętli zdarzeń (Event Loop) i narzut GIL w Pythonie (FastAPI) na procesorach ARM (Orange Pi 4 Pro), warstwa proxy zostaje wydzielona do lekkiego kompilowanego proxy:
-
-- **Lokalizacja**: `infra/gateway-router/main.go`
-- **Język**: Go (z opcją przejścia na Rust Tokio/Hyper)
-- **Zużycie zasobów**: < 30 MB RAM, < 5% CPU przy 50 000 RPS.
-- **Rola**: Wyłącznie terminacja TLS, dynamiczny dispatching P2C/LOR oraz direct SSE chunk streaming.
-
----
-
-## 4. Optymalizacja Tunelu & Jądra Linux (`wireguard-dkms`)
-
-Dla zapewnienia stabilnego routingu przy tysiącach jednoczesnych pakietów IP:
-
-1. **Kernel-Space WireGuard (`wireguard-dkms`)**:
-   - Użycie modułu jądra Linux zamiast `wireguard-go` w przestrzeni użytkownika eliminuje narzut przełączania kontekstu CPU (context switching).
-2. **Limit Deskryptorów Plików**:
-   - Konfiguracja systemu ulimit: `ulimit -n 65535`.
-   - Parametry sysctl w `/etc/sysctl.d/99-seedinfer.conf`:
-     ```ini
-     net.core.somaxconn = 65535
-     net.ipv4.ip_local_port_range = 1024 65535
-     fs.file-max = 2097152
-     ```
-
----
-
-## 5. NAT Traversal (Double-NAT / CGNAT) & Migracja do AWS
-
-1. **Model Reverse Tunneling (Model Pull)**:
-   - Maszyny konsumenckie (GPU) znajdujące się za podwójnym NAT-em lub u operatorów mobilnych nie wymagają publicznego IP ani przekierowywania portów.
-   - Węzeł utrzymuje wyjściowy bezpieczny tunel WireGuard / Headscale do serwera kontrolnego (`tailnet.seedinfer.com`).
-
-2. **Bezproblemowa Migracja do AWS / Cloud**:
-   - Adresacja węzłów w sieci overlay korzysta z przydziałów podsieci CGNAT (`100.64.0.0/10`).
-   - W przypadku przenieśienia Gatewaya na klaster AWS/Hetzner, węzły automatycznie reconnectują się do nowej instancji bez konieczności re-konfiguracji po stronie dostawców GPU.
-
----
-
-## 6. Status Realizacji i Krok Po Kroku
-
-- [x] **Zapisanie planu architektonicznego** w bazie pamięci projektu (`mcp_memory_memory_save`).
-- [x] **Implementacja algorytmu P2C + Least Outstanding Requests** w `lib/routing/selector.ts` (`selectProviderP2C`).
-- [x] **Utworzenie natywnego silnika Go Gateway Balancer** w `infra/gateway-router/main.go`.
-- [x] **Weryfikacja braku buforowania SSE** w `app/api/v1/chat/completions/route.ts` (`X-Accel-Buffering: no`).
+38,0,0,0,0,551,0,551,0,162.249.72.6,7170,0.017767,0,0,16.17,0.026472,0.003303,0,Connected,2611934199407936,0,0,0,0,0,10.001341,7,
+0.004433,0.000000,296.007690,266,0,0,304,Ethernet,0,68789,18422,0,0,0,0,0,0,0,0,0,0,0,0,2094,0,0,358,0,266,0,0,0,0,570,0,571,0,162.249.72.6,7170,0.017927,0,0,16.17,0.026104,0.002860,0,Connected,2611934199407936,0,0,0,0,0,10.001639,7,
+0.004417,0.000000,306.011536,271,0,0,294,Ethernet,0,69314,18081,0,0,0,0,0,0,0,0,0,0,0,0,1946,0,0,341,0,271,0,0,0,0,565,0,565,0,162.249.72.6,7170,0.017431,0,0,16.17,0.025968,0.002664,0,Connected,2611934199407936,0,0,0,0,0,10.003407,7,
+0.004355,0.000000,316.014526,209,0,0,301,Ethernet,0,55280,16154,0,0,0,0,0,0,0,0,0,0,0,0,1814,0,0,280,0,209,0,0,0,0,510,0,510,0,162.249.72.6,7170,0.015821,0,0,16.17,0.026146,0.003023,0,Connected,2611934199407936,0,0,0,0,0,10.002788,7,
+0.005784,0.000002,326.014709,292,0,0,364,Ethernet,0,141652,21072,0,0,0,0,0,0,0,0,0,0,0,0,3879,0,0,420,0,292,0,0,0,0,656,0,656,0,162.249.72.6,7170,0.024138,0,0,16.17,0.026826,0.003528,0,Connected,2611934199407936,0,0,0,0,0,10.000169,7,
+0.005741,0.000001,336.016571,271,0,0,340,Ethernet,0,113744,19033,0,0,0,0,0,0,0,0,0,0,0,0,3114,0,0,365,0,271,0,0,0,0,611,0,610,0,162.249.72.6,7170,0.021220,0,0,16.17,0.026637,0.003474,0,Connected,2611934199407936,0,0,0,0,0,10.001603,7,
+0.004483,0.000000,346.017395,227,0,0,305,Ethernet,0,75993,16852,0,0,0,0,0,0,0,0,0,0,0,0,2414,0,0,297,0,227,0,0,0,0,532,0,533,0,162.249.72.6,7170,0.017130,0,0,16.17,0.024627,0.001090,0,Connected,2611934199407936,0,0,0,0,0,10.000603,7,
+0.004360,0.000000,356.020172,230,0,0,304,Ethernet,0,64460,17278,0,0,0,0,0,0,0,0,0,0,0,0,1984,0,0,287,0,230,0,0,0,0,534,0,533,0,162.249.72.6,7170,0.017657,0,0,16.17,0.026615,0.003447,0,Connected,2611934199407936,0,0,0,0,0,10.002637,7,
+0.004604,0.000000,366.020996,280,0,0,321,Ethernet,0,86327,19373,0,0,0,0,0,0,0,0,0,0,0,0,2712,0,0,380,0,280,0,0,0,0,601,0,601,0,162.249.72.6,7170,0.019623,0,0,16.17,0.024517,0.000797,0,Connected,2611934199407936,0,0,0,0,0,10.000948,7,
+0.004495,0.000000,376.023621,273,0,0,323,Ethernet,0,85492,18991,0,0,0,0,0,0,0,0,0,0,0,0,2692,0,0,364,0,273,0,0,0,0,596,0,596,0,162.249.72.6,7170,0.020257,0,0,16.17,0.027477,0.004312,0,Connected,2611934199407936,0,0,0,0,0,10.002404,7,
+0.004564,0.000000,386.023987,244,0,0,333,Ethernet,0,96581,18413,0,0,0,0,0,0,0,0,0,0,0,0,3029,0,0,342,0,244,0,0,0,0,577,0,577,0,162.249.72.6,7170,0.020096,0,0,16.17,0.027466,0.004134,0,Connected,2611934199407936,0,0,0,0,0,10.000143,7,
+0.004409,0.000000,396.028992,277,0,0,299,Ethernet,0,65311,18630,0,0,0,0,0,0,0,0,0,0,0,0,1921,0,0,341,0,277,0,0,0,0,576,0,578,0,162.249.72.6,7170,0.016940,0,0,16.17,0.024976,0.001334,0,Connected,2611934199407936,0,0,0,0,0,10.004730,7,
+0.005489,0.000001,406.029907,293,0,0,341,Ethernet,0,120051,20572,0,0,0,0,0,0,0,0,0,0,0,0,3180,0,0,401,0,293,0,0,0,0,634,0,633,0,162.249.72.6,7170,0.022518,0,0,16.17,0.026399,0.003012,0,Connected,2611934199407936,0,0,0,0,0,10.000784,7,
+0.004707,0.000000,416.033539,280,0,0,332,Ethernet,0,104604,20028,0,0,0,0,0,0,0,0,0,0,0,0,3026,0,0,407,0,280,0,0,0,0,612,0,612,0,162.249.72.6,7170,0.020627,0,0,16.17,0.025225,0.001641,0,Connected,2611934199407936,0,0,0,0,0,10.003395,7,
+0.004465,0.000000,426.034332,237,0,0,309,Ethernet,0,87384,17209,0,0,0,0,0,0,0,0,0,0,0,0,2663,0,0,330,0,237,0,0,0,0,546,0,545,0,162.249.72.6,7170,0.017877,0,0,16.17,0.026112,0.002815,0,Connected,2611934199407936,0,0,0,0,0,10.000613,7,
+0.004353,0.000000,436.037231,225,0,0,301,Ethernet,0,64390,17290,0,0,0,0,0,0,0,0,0,0,0,0,2169,0,0,318,0,225,0,0,0,0,526,0,527,0,162.249.72.6,7170,0.015912,0,0,16.17,0.024410,0.000694,0,Connected,2611934199407936,0,0,0,0,0,10.002447,7,
+0.004451,0.000000,446.039520,258,0,0,307,Ethernet,0,65277,18355,0,0,0,0,0,0,0,0,0,0,0,0,2127,0,0,347,0,258,0,0,0,0,565,0,566,0,162.249.72.6,7170,0.018714,0,0,16.17,0.026822,0.003575,0,Connected,2611934199407936,0,0,0,0,0,10.002281,7,
+0.005002,0.000001,456.044159,287,0,0,336,Ethernet,0,106880,20083,0,0,0,0,0,0,0,0,0,0,0,0,3454,0,0,383,0,287,0,0,0,0,623,0,622,0,162.249.72.6,7170,0.021993,0,0,16.17,0.026384,0.003587,0,Connected,2611934199407936,0,0,0,0,0,10.004579,7,
+0.004739,0.000000,466.048828,233,0,0,316,Ethernet,0,80233,17296,0,0,0,0,0,0,0,0,0,0,0,0,2489,0,0,327,0,233,0,0,0,0,549,0,549,0,162.249.72.6,7170,0.017925,0,0,16.17,0.026045,0.002834,0,Connected,2611934199407936,0,0,0,0,0,10.004740,7,
+0.005015,0.000001,476.053192,255,0,0,322,Ethernet,0,97564,18235,0,0,0,0,0,0,0,0,0,0,0,0,2957,0,0,365,0,255,0,0,0,0,577,0,577,0,162.249.72.6,7170,0.020044,0,0,16.17,0.025821,0.002805,0,Connected,2611934199407936,0,0,0,0,0,10.004101,7,
+0.004453,0.000000,486.055573,263,0,0,313,Ethernet,0,70218,18479,0,0,0,0,0,0,0,0,0,0,0,0,2591,0,0,327,0,263,0,0,0,0,576,0,576,0,162.249.72.6,7170,0.018735,0,0,16.17,0.025365,0.002150,0,Connected,2611934199407936,0,0,0,0,0,10.002326,7,
+0.004577,0.000000,496.057007,303,0,0,318,Ethernet,0,88603,19954,0,0,0,0,0,0,0,0,0,0,0,0,2476,0,0,394,0,303,0,0,0,0,621,0,621,0,162.249.72.6,7170,0.020886,0,0,16.17,0.025780,0.002805,0,Connected,2611934199407936,0,0,0,0,0,10.001244,7,
+0.005069,0.000001,506.058044,284,0,0,347,Ethernet,0,123096,20288,0,0,0,0,0,0,

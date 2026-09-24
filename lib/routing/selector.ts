@@ -38,6 +38,7 @@ export type ProviderRoutingStat = {
   ewmaTtft: number | null
   ewmaLatency: number | null
   concurrentRequests: number
+  activeTokens: number
   totalRequests: number
   successCount: number
   successRate: number
@@ -51,6 +52,8 @@ type InternalStat = {
   ewmaTtft: EWMA
   ewmaLatency: EWMA
   concurrentRequests: number
+  activeTokens: number
+  totalProcessedTokens: number
   totalRequests: number
   successCount: number
   currentWeight: number
@@ -71,7 +74,7 @@ function getStore(): GlobalRouting {
   return g.__seedinferRouting!
 }
 
-function ensureStat(id: string): InternalStat {
+export function ensureStat(id: string): InternalStat {
   const store = getStore()
   let s = store.stats.get(id)
   if (!s) {
@@ -79,6 +82,8 @@ function ensureStat(id: string): InternalStat {
       ewmaTtft: new EWMA(EWMA_ALPHA),
       ewmaLatency: new EWMA(EWMA_ALPHA),
       concurrentRequests: 0,
+      activeTokens: 0,
+      totalProcessedTokens: 0,
       totalRequests: 0,
       successCount: 0,
       currentWeight: 0,
@@ -93,18 +98,21 @@ function ensureStat(id: string): InternalStat {
 // ---------------------------------------------------------------------------
 // Weight computation
 // ---------------------------------------------------------------------------
-function computeWeight(stat: InternalStat, opts?: { ignoreLoad?: boolean }): number {
+function computeWeight(stat: InternalStat, opts?: { ignoreLoad?: boolean; isSubscription?: boolean }): number {
   const ttft = stat.ewmaTtft.get()
   const ttftFactor = ttft === null ? 1 : BASE_TTFT_MS / Math.max(Math.min(ttft, MAX_TTFT_MS), MIN_TTFT_MS)
-  const loadFactor = opts?.ignoreLoad ? 1 : 1 / (1 + stat.concurrentRequests * CONCURRENT_PENALTY)
+  const baseLoadFactor = opts?.ignoreLoad ? 1 : 1 / (1 + stat.concurrentRequests * CONCURRENT_PENALTY)
+  // Subscription traffic gets background priority (lower load weight) to protect Pay-As-You-Go SLAs
+  const subPenalty = opts?.isSubscription ? 0.3 : 1.0
+  const loadFactor = baseLoadFactor * subPenalty
   const successRate = stat.totalRequests === 0 ? 1 : Math.max(SUCCESS_FLOOR, stat.successCount / stat.totalRequests)
   // scale to readable 0..100
   const w = ttftFactor * loadFactor * successRate * 100
   return Math.max(1, Math.round(w * 10) / 10) // min 1 to avoid starvation, 1 decimal
 }
 
-function syncWeight(stat: InternalStat, ignoreLoad?: boolean): void {
-  stat.weight = computeWeight(stat, { ignoreLoad })
+function syncWeight(stat: InternalStat, ignoreLoad?: boolean, isSubscription?: boolean): void {
+  stat.weight = computeWeight(stat, { ignoreLoad, isSubscription })
 }
 
 // ---------------------------------------------------------------------------
@@ -175,6 +183,18 @@ export function decrementConcurrent(providerId: string): void {
   } catch {}
 }
 
+export function addActiveTokens(providerId: string, tokens: number): void {
+  if (tokens <= 0) return
+  const s = ensureStat(providerId)
+  s.activeTokens += tokens
+}
+
+export function removeActiveTokens(providerId: string, tokens: number): void {
+  if (tokens <= 0) return
+  const s = ensureStat(providerId)
+  s.activeTokens = Math.max(0, s.activeTokens - tokens)
+}
+
 /** Zwróć routing stats per provider (dla /api/v1/routing/stats) */
 export function getStats(): Record<string, ProviderRoutingStat> {
   const store = getStore()
@@ -191,11 +211,9 @@ export function getStats(): Record<string, ProviderRoutingStat> {
     let circuitOpen = false
     try {
       if (isProviderCircuitOpen) circuitOpen = isProviderCircuitOpen(id)
-      // also check legacy isCircuitOpen for 'local' shared
       if (!circuitOpen) {
         const fb = require("@/lib/fallback-state") as typeof import("@/lib/fallback-state")
         if ((fb as any).isCircuitOpen) {
-          // if provider id is not upstream, isCircuitOpen may return false; we ignore
         }
       }
     } catch {}
@@ -205,6 +223,7 @@ export function getStats(): Record<string, ProviderRoutingStat> {
       ewmaTtft: s.ewmaTtft.get(),
       ewmaLatency: s.ewmaLatency.get(),
       concurrentRequests: s.concurrentRequests,
+      activeTokens: s.activeTokens,
       totalRequests: s.totalRequests,
       successCount: s.successCount,
       successRate: Math.round(successRate * 1000) / 1000,
@@ -229,7 +248,6 @@ function isCircuitOpenSafe(providerId: string): boolean {
     if (typeof (fb as any).isProviderCircuitOpen === "function") {
       if ((fb as any).isProviderCircuitOpen(providerId)) return true
     }
-    // also check generic isCircuitOpen if providerId is upstream
     if (typeof (fb as any).isCircuitOpen === "function") {
       try {
         if ((fb as any).isCircuitOpen(providerId)) return true
@@ -244,7 +262,6 @@ function isCircuitOpenSafe(providerId: string): boolean {
 /** Hydrate selector stats from StoredProvider fields (po restarcie lub gdy provider ma już EWMA w store) */
 function hydrateFromProvider(p: StoredProvider): void {
   const s = ensureStat(p.id)
-  // if provider has persisted ewma and selector not initialized, restore
   if ((p as any).ewmaTtft !== undefined && (p as any).ewmaTtft !== null && s.ewmaTtft.get() === null) {
     s.ewmaTtft.set((p as any).ewmaTtft)
   }
@@ -264,7 +281,6 @@ export function getMaxConcurrency(p: any): number {
   if (typeof p?.raw?.max_concurrency === "number" && p.raw.max_concurrency > 0) return p.raw.max_concurrency
   if (typeof p?.raw?.max_num_seqs === "number" && p.raw.max_num_seqs > 0) return p.raw.max_num_seqs
 
-  // Dynamic hardware heuristics fallback
   const name = String(p?.gpu?.name || p?.raw?.gpu?.name || "").toUpperCase()
   const vram = Number(p?.gpu?.vram_gb || p?.raw?.gpu?.vram_gb || 24)
   const count = Number(p?.gpu?.count || p?.raw?.gpu?.count || 1)
@@ -273,12 +289,65 @@ export function getMaxConcurrency(p: any): number {
     return Math.max(16, count * 16)
   }
   if (name.includes("5090")) {
-    return Math.max(8, count * 8)
+    return Math.max(32, count * 32)
   }
   if (name.includes("4090") || name.includes("3090")) {
-    return Math.max(4, count * 4)
+    return Math.max(8, count * 8)
   }
-  return Math.max(2, Math.floor(vram / 4))
+  return Math.max(4, Math.floor(vram / 4))
+}
+
+/** 10% Safety Buffer Capacity Guard: Effective Max Concurrency = max(1, Math.floor(getMaxConcurrency(p) * 0.90)) */
+export function getSafeMaxConcurrency(p: any): number {
+  const max = getMaxConcurrency(p)
+  return Math.max(1, Math.floor(max * 0.90))
+}
+
+/** Dynamic per-node total KV cache token capacity based on GPU VRAM & vLLM FP8 cache profile */
+export function getMaxKvTokens(p: any): number {
+  if (typeof p?.maxKvTokens === "number" && p.maxKvTokens > 0) return p.maxKvTokens
+  if (typeof p?.max_kv_tokens === "number" && p.max_kv_tokens > 0) return p.max_kv_tokens
+  if (typeof p?.raw?.max_kv_tokens === "number" && p.raw.max_kv_tokens > 0) return p.raw.max_kv_tokens
+
+  const name = String(p?.gpu?.name || p?.raw?.gpu?.name || "").toUpperCase()
+  const vram = Number(p?.gpu?.vram_gb || p?.raw?.gpu?.vram_gb || 24)
+  const count = Number(p?.gpu?.count || p?.raw?.gpu?.count || 1)
+
+  // RTX 5090 (32GB VRAM, NVFP4 + FP8 KV cache): ~1.5M tokens capacity
+  if (name.includes("5090")) {
+    return Math.max(1_500_000, count * 1_500_000)
+  }
+  // A100 / H100 / H200 / B200 (80GB VRAM): ~4M tokens capacity
+  if (name.includes("A100") || name.includes("H100") || name.includes("H200") || name.includes("B200")) {
+    return Math.max(4_000_000, count * 4_000_000)
+  }
+  // RTX 4090 / 3090 (24GB VRAM): ~800k tokens capacity
+  if (name.includes("4090") || name.includes("3090")) {
+    return Math.max(800_000, count * 800_000)
+  }
+  return Math.max(300_000, Math.floor(vram * 35_000))
+}
+
+/** 10% Safety Buffer KV Cache Guard: Safe Max KV Tokens = max(100k, Math.floor(getMaxKvTokens(p) * 0.90)) */
+export function getSafeMaxKvTokens(p: any): number {
+  const max = getMaxKvTokens(p)
+  return Math.max(100_000, Math.floor(max * 0.90))
+}
+
+/** Sprawdź czy cała sieć zweryfikowanych dostawców osiągnęła bufor bezpieczeństwa 90% (sloty lub KV cache tokeny) */
+export function isNetworkSaturated(
+  providers: (StoredProvider | import("@/lib/types").Provider)[],
+  incomingTokens: number = 1000
+): boolean {
+  if (!providers || providers.length === 0) return false
+  const verified = (providers as any).filter((p: any) => p.verification?.status === "verified" || !p.verification)
+  if (verified.length === 0) return false
+  return verified.every((p: any) => {
+    const s = ensureStat(p.id)
+    const slotSaturated = s.concurrentRequests >= getSafeMaxConcurrency(p)
+    const kvSaturated = (s.activeTokens + incomingTokens) >= getSafeMaxKvTokens(p)
+    return slotSaturated || kvSaturated
+  })
 }
 
 /** Główny selector: wybiera best provider via WRR ważony odwrotnie do TTFT i load
@@ -286,26 +355,23 @@ export function getMaxConcurrency(p: any): number {
  */
 export function selectProvider(
   providers: (StoredProvider | import("@/lib/types").Provider)[],
-  opts?: { openRouter?: boolean }
+  opts?: { openRouter?: boolean; isSubscription?: boolean; incomingTokens?: number }
 ): (StoredProvider | import("@/lib/types").Provider) | null {
   if (!providers || providers.length === 0) return null
+
+  const incomingTokens = opts?.incomingTokens ?? 1000
 
   // hydrate for StoredProvider paths
   for (const p of providers as StoredProvider[]) {
     try { hydrateFromProvider(p as StoredProvider) } catch {}
   }
 
-  // tylko verified — pending/failed nie routujemy na local, pójdą fallback chain
-  // ale jeśli brak verified, pozwól verifying jako degraded (opcjonalnie)
-  // obsługuje też plain Provider[] bez verification (testy spec) → traktuj jako all selectable
   let candidates = (providers as any).filter((p: any) => p.verification?.status === "verified")
   if (candidates.length === 0) {
-    // fallback: spróbuj verifying jako degraded, ale nie pending/failed
     candidates = (providers as any).filter((p: any) => p.verification?.status === "verifying")
     if (candidates.length === 0) {
       const anyVerifiable = (providers as any).some((p: any) => p.verification)
       if (!anyVerifiable && providers.length > 0) {
-        // plain Provider[] bez verification (np. unit test) → wszyscy kandydaci
         candidates = providers as any
       } else {
         return null
@@ -314,23 +380,31 @@ export function selectProvider(
   }
 
   const isOpenRouter = !!opts?.openRouter
+  const isSubscription = !!opts?.isSubscription
 
-  // Oblicz wagi i filtruj circuit open
+  // Oblicz wagi i filtruj circuit open oraz twarde nasycenie 90% (sloty + KV cache)
   type Cand = { provider: StoredProvider; stat: InternalStat }
   const cands: Cand[] = []
   const circuitFiltered: Cand[] = []
 
   for (const p of candidates) {
     const stat = ensureStat(p.id)
-    // sync weight mode: openRouter ignores load
-    syncWeight(stat, isOpenRouter)
+    syncWeight(stat, isOpenRouter, isSubscription)
     const open = isCircuitOpenSafe(p.id)
+
+    // Hard 90% Saturation Guard: Check slot capacity AND incoming KV cache token headroom
+    const slotSaturated = stat.concurrentRequests >= getSafeMaxConcurrency(p)
+    const kvSaturated = (stat.activeTokens + incomingTokens) >= getSafeMaxKvTokens(p)
+    if (slotSaturated || kvSaturated) {
+      continue // Odrzuć nasycony węzeł przed jakimkolwiek losowaniem
+    }
+
     const entry: Cand = { provider: p, stat }
     cands.push(entry)
     if (!open) circuitFiltered.push(entry)
   }
 
-  // Jeśli wszyscy circuit open → fallback na najszybszy verified (sort EWMA TTFT asc)
+  // Jeśli wszyscy w pętli zostali odrzuceni (brak węzłów <90%), zwróć null -> Router wyemituje HTTP 429
   const pool = circuitFiltered.length > 0 ? circuitFiltered : cands.length > 0 ? cands : []
 
   if (pool.length === 0) return null
@@ -359,33 +433,33 @@ export function selectProvider(
   // Eliminates thundering herd behavior & avoids active polling overhead at 1000s of nodes
   const useP2C = process.env.ROUTING_ALGORITHM !== "wrr"
   if (useP2C) {
-    // Dynamic Per-Node Concurrency Cap: Filter out saturated nodes (concurrentRequests >= maxConcurrency)
-    const unsaturated = pool.filter((c) => c.stat.concurrentRequests < getMaxConcurrency(c.provider))
-    const selectPool = unsaturated.length > 0 ? unsaturated : pool
-
-    const idx1 = Math.floor(Math.random() * selectPool.length)
-    let idx2 = Math.floor(Math.random() * selectPool.length)
-    if (selectPool.length > 1 && idx1 === idx2) {
-      idx2 = (idx1 + 1) % selectPool.length
-    }
-    const candA = selectPool[idx1]
-    const candB = selectPool[idx2]
+    for (let retry = 0; retry < 3; retry++) {
+      const idx1 = Math.floor(Math.random() * pool.length)
+      let idx2 = Math.floor(Math.random() * pool.length)
+      if (pool.length > 1 && idx1 === idx2) {
+        idx2 = (idx1 + 1) % pool.length
+      }
+      const candA = pool[idx1]
+      const candB = pool[idx2]
 
     // 1. Compare in-memory concurrent active requests (Least Outstanding Requests)
-    if (candA.stat.concurrentRequests < candB.stat.concurrentRequests) return candA.provider
-    if (candB.stat.concurrentRequests < candA.stat.concurrentRequests) return candB.provider
+    let winner = candA
+    if (candA.stat.concurrentRequests > candB.stat.concurrentRequests) {
+      winner = candB
+    } else if (candA.stat.concurrentRequests === candB.stat.concurrentRequests) {
+      const ttftA = candA.stat.ewmaTtft.get() ?? 9999
+      const ttftB = candB.stat.ewmaTtft.get() ?? 9999
+      if (ttftB < ttftA) winner = candB
+    }
 
-    // 2. Tie-breaker: lowest EWMA TTFT / latency
-    const ttftA = candA.stat.ewmaTtft.get() ?? 9999
-    const ttftB = candB.stat.ewmaTtft.get() ?? 9999
-    if (ttftA < ttftB) return candA.provider
-    if (ttftB < ttftA) return candB.provider
-
-    // 3. Secondary tie-breaker: success rate
-    const succA = candA.stat.totalRequests ? candA.stat.successCount / candA.stat.totalRequests : 1
-    const succB = candB.stat.totalRequests ? candB.stat.successCount / candB.stat.totalRequests : 1
-    return succA >= succB ? candA.provider : candB.provider
+    const winSlotSat = winner.stat.concurrentRequests >= getSafeMaxConcurrency(winner.provider)
+    const winKvSat = (winner.stat.activeTokens + incomingTokens) >= getSafeMaxKvTokens(winner.provider)
+    if (!winSlotSat && !winKvSat) {
+      return winner.provider
+    }
   }
+  return null
+}
 
   // Standard WRR: smooth weighted round robin (Nginx)
   let totalWeight = 0
@@ -428,7 +502,7 @@ export function selectProvider(
 /** P2C (Power of Two Random Choices) + Least Outstanding Requests explicit export */
 export function selectProviderP2C(
   providers: (StoredProvider | import("@/lib/types").Provider)[],
-  opts?: { openRouter?: boolean }
+  opts?: { openRouter?: boolean; isSubscription?: boolean }
 ): (StoredProvider | import("@/lib/types").Provider) | null {
   return selectProvider(providers, opts)
 }
@@ -436,7 +510,7 @@ export function selectProviderP2C(
 /** Zwróć posortowaną listę providerów wg wagi (dla sekwencyjnego fallback prób) */
 export function getSortedProviders(
   providers: (StoredProvider | import("@/lib/types").Provider)[],
-  opts?: { openRouter?: boolean }
+  opts?: { openRouter?: boolean; isSubscription?: boolean }
 ): (StoredProvider | import("@/lib/types").Provider)[] {
   if (!providers || providers.length === 0) return []
   for (const p of providers as StoredProvider[]) { try { hydrateFromProvider(p as StoredProvider) } catch {} }
@@ -449,13 +523,21 @@ export function getSortedProviders(
     }
   }
   const isOpenRouter = !!opts?.openRouter
-  for (const p of cands) syncWeight(ensureStat(p.id), isOpenRouter)
+  const isSubscription = !!opts?.isSubscription
+  for (const p of cands) syncWeight(ensureStat(p.id), isOpenRouter, isSubscription)
 
   const filtered = cands.filter((p: any) => !isCircuitOpenSafe((p as any).id))
   const pool = filtered.length > 0 ? filtered : cands
 
+  // Prefer unsaturated nodes with 10% safety buffer guard (90% max concurrency cap)
+  const unsaturatedPool = pool.filter((p: any) => {
+    const s = ensureStat(p.id)
+    return s.concurrentRequests < getSafeMaxConcurrency(p)
+  })
+  const effectivePool = unsaturatedPool.length > 0 ? unsaturatedPool : pool
+
   if (isOpenRouter) {
-    return [...pool].sort((a: any, b: any) => {
+    return [...effectivePool].sort((a: any, b: any) => {
       const sa = ensureStat(a.id)
       const sb = ensureStat(b.id)
       const aTtft = sa.ewmaTtft.get() ?? 9999
@@ -465,7 +547,7 @@ export function getSortedProviders(
     })
   }
   // sort by weight desc, then TTFT asc
-  return [...pool].sort((a: any, b: any) => {
+  return [...effectivePool].sort((a: any, b: any) => {
     const sa = ensureStat(a.id)
     const sb = ensureStat(b.id)
     if (sa.weight !== sb.weight) return sb.weight - sa.weight
@@ -483,4 +565,88 @@ export function resetRouting(providerId?: string): void {
 
 export function getAllRoutingStats(): Record<string, ProviderRoutingStat> {
   return getStats()
+}
+
+// ---------------------------------------------------------------------------
+// Session Affinity & KV Cache Eviction Tracking
+// ---------------------------------------------------------------------------
+export type SessionRecord = {
+  providerId: string
+  lastProcessedTokenSnapshot: number
+  lastSeenAt: number
+}
+
+const gSessions = globalThis as unknown as { __seedinferSessions?: Map<string, SessionRecord> }
+
+function getSessionStore(): Map<string, SessionRecord> {
+  if (!gSessions.__seedinferSessions) {
+    gSessions.__seedinferSessions = new Map<string, SessionRecord>()
+  }
+  return gSessions.__seedinferSessions!
+}
+
+export function recordTokensProcessed(providerId: string, tokensCount: number): void {
+  if (!providerId || tokensCount <= 0) return
+  const s = ensureStat(providerId)
+  s.totalProcessedTokens += tokensCount
+}
+
+/**
+ * Evaluates Session Affinity for KV Cache reuse based on exact 3-step rules:
+ * 1) Prompt < 8192 tokens? -> Return null (Always Weighted Random)
+ * 2) Delta Tokens processed on assigned node since last request > 60% of KV cache capacity? -> Return null (Evicted)
+ * 3) Node active load >= 90% capacity (slots or KV tokens)? -> Return null (Hard 90% Guard)
+ */
+export function getAffinityProvider(
+  sessionId: string | null | undefined,
+  incomingPromptTokens: number,
+  providers: (StoredProvider | import("@/lib/types").Provider)[]
+): (StoredProvider | import("@/lib/types").Provider) | null {
+  if (!sessionId || incomingPromptTokens < 8192 || !providers || providers.length === 0) {
+    return null
+  }
+
+  const rec = getSessionStore().get(sessionId)
+  if (!rec) return null
+
+  // Check TTL (15 mins)
+  if (Date.now() - rec.lastSeenAt > 15 * 60 * 1000) {
+    getSessionStore().delete(sessionId)
+    return null
+  }
+
+  const provider = (providers as any).find((p: any) => p.id === rec.providerId)
+  if (!provider) return null
+
+  // Ensure node is verified if verification status exists
+  if (provider.verification?.status && provider.verification.status !== "verified") {
+    return null
+  }
+
+  const s = ensureStat(rec.providerId)
+  const maxKv = getMaxKvTokens(provider)
+  const deltaTokens = s.totalProcessedTokens - rec.lastProcessedTokenSnapshot
+
+  // 60% Eviction Window Check: If more than 60% of KV cache tokens have flowed through this node since last request, KV cache is evicted
+  if (deltaTokens > Math.floor(maxKv * 0.60)) {
+    getSessionStore().delete(sessionId)
+    return null
+  }
+
+  // 90% Hard Guard Check: If active load is saturated, bypass session affinity
+  if (s.concurrentRequests >= getSafeMaxConcurrency(provider) || (s.activeTokens + incomingPromptTokens) >= getSafeMaxKvTokens(provider)) {
+    return null
+  }
+
+  return provider
+}
+
+export function touchSession(sessionId: string | null | undefined, providerId: string): void {
+  if (!sessionId || !providerId) return
+  const s = ensureStat(providerId)
+  getSessionStore().set(sessionId, {
+    providerId,
+    lastProcessedTokenSnapshot: s.totalProcessedTokens,
+    lastSeenAt: Date.now(),
+  })
 }

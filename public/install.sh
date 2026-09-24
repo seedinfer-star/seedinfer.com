@@ -10,8 +10,8 @@ set -euo pipefail
 
 GATEWAY="https://seedinfer.com"
 LOGIN_SERVER="https://tailnet.seedinfer.com"
-MODEL="google/gemma-4-26b-a4b-nvfp4"
-VLLM_MODEL="google/gemma-4-26b-a4b-nvfp4"
+MODEL="nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4"
+VLLM_MODEL="nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4"
 AUTHKEY=""
 # --- HOSTNAME sanitization (DNS label RFC1123: [a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?) ---
 # FIX: cut -c1-12 na "jakub-B550M-AORUS-ELITE" dawał "jakub-B550M-" kończące się "-" -> invalid DNS label.
@@ -162,8 +162,12 @@ get_hw_fingerprint() {
 }
 
 generate_or_load_identity() {
-  mkdir -p "/opt/seedinfer-provider" 2>/dev/null || true
-  local env_file="/opt/seedinfer-provider/seedinfer.env"
+  local target_dir="${INSTALL_DIR:-/opt/seedinfer-provider}"
+  mkdir -p "$target_dir" 2>/dev/null || true
+  local env_file="$target_dir/seedinfer.env"
+  if [[ ! -f "$env_file" && -f "/opt/seedinfer-provider/seedinfer.env" ]]; then
+    env_file="/opt/seedinfer-provider/seedinfer.env"
+  fi
   local existing_priv="" existing_pub=""
   
   if [[ -f "$env_file" ]]; then
@@ -647,6 +651,16 @@ else
   fi
 
   if [[ "$TAILSCALE_UP_OK" != "true" ]]; then
+    # Check if host tailscale is ALREADY running and connected to seedinfer tailnet
+    if [[ "${_backend_state:-}" == "Running" && -n "$_existing_ips" ]]; then
+      if echo "${_existing_control:-}" | grep -qi "seedinfer"; then
+        echo "INFO: Host jest już połączony z seedinfer tailnet (${_existing_control}, IP ${_existing_ips}) — pomijam ponowne tailscale up."
+        TAILSCALE_UP_OK=true
+      fi
+    fi
+  fi
+
+  if [[ "$TAILSCALE_UP_OK" != "true" ]]; then
     _can_sudo_nopass=false
     if sudo -n true 2>/dev/null; then
       _can_sudo_nopass=true
@@ -917,6 +931,8 @@ done
 
 # 6) Uruchom provider (jeśli compose istnieje) — z prebuild pull/load logic
 if [[ -n "$COMPOSE_FILE" && -f "$COMPOSE_FILE" ]]; then
+  # Upewnij się że zewnętrzna sieć docker seedinfer-tailnet istnieje (wymagane przez compose external: true)
+  $DOCKER network create seedinfer-tailnet >/dev/null 2>&1 || true
   echo "-- prebuild check (ghcr -> Pi tar -> local build) --"
   # Ustal DOCKER already
   PREBUILD_OK=false

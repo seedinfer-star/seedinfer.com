@@ -2,6 +2,8 @@
 
 import { useState } from "react"
 import Link from "next/link"
+import { Badge } from "@/components/ui/badge"
+import ProviderContactForm from "@/components/provider-contact-form"
 import {
   Calculator as CalculatorIcon,
   Coins,
@@ -24,6 +26,11 @@ import {
   Wifi,
   Unlock,
   Lock,
+  BadgeCheck,
+  Clock,
+  Terminal,
+  Download,
+  ExternalLink,
 } from "lucide-react"
 
 type ModelProfile = {
@@ -57,17 +64,17 @@ const MODELS: Record<string, ModelProfile> = {
     name: "Gemma 4 26B A4B",
     version: "NVFP4 W4A16 · 1M Ctx",
     inputRate: 0.03,
-    outputRate: 0.30,
+    outputRate: 0.20,
     baseInputDaily: 200,
     baseOutputDaily: 20,
     efficiencyMultiplier: 1.0,
     badgeText: "Standard NVFP4 Baseline",
-    description: "Higher per-token output pricing tier ($0.30/1M out) with standard 200M/20M daily throughput baseline at 30% load.",
+    description: "Phase 0 default model pricing ($0.03 in / $0.20 out per 1M) with standard 200M/20M daily throughput baseline at 30% load.",
   },
 }
 
 export default function Calculator() {
-  const [selectedModelKey, setSelectedModelKey] = useState<"nemotron" | "gemma">("nemotron")
+  const [selectedModelKey, setSelectedModelKey] = useState<"nemotron" | "gemma">("gemma")
   const currentModel = MODELS[selectedModelKey]
 
   const [utilization, setUtilization] = useState<number>(30)
@@ -109,25 +116,146 @@ export default function Calculator() {
   const netMonthlyProfit = grossMonthlyIncome - monthlyPowerCost
 
   return (
-    <section id="calculator" className="col-span-12 rounded-2xl border border-border-dim bg-bg-secondary p-6 sm:p-8">
-      {/* Section Header */}
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-        <div>
-          <div className="flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.16em] text-accent-brand">
+    <section id="calculator" className="col-span-12 rounded-2xl border border-accent-brand/20 bg-gradient-to-br from-accent-brand/10 via-bg-secondary to-bg-secondary p-6 sm:p-8 shadow-md">
+      {/* Integrated Hero Banner Header */}
+      <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between border-b border-border-dim pb-6 mb-6">
+        <div className="min-w-0 flex-1">
+          {/* Badges */}
+          <div className="flex flex-wrap items-center gap-1.5 mb-3">
+            <Badge variant="success" className="gap-1 font-mono text-[10px]">
+              <BadgeCheck className="h-3 w-3" /> Flagship: Gemma 4 26B A4B
+            </Badge>
+            <Badge variant="outline" className="font-mono text-[10px] border-accent-brand/30 text-accent-brand">
+              Zero-Account Ed25519 Auth
+            </Badge>
+            <Badge variant="outline" className="font-mono text-[10px]">
+              Hardware Fingerprint Lock
+            </Badge>
+            <Badge variant="outline" className="font-mono text-[10px]">
+              CUDA 13.3 · Driver 580+
+            </Badge>
+            <Badge variant="outline" className="font-mono text-[10px] border-accent-green/30 text-accent-green">
+              Fair Monthly Waterfall Settlement
+            </Badge>
+          </div>
+
+          <div className="flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.16em] text-accent-brand mb-1">
             <Sparkles className="h-3.5 w-3.5" /> Provider Revenue & Net-Profit Calculator
           </div>
-          <h2 className="mt-1 text-2xl font-bold tracking-tight text-text-primary sm:text-3xl">
-            Real-World Hardware Economics
+          <h2 className="text-2xl font-bold tracking-tight text-text-primary sm:text-3xl">
+            Become a Node Operator — High-Yield GPU Monetization
           </h2>
-          <p className="mt-1.5 max-w-3xl font-mono text-xs leading-5 text-text-secondary">
-            Transparent, line-by-line financial breakdown for hosting models on an <strong className="text-text-primary">NVIDIA RTX 5090 (32GB VRAM)</strong>. Verified against empirical benchmarks from top 10% active nodes on decentralized P2P inference networks.
+          
+          <p className="mt-2 max-w-3xl text-xs sm:text-sm leading-5 text-text-secondary">
+            Serve flagship <code className="rounded bg-bg-tertiary px-1.5 py-0.5 font-mono text-xs text-text-primary">google/gemma-4-26b-a4b-nvfp4</code> & <code className="rounded bg-bg-tertiary px-1.5 py-0.5 font-mono text-xs text-text-primary">seedinfer/nemotron-lightning-1m</code> models on your RTX 5090 32GB rig. 
+            No account registration needed — automated Ed25519 key generation and hardware-bound identity protection in seconds.
+            Fair monthly settlement model: <strong className="text-text-primary">$0.40/day standby coverage</strong> (for &ge;50% uptime since joining) to cover electricity + <strong className="text-text-primary">network surplus profit share from processed traffic</strong>. Automated USDC payouts on Base network.
           </p>
+
+          {/* Quick Metrics Grid */}
+          <div className="mt-4 grid gap-2.5 sm:grid-cols-3">
+            <div className="rounded-xl border border-border-dim bg-bg-tertiary/60 p-3">
+              <div className="font-mono text-[10px] uppercase tracking-wide text-text-tertiary flex items-center gap-1">
+                <Clock className="h-3 w-3 text-accent-brand" /> Standby Electricity Cover
+              </div>
+              <div className="mt-1 font-mono text-sm font-semibold text-text-primary">$0.40 / day</div>
+              <div className="font-mono text-[10px] text-text-tertiary">$0.01667/h (after completed hour, uptime &ge;50%)</div>
+            </div>
+            <div className="rounded-xl border border-border-dim bg-bg-tertiary/60 p-3">
+              <div className="font-mono text-[10px] uppercase tracking-wide text-text-tertiary flex items-center gap-1">
+                <Coins className="h-3 w-3 text-accent-green" /> Profit Sharing
+              </div>
+              <div className="mt-1 font-mono text-sm font-semibold text-text-primary">Proportional Share</div>
+              <div className="font-mono text-[10px] text-text-tertiary">from net revenue based on processed volume and model rates</div>
+            </div>
+            <div className="rounded-xl border border-border-dim bg-bg-tertiary/60 p-3">
+              <div className="font-mono text-[10px] uppercase tracking-wide text-text-tertiary flex items-center gap-1">
+                <Cpu className="h-3 w-3 text-accent-brand" /> Context & Hardware
+              </div>
+              <div className="mt-1 font-mono text-sm font-semibold text-text-primary">1M · RTX 5090 32GB</div>
+              <div className="font-mono text-[10px] text-text-tertiary">NVFP4 W4A16+FP8 KV ~22-28GB VRAM</div>
+            </div>
+          </div>
+
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            <a
+              href="#install"
+              className="inline-flex items-center gap-2 rounded-xl bg-accent-brand px-4 py-2 text-xs font-medium text-white hover:bg-accent-brand-hover transition-colors"
+            >
+              <Terminal className="h-4 w-4" /> One-liner install
+            </a>
+            <a
+              href="/provider.tar.gz"
+              className="inline-flex items-center gap-2 rounded-xl border border-border-default bg-bg-tertiary px-4 py-2 text-xs font-medium text-text-primary hover:bg-bg-hover transition-colors"
+            >
+              <Download className="h-4 w-4" /> provider.tar.gz
+            </a>
+            <a
+              href="https://seedinfer.com/install.sh"
+              target="_blank"
+              className="inline-flex items-center gap-1 font-mono text-xs text-text-tertiary hover:text-text-primary transition-colors"
+            >
+              https://seedinfer.com/install.sh <ExternalLink className="h-3 w-3" />
+            </a>
+          </div>
         </div>
-        <div className="flex shrink-0 items-center gap-2">
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-accent-green/30 bg-accent-green/10 px-3 py-1 font-mono text-xs font-semibold text-accent-green">
-            <CheckCircle2 className="h-3.5 w-3.5" /> 100% Transparent Billing
-          </span>
+
+        {/* Minimum Node Requirements Box */}
+        <div className="w-full shrink-0 border border-border-dim bg-bg-primary/80 rounded-xl p-4 lg:w-[360px] space-y-2.5">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-xs font-mono uppercase tracking-wide text-text-tertiary font-semibold">
+              <ShieldCheck className="h-3.5 w-3.5 text-accent-brand" /> Minimum Node Requirements
+            </div>
+            <Badge variant="outline" className="font-mono text-[9px] border-accent-brand/30 text-accent-brand">
+              Plug & Play Autostart
+            </Badge>
+          </div>
+
+          <div className="grid grid-cols-2 gap-1.5 font-mono text-[11px]">
+            <div className="flex items-center justify-between rounded-lg bg-bg-tertiary px-2 py-1.5">
+              <span className="text-text-tertiary">OS</span>
+              <span className="font-semibold text-text-primary">Ubuntu 24.04+</span>
+            </div>
+            <div className="flex items-center justify-between rounded-lg bg-bg-tertiary px-2 py-1.5">
+              <span className="text-text-tertiary">Driver</span>
+              <span className="font-semibold text-text-primary">580+ (cu13.3)</span>
+            </div>
+            <div className="flex items-center justify-between rounded-lg bg-bg-tertiary px-2 py-1.5">
+              <span className="text-text-tertiary">GPU</span>
+              <span className="font-semibold text-text-primary">RTX 5090</span>
+            </div>
+            <div className="flex items-center justify-between rounded-lg bg-bg-tertiary px-2 py-1.5">
+              <span className="text-text-tertiary">VRAM</span>
+              <span className="font-semibold text-text-primary">32GB (16 min)</span>
+            </div>
+            <div className="flex items-center justify-between rounded-lg bg-bg-tertiary px-2 py-1.5">
+              <span className="text-text-tertiary">Docker</span>
+              <span className="font-semibold text-text-primary">24+ + nvidia-ctk</span>
+            </div>
+            <div className="flex items-center justify-between rounded-lg bg-bg-tertiary px-2 py-1.5">
+              <span className="text-text-tertiary">Disk</span>
+              <span className="font-semibold text-text-primary">60GB+ free</span>
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-dashed border-border-default bg-bg-secondary p-2.5 font-mono text-[10px] leading-4 text-text-secondary space-y-1">
+            <div>• <strong>Ports:</strong> 47900 (vLLM) + 47901 (Agent).</div>
+            <div>• <strong>Tailscale:</strong> Container runs isolated (no conflict with personal host tailnet).</div>
+            <div>• <strong>Autostart:</strong> Plug & Play systemd service autostarts on boot.</div>
+          </div>
+
+          <a
+            href="#custom-application-form"
+            className="block rounded-lg border border-accent-brand/30 bg-accent-brand/10 p-2 text-center font-mono text-[11px] text-accent-brand hover:bg-accent-brand/20 transition-colors font-medium"
+          >
+            Don't meet specs? Apply with custom hardware &rarr;
+          </a>
         </div>
+      </div>
+
+      {/* Custom Hardware Application Form Section */}
+      <div id="custom-application-form" className="mt-8">
+        <ProviderContactForm />
       </div>
 
       {/* Realistic Expectations Banner: Expected Median Earnings (~$120/mo Net) */}

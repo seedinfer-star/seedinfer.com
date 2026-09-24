@@ -50,6 +50,7 @@ export type StoredProvider = Provider & {
   ewmaLatency?: number | null
   concurrentRequests?: number
   maxConcurrency?: number
+  maxKvTokens?: number
   totalRequests?: number
   successCount?: number
   // denormalized routing weight dla observability (podgląd w listProviders, nie źródło prawdy — źródło w lib/routing/selector)
@@ -77,7 +78,12 @@ export function getProvider(id: string): StoredProvider | undefined {
 }
 
 export function listProviders(): StoredProvider[] {
-  return Array.from(getStore().providers.values()).sort((a, b) => {
+  return Array.from(getStore().providers.values()).map((p) => {
+    if ((p.chip || p.gpu?.devices?.[0]?.name || "").includes("5090")) {
+      p.memory_bandwidth_gbs = 1792
+    }
+    return p
+  }).sort((a, b) => {
     // verified first, then verifying, then pending, then failed
     // wewnątrz verified: delegacja do selector — sort weighted WRR (waga odwrotnie do EWMA TTFT i load)
     // jeśli brak wag (cold start) → recent heartbeat jako tie-breaker
@@ -165,7 +171,7 @@ export function upsertProvider(
     cpu_cores: payload.cpu_cores || { total: payload.host?.cpu_total || 0, performance: payload.host?.cpu_total || 0, efficiency: 0 },
     gpu_cores: payload.gpu_cores ?? payload.gpu?.gpu_cores ?? 0,
     memory_gb: payload.memory_gb ?? payload.gpu?.total_memory_gb ?? payload.host?.memory_gb ?? 0,
-    memory_bandwidth_gbs: payload.memory_bandwidth_gbs ?? 1008,
+    memory_bandwidth_gbs: (payload.chip || payload.gpu?.devices?.[0]?.name || "").includes("5090") ? 1792 : (payload.memory_bandwidth_gbs ?? ((payload.chip || "").includes("4090") ? 1008 : 1792)),
     current_model: payload.current_model || payload.model || "google/gemma-4-26b-a4b-nvfp4",
     models: payload.models || [payload.current_model || payload.model || "google/gemma-4-26b-a4b-nvfp4"],
     status: payload.status || "serving",
@@ -225,6 +231,7 @@ export function upsertProvider(
     ewmaLatency: (existing as any)?.ewmaLatency ?? null,
     concurrentRequests: (existing as any)?.concurrentRequests ?? 0,
     maxConcurrency: Number(payload.max_concurrency || payload.max_num_seqs || (existing as any)?.maxConcurrency || 0) || undefined,
+    maxKvTokens: Number(payload.max_kv_tokens || payload.maxKvTokens || (existing as any)?.maxKvTokens || 0) || undefined,
     totalRequests: (existing as any)?.totalRequests ?? 0,
     successCount: (existing as any)?.successCount ?? 0,
     _routingWeight: (existing as any)?._routingWeight ?? undefined,

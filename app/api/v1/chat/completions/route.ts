@@ -10,7 +10,19 @@ import {
   incrementFallback,
 } from "@/lib/fallback-state"
 import { getUpstreamConfigs, mapModelForUpstream, buildUpstreamUrl, triggerModalWarmup } from "@/lib/fallback-clients"
-import { selectProvider, getSortedProviders, recordLatency as recordRoutingLatency, incrementConcurrent, decrementConcurrent } from "@/lib/routing/selector"
+import {
+  selectProvider,
+  getSortedProviders,
+  recordLatency as recordRoutingLatency,
+  incrementConcurrent,
+  decrementConcurrent,
+  addActiveTokens,
+  removeActiveTokens,
+  isNetworkSaturated,
+  getAffinityProvider,
+  touchSession,
+  recordTokensProcessed,
+} from "@/lib/routing/selector"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
@@ -59,7 +71,7 @@ const CURL_EXAMPLE = `curl https://seedinfer.com/api/v1/chat/completions \\
   -H "Authorization: Bearer $SEEDINFER_API_KEY" \\
   -d '{
     "model": "seedinfer/nemotron-lightning-1m",
-    "messages": [{"role": "user", "content": "Explain private inference on RTX 5090 in one paragraph."}],
+    "messages": [{"role": "user", "content": "Explain P2P inference on RTX 5090 in one paragraph."}],
     "stream": false,
     "max_tokens": 512
   }'`
@@ -77,18 +89,26 @@ const TAILNET_EXAMPLE = `curl https://tailnet.seedinfer.com/v1/chat/completions 
 // ---------------------------------------------------------------------------
 function getProviderChatUrls(p: StoredProvider): string[] {
   const candidates: string[] = []
-  if (p.tailscale_ip) { candidates.push(`http://${p.tailscale_ip}:47901/v1/chat/completions`); candidates.push(`http://${p.tailscale_ip}:3001/v1/chat/completions`); }
+  if (p.tailscale_ip) {
+    candidates.push(`http://${p.tailscale_ip}:47901/v1/chat/completions`)
+    candidates.push(`http://${p.tailscale_ip}:47900/v1/chat/completions`)
+    candidates.push(`http://${p.tailscale_ip}:3001/v1/chat/completions`)
+  }
   if (p.agent_url) {
     let u = p.agent_url.replace(/\/$/, "")
     if (!u.startsWith("http")) u = `http://${u}`
     if (u.endsWith("/v1/chat/completions")) candidates.push(u)
-    else if (u.endsWith(":47901") || u.endsWith(":3001")) candidates.push(`${u}/v1/chat/completions`)
+    else if (u.endsWith(":47901") || u.endsWith(":3001") || u.endsWith(":47900")) candidates.push(`${u}/v1/chat/completions`)
     else if (u.includes(":47901")) candidates.push(u.replace(/\/$/, "") + "/v1/chat/completions")
     else if (u.includes(":3001")) candidates.push(u.replace(/\/$/, "") + "/v1/chat/completions")
     else candidates.push(`${u}/v1/chat/completions`)
   }
   const hn = (p as any).tailscale_hostname || p.host?.tailscale_hostname
-  if (hn) { candidates.push(`http://${hn}.seedinfer.ts.net:47901/v1/chat/completions`); candidates.push(`http://${hn}.seedinfer.ts.net:3001/v1/chat/completions`); }
+  if (hn) {
+    candidates.push(`http://${hn}.seedinfer.ts.net:47901/v1/chat/completions`)
+    candidates.push(`http://${hn}.seedinfer.ts.net:47900/v1/chat/completions`)
+    candidates.push(`http://${hn}.seedinfer.ts.net:3001/v1/chat/completions`)
+  }
   return [...new Set(candidates)]
 }
 
@@ -195,13 +215,39 @@ export async function POST(req: Request) {
 
   const isStream = body.stream === true
   const incomingAuth = req.headers.get("authorization") || ""
+  const rawToken = incomingAuth.replace(/^Bearer\s+/i, "").trim()
+
+  // Dedicated Subscription Key check: starts with sk_sub_ or header x-subscription-key
+  const isSubscriptionKey =
+    rawToken.startsWith("sk_sub_") ||
+    req.headers.get("x-subscription-key") === "true" ||
+    req.headers.get("x-seedinfer-key-type") === "subscription"
+
+  const requestPriority = isSubscriptionKey ? "background" : "standard"
   const isOpenRouter = isOpenRouterTraffic(req)
+
+  console.log(`[chat] incoming request priority=${requestPriority} keyType=${isSubscriptionKey ? "subscription(sk_sub_...)" : "pay_as_you_go"} stream=${isStream}`)
+
+  // Extract Session ID from headers or request body
+  const sessionId =
+    req.headers.get("x-session-id") ||
+    req.headers.get("x-conversation-id") ||
+    req.headers.get("session_id") ||
+    body.session_id ||
+    body.conversation_id ||
+    null
+
+  // Estimate incoming request tokens (defaulting to 1000 if not provided)
+  const promptText = Array.isArray(body.messages)
+    ? body.messages.map((m: any) => (typeof m.content === "string" ? m.content : JSON.stringify(m.content || ""))).join(" ")
+    : (typeof body.prompt === "string" ? body.prompt : "")
+  const incomingTokens = promptText ? Math.max(16, Math.ceil(promptText.length / 4)) : 1000
 
   // Thresholds
   const latencyThresholdMs = Number(process.env.FALLBACK_LATENCY_THRESHOLD_MS || 10_000)
   const upstreamConfigs = getUpstreamConfigs()
 
-  // Build ordered attempt list with WRR for local providers
+  // Build ordered attempt list with WRR / P2C for local providers
   type Attempt = {
     id: "local" | "nim" | "opencode" | "openrouter" | "modal"
     url: string
@@ -216,30 +262,49 @@ export async function POST(req: Request) {
 
   const attempts: Attempt[] = []
 
-  // 1) local — WRR over verified providers (EWMA TTFT + load)
+  // 1) local — Token-Aware P2C + Session Affinity (>=8192 tokens) + 90% Hard Guard
   const verifiedProviders = listProviders().filter((p) => p.verification.status === "verified")
   if (verifiedProviders.length > 0) {
-     // getSortedProviders respects openRouter flag (ignor load)
-    const sorted = getSortedProviders(verifiedProviders as any, { openRouter: isOpenRouter }) as StoredProvider[]
-    const localCfg = upstreamConfigs.find((c) => c.id === "local")!
-    for (const prov of sorted as StoredProvider[]) {
-      if (isProviderCircuitOpen(prov.id)) {
-        console.warn(`[chat] skip provider ${prov.id} circuit open (TTFT degrade or fails)`)
-        continue
+    let chosenProvider: StoredProvider | null = null
+
+    // Session Affinity check for large context requests (>= 8192 tokens)
+    if (incomingTokens >= 8192 && sessionId) {
+      const affinityId = getAffinityProvider(sessionId, incomingTokens, verifiedProviders as StoredProvider[])
+      if (affinityId) {
+        chosenProvider = (verifiedProviders.find((p: any) => (p.id || p) === affinityId) as StoredProvider) || null
+        if (chosenProvider) {
+          console.log(`[routing] Session affinity hit for session=${sessionId} -> provider=${chosenProvider.id}`)
+        }
       }
-      const urls = getProviderChatUrls(prov)
+    }
+
+    // Fallback to P2C selector if no affinity hit or request < 8192 tokens
+    if (!chosenProvider) {
+      chosenProvider = selectProvider(verifiedProviders, {
+        openRouter: isOpenRouter,
+        isSubscription: isSubscriptionKey,
+        incomingTokens,
+      }) as StoredProvider | null
+    }
+
+    const localCfg = upstreamConfigs.find((c) => c.id === "local")!
+    if (chosenProvider) {
+      const urls = getProviderChatUrls(chosenProvider)
       const url = urls[0]
-      if (!url) continue
-      attempts.push({
-        id: "local",
-        providerId: prov.id,
-        provider: prov,
-        url,
-        apiKey: null,
-        timeoutMs: localCfg.timeoutMs,
-        model: mapModelForUpstream(String(body.model), "local"),
-        label: `${localCfg.label} ${prov.id}`,
-      })
+      if (url) {
+        attempts.push({
+          id: "local",
+          providerId: chosenProvider.id,
+          provider: chosenProvider,
+          url,
+          apiKey: null,
+          timeoutMs: localCfg.timeoutMs,
+          model: mapModelForUpstream(String(body.model), "local"),
+          label: `${localCfg.label} ${chosenProvider.id}`,
+        })
+      }
+    } else {
+      console.warn(`[routing] No provider selected for request (all >90% saturated or circuit open)`)
     }
     // If all local providers circuit open, fallback to fastest verified (ignore circuit) — najszybszy verified fallback
     if (attempts.length === 0 && verifiedProviders.length > 0) {
@@ -393,9 +458,12 @@ export async function POST(req: Request) {
     const providerLog = at.providerId ? `local:${at.providerId}` : at.id
     console.log(`[chat] try ${providerLog} -> ${at.url} model=${mappedModel} stream=${isStream} timeout=${at.timeoutMs}ms openRouter=${isOpenRouter}`)
 
-    // Track concurrent for local provider
+    // Track concurrent and active KV tokens for local provider
     if (at.providerId) {
-      try { incrementConcurrent(at.providerId) } catch {}
+      try {
+        incrementConcurrent(at.providerId)
+        addActiveTokens(at.providerId, incomingTokens)
+      } catch {}
     }
 
     let ttft: number | null = null
@@ -434,7 +502,13 @@ export async function POST(req: Request) {
             recordProviderLatency(at.providerId, latency, false)
             recordFailure(at.providerId, lastError)
           } catch {}
-          try { if (shouldDecrementConcurrent) { decrementConcurrent(at.providerId); shouldDecrementConcurrent = false } } catch {}
+          try {
+            if (shouldDecrementConcurrent) {
+              decrementConcurrent(at.providerId)
+              removeActiveTokens(at.providerId, incomingTokens)
+              shouldDecrementConcurrent = false
+            }
+          } catch {}
         }
         // also record for upstream id (for fallback stats)
         recordFailure(at.id, lastError)
@@ -540,6 +614,8 @@ export async function POST(req: Request) {
         const upstreamHeaders: Record<string, string> = {
           "X-SeedInfer-Upstream": at.providerId || at.id,
           "X-SeedInfer-Provider": at.providerId || at.id,
+          "X-SeedInfer-Priority": requestPriority,
+          "X-SeedInfer-Key-Type": isSubscriptionKey ? "subscription (sk_sub_...)" : "pay_as_you_go (sk_live_...)",
           "X-SeedInfer-TTFT": String(ttft),
           "Server-Timing": `ttft;dur=${ttft}`,
           "X-SeedInfer-Fallback-Reason": fallbackReason || (isFallback ? `fallback from ${attempts[idx - 1]?.id}` : "local_ok"),
@@ -573,6 +649,9 @@ export async function POST(req: Request) {
                   // record total latency as second sample for EWMA latency (TTFT already recorded)
                   recordRoutingLatency(providerIdForStream, null, totalMs, true)
                   decrementConcurrent(providerIdForStream)
+                  removeActiveTokens(providerIdForStream, incomingTokens)
+                  recordTokensProcessed(providerIdForStream, incomingTokens)
+                  if (sessionId) touchSession(sessionId, providerIdForStream)
                   console.log(`[chat] stream complete ${providerIdForStream} ttft=${ttft}ms total=${totalMs}ms`)
                 } catch {}
               }
@@ -583,7 +662,12 @@ export async function POST(req: Request) {
             if (providerIdForStream && !totalRecorded && !streamClosed) {
               totalRecorded = true
               shouldDecrementConcurrent = false
-              try { decrementConcurrent(providerIdForStream) } catch {}
+              try {
+                decrementConcurrent(providerIdForStream)
+                removeActiveTokens(providerIdForStream, incomingTokens)
+                recordTokensProcessed(providerIdForStream, incomingTokens)
+                if (sessionId) touchSession(sessionId, providerIdForStream)
+              } catch {}
               try {
                 const totalMs = Date.now() - start
                 recordRoutingLatency(providerIdForStream, null, totalMs, true)
@@ -625,6 +709,9 @@ export async function POST(req: Request) {
           recordRoutingLatency(at.providerId, ttft, totalLatency, true)
           recordProviderLatency(at.providerId, ttft, true)
           decrementConcurrent(at.providerId)
+          removeActiveTokens(at.providerId, incomingTokens)
+          recordTokensProcessed(at.providerId, incomingTokens)
+          if (sessionId) touchSession(sessionId, at.providerId)
           shouldDecrementConcurrent = false
         } catch {}
       }
@@ -636,6 +723,8 @@ export async function POST(req: Request) {
       const upstreamHeaders: Record<string, string> = {
         "X-SeedInfer-Upstream": at.providerId || at.id,
         "X-SeedInfer-Provider": at.providerId || at.id,
+        "X-SeedInfer-Priority": requestPriority,
+        "X-SeedInfer-Key-Type": isSubscriptionKey ? "subscription (sk_sub_...)" : "pay_as_you_go (sk_live_...)",
         "X-SeedInfer-TTFT": String(ttft),
         "Server-Timing": `ttft;dur=${ttft};desc="ttft", total;dur=${totalLatency}`,
         "X-SeedInfer-Fallback-Reason": fallbackReason || (isFallback ? `fallback from ${attempts[idx - 1]?.id}` : "local_ok"),
@@ -664,7 +753,13 @@ export async function POST(req: Request) {
           recordProviderLatency(at.providerId, failTtft, false)
           recordFailure(at.providerId, lastError)
         } catch {}
-        try { if (shouldDecrementConcurrent) { decrementConcurrent(at.providerId); shouldDecrementConcurrent = false } } catch {}
+        try {
+          if (shouldDecrementConcurrent) {
+            decrementConcurrent(at.providerId)
+            removeActiveTokens(at.providerId, incomingTokens)
+            shouldDecrementConcurrent = false
+          }
+        } catch {}
       }
       recordFailure(at.id, lastError)
       console.warn(`[chat] ${providerLog} fetch fail: ${msg} → fallback next`)
@@ -679,18 +774,42 @@ export async function POST(req: Request) {
 
       continue
     } finally {
-      // safety decrement if not already done and not streaming (streaming decremented on close)
-      // For non-stream we already decremented; for error we decremented; for stream we will decrement on close, so skip here if stream path already handled?
-      // We set shouldDecrementConcurrent false after handling. If still true (e.g., early error before stream), decrement.
       if (at.providerId && shouldDecrementConcurrent) {
-        // Check if attempt was stream and we returned response — then not in finally of loop? Actually we returned already, so finally here not for stream return? For stream return we still have finally? But we already set shouldDecrementConcurrent false for stream? For non-stream we set false, so this is for unexpected path.
-        // No-op to avoid double decrement for streaming (which decrements on stream close)
-        const idxStillPending = !isStream // only decrement immediately for non-stream that didn't already
+        const idxStillPending = !isStream
         if (idxStillPending) {
-          try { decrementConcurrent(at.providerId) } catch {}
+          try {
+            decrementConcurrent(at.providerId)
+            removeActiveTokens(at.providerId, incomingTokens)
+          } catch {}
         }
       }
     }
+  }
+
+  const isRateLimited =
+    lastError.includes("429") ||
+    lastError.toLowerCase().includes("capacity") ||
+    lastError.toLowerCase().includes("saturated") ||
+    lastError.toLowerCase().includes("rate limit")
+
+  if (isRateLimited) {
+    console.warn(`[chat] returning 429 network capacity saturated lastError=${lastError}`)
+    return openAIError(
+      "SeedInfer network capacity saturated. All provider nodes are operating at peak load (>90% safety capacity).",
+      "tokens_exceeded",
+      "rate_limit_exceeded",
+      429,
+      {
+        hint: "Network capacity saturated. OpenRouter / client should retry after specified interval.",
+        retry_after: 2,
+        tried: attempts.map((a) => a.providerId || a.id),
+      },
+      {
+        "Retry-After": "2",
+        "X-SeedInfer-Upstream": "none",
+        "X-SeedInfer-Fallback-Reason": fallbackReason || lastError || "network_capacity_saturated_90pct_guard",
+      }
+    )
   }
 
   const hint =

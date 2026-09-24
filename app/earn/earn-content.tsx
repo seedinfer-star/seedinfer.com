@@ -123,7 +123,7 @@ export default function EarnContent() {
                   </CardHeader>
                   <CardContent className="space-y-3">
                     <div className="rounded-lg border border-dashed border-border-default bg-bg-primary/60 p-3 font-mono text-xs text-text-secondary">
-                      Wypłaty wyliczane na podstawie Klucza Publicznego (Ed25519) bez potrzeby zakładania konta. Wypłata USDC realizowana automatycznie 1. dnia każdego miesiąca na Base network.
+                      Payouts are calculated based on your Public Key (Ed25519) without requiring account creation. USDC payouts are processed automatically on the 1st of every month on the Base network.
                     </div>
                     <Button disabled className="w-full opacity-60">
                       <CreditCard className="mr-2 h-4 w-4" />

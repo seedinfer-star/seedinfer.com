@@ -24,12 +24,12 @@ const jetbrains = JetBrains_Mono({
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://seedinfer.com"),
-  title: "SeedInfer — Private AI on Verified Hardware · Network Stats",
+  title: "SeedInfer — P2P AI on Verified Hardware · Network Stats",
   description:
-    "SeedInfer private inference on verified RTX 5090 providers. Real-time network stats, token throughput, provider fleet.",
+    "SeedInfer P2P inference on verified RTX 5090 providers. Real-time network stats, token throughput, provider fleet.",
   openGraph: {
     title: "SeedInfer — Network Stats",
-    description: "Private AI on verified hardware · Live network metrics",
+    description: "P2P AI on verified hardware · Live network metrics",
     url: "https://seedinfer.com/stats",
     siteName: "SeedInfer",
   },

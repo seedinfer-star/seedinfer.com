@@ -92,6 +92,7 @@ RSYNC_EXCLUDES=(
   --exclude='*.log'
   --exclude='.env.local'
   --exclude='.env.*.local'
+  --exclude='.tmp-pi'
 )
 
 if [[ "$MODE" == "docker" ]]; then
@@ -102,6 +103,7 @@ if [[ "$MODE" == "docker" ]]; then
   $SSH "ln -sf $REMOTE_DIR/infra/Caddyfile $REMOTE_DIR/Caddyfile 2>/dev/null || cp $REMOTE_DIR/infra/Caddyfile $REMOTE_DIR/Caddyfile; ls -lh $REMOTE_DIR/Caddyfile $REMOTE_DIR/docker-compose.yml"
 else
   # systemd — wysyłamy zbudowany .next + public + pakiet
+  $SSH "rm -rf $REMOTE_DIR/.next" 2>/dev/null || true
   rsync -avz --delete "${RSYNC_EXCLUDES[@]}" -e "$RSYNC_SSH" ./ "$PI_USER@$PI_HOST:$REMOTE_DIR/" 2>/dev/null || \
   rsync -avz --delete --exclude='.git' --exclude='node_modules' --exclude='.next/cache' -e "$RSYNC_SSH" ./ "$PI_USER@$PI_HOST:$REMOTE_DIR/"
   # Doinstaluj deps na Pi i zrestartuj

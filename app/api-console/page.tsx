@@ -401,8 +401,8 @@ export default function ApiConsolePage() {
                   </pre>
                 </div>
                 <div className="mt-3 flex flex-wrap gap-2 text-xs font-mono text-text-tertiary">
-                  <Badge variant="success" className="font-mono text-[10px]">Model: seedinfer/nemotron-lightning-1m</Badge>
-                  <Badge variant="outline" className="font-mono text-[10px]">Pricing: $0.02 / $0.05 per 1M</Badge>
+                  <Badge variant="success" className="font-mono text-[10px]">Model: google/gemma-4-26b-a4b-nvfp4</Badge>
+                  <Badge variant="outline" className="font-mono text-[10px]">Pricing: $0.03 / $0.20 per 1M</Badge>
                   <Badge variant="outline" className="font-mono text-[10px]">Context: 1M tokens</Badge>
                   <Badge variant="outline" className="font-mono text-[10px]">SSE Streaming: Supported</Badge>
                 </div>

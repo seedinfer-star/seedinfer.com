@@ -365,43 +365,4 @@ function netProfitPerDay({ watts, tokensPerDay, pricePer1M = 0.25, elecPerKwh = 
 
 *   **Twitter bio:** "We optimize P2P AI inference to electricity cost. 99% to GPU owners. 1% to us. USDC daily."
 *   **r/LocalLLaMA tytuł:** "[P] We pay $0.40/day (USDC) to host your 5090 for P2P inference — 99% rev share, white-glove setup, 20 whitelist spots"
-*   **Vast.ai DM:** "Hej, widzę masz 5090 32GB za $0.45/h na Vast. U nas dostajesz $0.40/d za standby + 99% gdy leci ruch (fee 1% vs 20% u Vast). Setup 5 min: docker run --gpus all -e NODE_KEY=... Chcesz audyt CUDA gratis?"
-*   **Górnik TG:** "Kopanie ETH = $1.5/dzień na 5090 po prądzie. Inference u nas = $2.6/dzień net przy 20M tok (30% load). Kalkulator: seedinfer.com/stats#calculator"
-*   **Builder HN:** "We built a P2P inference network that charges electricity cost +10%. Show HN: live stats, 1% take rate, OpenAI-compatible"
-
----
-
-## Checklist wdrożenia — co wkleić na /stats
-
-- [ ] Sekcja `Roadmap & Economics` jako anchor `#roadmap` na `/stats` (ten markdown)
-- [ ] Kalkulator net-profit (JS wyżej) — 3 suwaki: GPU (W), tok/dzień, $/kWh → net/mies
-- [ ] Tabela cen live `/models` + link do `/api-console` z $5 free
-- [ ] Licznik `Whitelist: 12/20` (dynamiczny z API)
-- [ ] Przycisk `Become a Provider → /provider` + `docker run` copy button
-- [ ] Footer: "Payouts in USDC on Base. Min $1.00. Daily. Verifiable on BaseScan."
-
----
-
-## FAQ — zimny start (dla sceptyków)
-
-**"Co jeśli nikt nie wyśle ruchu przez miesiąc?"**
-Płacimy $240/mies retainer za 20 nodów. To mniej niż Twój miesięczny rachunek za serwer. Nody zostają, bo dostają cash, nie obietnice. W tym czasie przepinamy własny ruch (eval + OpenRouter).
-
-**"Dlaczego $0.40 a nie $2?"**
-$0.40 to nie pokrycie całego prądu — to sygnał "jesteś potrzebny". Pełny prąd pokrywa się dopiero przy ~12M tok/dzień (1 req/5s). Do tego dopłacamy tylko w zimie. Gdy ruch rośnie, retainer znika.
-
-**"Czemu 99% a nie 80% jak inni?"**
-Bo nie budujemy datacenter. Naszym kosztem jest router + discovery (~$200/mies). Przy $10k MRR, 1% = $100 — starcza. Reszta należy się temu kto płaci za prąd.
-
-**"Co z oszustami? Nod online ale nie liczy?"**
-Challenge jobs: co 5 min wysyłamy syntetyczny request z znanym outputem. Brak odpowiedzi <2s = -reputacja, 3× fail = kick + brak retainera.
-
-**"Mam 2× 3090 24GB — mogę?"**
-Na start wymagamy ≥32GB VRAM (5090/L40S/6000 Ada) bo hostujemy 1M ctx NVFP4. 24GB wróci w Fazie 1 gdy dodamy mniejsze modele (8B).
-
----
-
-*SeedInfer — electricity-cost inference. 99% to you. 1% to keep the lights on.*
-
-*Kontakt whitelist: [Discord] · [Twitter] · founders@seedinfer.com — odpisujemy w 2h, setup w 24h.*
-
+*   **Vast.ai DM:*                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             

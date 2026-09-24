@@ -111,7 +111,7 @@
     color: var(--text-primary);
   }
   ::selection {
-    background: color-mix(in oklab, var(--accent-brand) 25%, transparent);
+    background: var(--accent-brand-dim);
     color: var(--text-primary);
   }
   *:focus-visible {
@@ -150,5 +150,5 @@
 .maplibregl-ctrl-attrib {
   font-family: var(--font-mono), monospace !important;
   font-size: 10px !important;
-  background: color-mix(in oklab, var(--bg-primary) 85%, transparent) !important;
+  background: var(--bg-primary) !important;
 }

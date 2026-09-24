@@ -3,7 +3,7 @@ import Sidebar from "@/components/sidebar"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { CreditCard, ExternalLink, Wallet, Plus, CheckCircle2 } from "lucide-react"
+import { CreditCard, ExternalLink, Wallet, Plus, CheckCircle2, Shield } from "lucide-react"
 import CryptoGateway from "@/components/billing/crypto-gateway"
 import { useEffect, useRef, useState, useCallback } from "react"
 import { useRouter } from "next/navigation"
@@ -92,7 +92,7 @@ export default function BillingPage() {
               <CardContent className="p-3 flex items-start gap-2">
                 <CheckCircle2 className="h-4 w-4 mt-0.5 shrink-0 text-accent-green" />
                 <div className="min-w-0 flex-1">
-                  <div className="text-xs font-semibold text-text-primary">Crypto live — pay-as-you-go $0.02/$0.05 per 1M + Stripe coming soon.</div>
+                  <div className="text-xs font-semibold text-text-primary">Crypto live — pay-as-you-go $0.03/$0.20 per 1M + Stripe coming soon.</div>
                   <div className="mt-0.5 text-xs leading-4 text-text-secondary">
                     7 chains: ETH/Arb/Polygon/Base/BNB/HyperEVM/Solana →{" "}
                     <code className="rounded bg-bg-tertiary px-1">POST /api/v1/invoices</code> → QR (EIP-681/Solana Pay) → worker 15s
@@ -163,28 +163,28 @@ export default function BillingPage() {
                         {
                           label: "GO",
                           price: "$1 / mo",
-                          multiplier: "3x Value",
-                          quota: "$3.00 API usage",
-                          h5Limit: "max 40% per 5h ($1.20)",
-                          weekLimit: "max 70% per 7d ($2.10)",
+                          multiplier: "2x Value",
+                          quota: "$2.00 API usage",
+                          h5Limit: "max 40% per 5h ($0.80)",
+                          weekLimit: "max 70% per 7d ($1.40)",
                           note: "For hobbyists and lightweight bots",
                         },
                         {
                           label: "GOAT",
                           price: "$5 / mo",
-                          multiplier: "4x Value",
-                          quota: "$20.00 API usage",
-                          h5Limit: "max 15% per 5h ($3.00)",
-                          weekLimit: "max 50% per 7d ($10.00)",
+                          multiplier: "3x Value",
+                          quota: "$15.00 API usage",
+                          h5Limit: "max 20% per 5h ($3.00)",
+                          weekLimit: "max 50% per 7d ($7.50)",
                           note: "For developers and micro-SaaS apps",
                         },
                         {
                           label: "PRO",
                           price: "$10 / mo",
-                          multiplier: "5x Value",
-                          quota: "$50.00 API usage",
-                          h5Limit: "max 10% per 5h ($5.00)",
-                          weekLimit: "max 40% per 7d ($20.00)",
+                          multiplier: "4x Value",
+                          quota: "$40.00 API usage",
+                          h5Limit: "max 12.5% per 5h ($5.00)",
+                          weekLimit: "max 40% per 7d ($16.00)",
                           note: "For professionals & high-volume scale",
                         },
                       ].map((p) => (
@@ -206,6 +206,18 @@ export default function BillingPage() {
                       ))}
                     </div>
                   </div>
+                  
+                  <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 p-3 space-y-1 text-xs">
+                    <div className="flex items-center gap-2 font-semibold text-amber-500">
+                      <Shield className="h-4 w-4 shrink-0" />
+                      Dedicated Subscription Keys & Router Priority
+                    </div>
+                    <p className="text-text-secondary font-mono text-[11px] leading-4">
+                      • <strong>Dedicated API Keys:</strong> Subscriptions issue separate API keys starting with <code className="rounded bg-bg-tertiary px-1 text-text-primary">sk_sub_...</code>.<br />
+                      • <strong>Orange Pi Router Priority:</strong> Subscription queries run at <strong>lowest / background priority</strong> on the Orange Pi 4 Pro router node (<code className="rounded bg-bg-tertiary px-1 text-text-primary">X-SeedInfer-Priority: background</code>) to protect Pay-As-You-Go SLAs during peak network demand while providing 2x–4x volume discounts.
+                    </p>
+                  </div>
+
                   <p className="font-mono text-[10px] text-text-tertiary">
                     100% of subscription payments feed the Global Revenue Pool and are settled with GPU providers via the Monthly Waterfall Model.
                   </p>

@@ -14,14 +14,14 @@ const CURL = `curl https://api.seedinfer.com/v1/chat/completions \\
   -H "Authorization: Bearer $SEEDINFER_API_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{
-    "model": "seedinfer/nemotron-lightning-1m",
+    "model": "google/gemma-4-26b-a4b-nvfp4",
     "messages": [{"role": "user", "content": "Hello"}],
     "stream": true
   }'`
 
 export default function ChatPage() {
   const [messages, setMessages] = useState<Msg[]>([
-    { role: "assistant", content: "Welcome to SeedInfer Chat — private inference on verified Macs. Ask anything. Model: seedinfer/nemotron-lightning-1m (1M context, 2M KV)." },
+    { role: "assistant", content: "Welcome to SeedInfer Chat — P2P inference on verified GPUs. Ask anything. Model: google/gemma-4-26b-a4b-nvfp4 (1M context, 2M KV)." },
   ])
   const [input, setInput] = useState("")
   const [sending, setSending] = useState(false)
@@ -42,7 +42,7 @@ export default function ChatPage() {
         {
           role: "assistant",
           content:
-            `Mock reply for: "${text}"\n\nThis is a stub — connect live via POST /v1/chat/completions on docs.seedinfer.com. SeedInfer routes to the dedicated edge at api.seedinfer.com. Model: seedinfer/nemotron-lightning-1m · $0.02/$0.05 per 1M · 1M ctx · cache 60s free.`,
+            `Mock reply for: "${text}"\n\nThis is a stub — connect live via POST /v1/chat/completions on docs.seedinfer.com. SeedInfer routes to the dedicated edge at api.seedinfer.com. Model: google/gemma-4-26b-a4b-nvfp4 · $0.03/$0.20 per 1M · 1M ctx · cache 60s free.`,
         },
       ])
       setSending(false)
@@ -66,7 +66,7 @@ export default function ChatPage() {
           <div className="min-w-0">
             <h1 className="truncate text-[13px] font-semibold tracking-tight text-text-primary">Chat</h1>
             <p className="truncate font-mono text-[11px] text-text-tertiary">
-              Private inference playground · seedinfer/nemotron-lightning-1m · OpenAI-compatible · docs.seedinfer.com
+              P2P inference playground · google/gemma-4-26b-a4b-nvfp4 · OpenAI-compatible · docs.seedinfer.com
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -90,8 +90,8 @@ export default function ChatPage() {
                 <div className="flex items-center gap-2">
                   <Sparkles className="h-4 w-4 text-accent-brand" />
                   <span className="text-xs font-semibold text-text-primary">Playground</span>
-                  <Badge variant="outline" className="font-mono text-[10px]">seedinfer/nemotron-lightning-1m</Badge>
-                  <Badge variant="outline" className="hidden sm:inline-flex font-mono text-[10px]">$0.02 / $0.05 · 1M</Badge>
+                  <Badge variant="outline" className="font-mono text-[10px]">google/gemma-4-26b-a4b-nvfp4</Badge>
+                  <Badge variant="outline" className="hidden sm:inline-flex font-mono text-[10px]">$0.03 / $0.20 · 1M</Badge>
                 </div>
                 <span className="hidden font-mono text-[10px] text-text-tertiary sm:inline">{messages.length} messages</span>
               </div>
@@ -107,7 +107,7 @@ export default function ChatPage() {
                       }`}
                     >
                       <div className="whitespace-pre-wrap">{m.content}</div>
-                      <div className={`mt-1 font-mono text-[10px] ${m.role === "user" ? "text-white/70" : "text-text-tertiary"}`}>{m.role === "user" ? "you" : "seedinfer · Nemotron"}</div>
+                      <div className={`mt-1 font-mono text-[10px] ${m.role === "user" ? "text-white/70" : "text-text-tertiary"}`}>{m.role === "user" ? "you" : "seedinfer · Gemma 4"}</div>
                     </div>
                   </div>
                 ))}
@@ -188,9 +188,9 @@ export default function ChatPage() {
                     Model
                   </div>
                   <div className="rounded-lg border border-border-dim bg-bg-primary p-2 font-mono text-xs">
-                    <div className="font-semibold text-text-primary">seedinfer/nemotron-lightning-1m</div>
-                    <div className="text-text-secondary">Nemotron Lightning · 1M context · 2M KV · $0.02 / $0.05 per 1M</div>
-                    <div className="mt-1 text-[11px] text-text-tertiary">Faza 0 active · Faza 1 (Qwen/Gemma) — soon</div>
+                    <div className="font-semibold text-text-primary">google/gemma-4-26b-a4b-nvfp4</div>
+                    <div className="text-text-secondary">Gemma 4 26B A4B NVFP4 · 1M context · 2M KV · $0.03 / $0.20 per 1M</div>
+                    <div className="mt-1 text-[11px] text-text-tertiary">Phase 0 active · Phase 1 (Qwen/Nemotron) — soon</div>
                   </div>
                   <p className="font-mono text-[10px] text-text-tertiary"> Docs: <a href="https://docs.seedinfer.com" target="_blank" rel="noopener noreferrer" className="text-accent-brand underline">docs.seedinfer.com</a> · root <code className="rounded bg-bg-tertiary px-1">/</code> serves Network stats; Chat also at <code className="rounded bg-bg-tertiary px-1">/chat</code>.</p>
                 </CardContent>
