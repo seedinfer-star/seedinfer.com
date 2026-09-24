@@ -1,26 +1,39 @@
-import { Metadata } from "next"
 import Link from "next/link"
+import AppShell, { PageContainer } from "@/components/app-shell"
+import {
+  LAST_UPDATED,
+  MIN_VRAM_GB,
+  REFERENCE_GPU,
+  PROVIDER_ECONOMICS,
+  REVENUE_SHARE_PCT,
+  PROTOCOL_FEE_PCT,
+  PAYMENT_CHAINS,
+  SOLANA_DEPOSIT_ADDRESS,
+  SUBSCRIPTION_PLANS,
+  pageMetadata,
+} from "@/lib/catalog"
 
-export const metadata: Metadata = {
-  title: "Terms of Service — SeedInfer",
-  description: "SeedInfer Terms of Service. Decentralized P2P AI inference network terms, provider obligations, client usage, and liability.",
-}
+export const metadata = pageMetadata(
+  "Terms of Service",
+  "SeedInfer Terms of Service: decentralized P2P AI inference network terms, provider obligations, client usage and liability.",
+  "/terms",
+)
+
+const DEPOSIT_CHAINS = PAYMENT_CHAINS.filter((c) => c.key !== "solana" || SOLANA_DEPOSIT_ADDRESS)
+  .map((c) => c.name)
+  .join(", ")
+const STANDBY_PCT = Math.round(PROVIDER_ECONOMICS.standbyMinUptime * 100)
 
 export default function TermsOfServicePage() {
-  const lastUpdated = "2025-01-15"
-  const effectiveDate = "2025-01-15"
+  const lastUpdated = LAST_UPDATED
+  const effectiveDate = LAST_UPDATED
 
   return (
-    <main className="min-h-screen bg-bg-primary py-12 px-4 sm:px-6 lg:px-8">
+    <AppShell>
+      <PageContainer wide={false}>
       <div className="mx-auto max-w-4xl space-y-12">
         {/* Header */}
-        <header className="text-center space-y-4">
-          <Link
-            href="/"
-            className="inline-flex items-center gap-2 text-text-secondary hover:text-text-primary transition-colors"
-          >
-            ← Back to SeedInfer
-          </Link>
+        <header className="text-center space-y-4 pt-4">
           <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-text-primary">
             Terms of Service
           </h1>
@@ -65,11 +78,11 @@ export default function TermsOfServicePage() {
               </div>
               <div className="rounded-xl border border-border-dim bg-bg-secondary p-4">
                 <dt className="font-semibold text-text-primary">"API Key"</dt>
-                <dd className="text-sm text-text-secondary mt-1">Authentication credential (sk_live_..., sk_sub_..., or demo key) used to authorize API requests.</dd>
+                <dd className="text-sm text-text-secondary mt-1">Authentication credential (for example <code className="bg-bg-tertiary px-1 rounded text-xs">sk-seedinfer-...YOUR_KEY</code>; pay-as-you-go keys start with <code className="bg-bg-tertiary px-1 rounded text-xs">sk_live_</code>, subscription keys with <code className="bg-bg-tertiary px-1 rounded text-xs">sk_sub_</code>) used to authorize API requests.</dd>
               </div>
               <div className="rounded-xl border border-border-dim bg-bg-secondary p-4">
-                <dt className="font-semibold text-text-primary">"USDC / Base Chain"</dt>
-                <dd className="text-sm text-text-secondary mt-1">USD Coin on the Base L2 network, used for provider payouts and client billing.</dd>
+                <dt className="font-semibold text-text-primary">"USDC / Base"</dt>
+                <dd className="text-sm text-text-secondary mt-1">USD Coin on the Base L2 network, the only asset and chain used for provider payouts. Client deposits are accepted on {DEPOSIT_CHAINS}.</dd>
               </div>
               <div className="rounded-xl border border-border-dim bg-bg-secondary p-4">
                 <dt className="font-semibold text-text-primary">"Zero-Data Logging"</dt>
@@ -88,8 +101,7 @@ export default function TermsOfServicePage() {
             <div className="rounded-xl border border-border-dim bg-bg-secondary p-5 space-y-3">
               <h3 className="font-semibold text-text-primary">2.1 API Access & Authentication</h3>
               <ul className="list-disc pl-5 text-sm text-text-secondary space-y-2">
-                <li>Clients authenticate via API Key in the <code className="bg-bg-tertiary px-1 rounded text-xs">Authorization: Bearer YOUR_KEY</code> header.</li>
-                <li>Demo key <code className="bg-bg-tertiary px-1 rounded text-xs">sk-seedinfer-demo</code> is provided for evaluation; rate-limited and subject to revocation.</li>
+                <li>Clients authenticate via API Key in the <code className="bg-bg-tertiary px-1 rounded text-xs">Authorization: Bearer sk-seedinfer-...YOUR_KEY</code> header.</li>
                 <li>Pay-As-You-Go keys (<code className="bg-bg-tertiary px-1 rounded text-xs">sk_live_...</code>) deduct from prepaid credit balance.</li>
                 <li>Subscription keys (<code className="bg-bg-tertiary px-1 rounded text-xs">sk_sub_...</code>) are tied to monthly plans (GO, GOAT, PRO) with volume multipliers at background priority.</li>
                 <li>Keys are non-transferable. Sharing, reselling, or publishing keys is prohibited.</li>
@@ -109,8 +121,8 @@ export default function TermsOfServicePage() {
               <h3 className="font-semibold text-text-primary">2.3 Billing & Credits</h3>
               <ul className="list-disc pl-5 text-sm text-text-secondary space-y-2">
                 <li>Pay-As-You-Go: Credits purchased in advance. Consumed per-token at published rates. Non-refundable except as required by law.</li>
-                <li>Subscriptions: Monthly recurring billing. Volume multipliers (2x–4x) apply at <strong>background priority</strong> (lower latency priority than Pay-As-You-Go).</li>
-                <li>Prices in USD. USDC on Base Chain accepted at 1:1. Rates subject to change with 30-day notice.</li>
+                <li>Subscriptions: Monthly recurring billing. Volume multipliers ({SUBSCRIPTION_PLANS[0].multiplier}x–{SUBSCRIPTION_PLANS[SUBSCRIPTION_PLANS.length - 1].multiplier}x) apply at <strong>background priority</strong> (lower latency priority than Pay-As-You-Go).</li>
+                <li>Prices in USD. Deposits are accepted in USDC or native tokens on {DEPOSIT_CHAINS}; USDC is credited at 1:1. Rates subject to change with 30-day notice.</li>
                 <li>Unused subscription quota does not roll over. Pay-As-You-Go credits expire after 12 months of inactivity.</li>
               </ul>
             </div>
@@ -135,9 +147,9 @@ export default function TermsOfServicePage() {
             <div className="rounded-xl border border-border-dim bg-bg-secondary p-5 space-y-3">
               <h3 className="font-semibold text-text-primary">3.1 Hardware Requirements</h3>
               <ul className="list-disc pl-5 text-sm text-text-secondary space-y-2">
-                <li>Minimum: NVIDIA RTX 5090 32GB (Blackwell GB202), Ubuntu 24.04+, Driver ≥580.65, CUDA 13.3, Docker 24+ with nvidia-container-toolkit.</li>
-                <li>Community Tier: RTX 4090/3090 24GB supported with reduced context length (<code className="bg-bg-tertiary px-1 rounded text-xs">VLLM_MAX_MODEL_LEN=131072</code>, <code className="bg-bg-tertiary px-1 rounded text-xs">GPU_MEMORY_UTILIZATION=0.80</code>).</li>
-                <li>Enterprise Tier: A100 80GB / H100 80GB fully supported.</li>
+                <li>Minimum: NVIDIA GPU with at least {MIN_VRAM_GB}GB VRAM (reference node: {REFERENCE_GPU.name}), Ubuntu 24.04+, Driver ≥580.65, CUDA 13.3, Docker 24+ with nvidia-container-toolkit.</li>
+                <li>24GB cards (RTX 4090 / 3090) are not supported yet.</li>
+                <li>Data-center GPUs such as A100 80GB and H100 80GB are supported.</li>
                 <li>Ports 47900 (vLLM) and 47901 (Agent) must be reachable via Tailscale (outbound only — no port forwarding needed).</li>
               </ul>
             </div>
@@ -146,18 +158,18 @@ export default function TermsOfServicePage() {
               <ul className="list-disc pl-5 text-sm text-text-secondary space-y-2">
                 <li>On first run, <code className="bg-bg-tertiary px-1 rounded text-xs">install.sh</code> generates an Ed25519 keypair at <code className="bg-bg-tertiary px-1 rounded text-xs">/etc/seedinfer/identity.key</code> (0600 perms). Private key never leaves the node.</li>
                 <li>Public key = your Zero-Account ID. All payouts routed to this identifier.</li>
-                <li>Hardware Fingerprint (SHA-256 of GPU UUID + motherboard serial + CPU ID) is cryptographically bound to your public key at registration. Prevents container cloning.</li>
+                <li>Hardware Fingerprint (SHA-256 of GPU UUID, PCIe bus and machine ID) is cryptographically bound to your public key at registration. Prevents container cloning.</li>
                 <li>You are responsible for securing your private key. Compromised keys = compromised identity & payouts.</li>
               </ul>
             </div>
             <div className="rounded-xl border border-border-dim bg-bg-secondary p-5 space-y-3">
               <h3 className="font-semibold text-text-primary">3.3 Payouts & Economics</h3>
               <ul className="list-disc pl-5 text-sm text-text-secondary space-y-2">
-                <li>Payouts in <strong>USDC on Base Chain only</strong>. You MUST register a valid EVM wallet address on Base in the <Link href="/provider/portal" className="text-accent-brand underline">Provider Portal</Link> to receive funds.</li>
-                <li><strong>Standby Retainer:</strong> $0.40/day per node for each hour with ≥50% uptime. Accrues continuously, paid monthly.</li>
-                <li><strong>Execution Revenue:</strong> 99% of net token revenue (after gateway fees) paid to provider. 1% protocol fee.</li>
+                <li>Payouts in <strong>{PROVIDER_ECONOMICS.payoutAsset} on {PROVIDER_ECONOMICS.payoutChain} only</strong>. You MUST register a valid EVM wallet address on Base in the <Link href="/provider/portal" className="text-accent-brand underline">Provider Portal</Link> to receive funds.</li>
+                <li><strong>Standby Retainer:</strong> ${PROVIDER_ECONOMICS.standbyPerDayUsd.toFixed(2)} per node per day with ≥{STANDBY_PCT}% uptime. Paid monthly.</li>
+                <li><strong>Execution Revenue:</strong> {REVENUE_SHARE_PCT}% of the token revenue a node serves is paid to its provider; {PROTOCOL_FEE_PCT}% protocol fee.</li>
                 <li>No slashing for downtime. Nodes simply stop receiving traffic when offline.</li>
-                <li>Payouts automated monthly. Minimum threshold: 10 USDC.</li>
+                <li>Payouts are automated monthly. Minimum payout: ${PROVIDER_ECONOMICS.minPayoutUsd.toFixed(2)}; smaller balances carry over to the next month. No fiat or card payouts.</li>
               </ul>
             </div>
             <div className="rounded-xl border border-border-dim bg-bg-secondary p-5 space-y-3">
@@ -251,7 +263,7 @@ export default function TermsOfServicePage() {
           </h2>
           <div className="rounded-xl border border-border-dim bg-bg-secondary p-5 space-y-3">
             <p className="text-sm text-text-secondary">
-              These Terms governed by the laws of <strong>Estonia</strong> (EU), without regard to conflict of laws. Disputes resolved in courts of Tallinn, Estonia. For consumer clients in EU: mandatory consumer protection laws of your residence country apply.
+              These Terms are governed by the laws of <strong>Estonia</strong> (EU), without regard to conflict of laws. Disputes resolved in courts of Tallinn, Estonia. For consumer clients in EU: mandatory consumer protection laws of your residence country apply.
             </p>
           </div>
         </section>
@@ -298,6 +310,7 @@ export default function TermsOfServicePage() {
           </p>
         </footer>
       </div>
-    </main>
+      </PageContainer>
+    </AppShell>
   )
 }

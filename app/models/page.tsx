@@ -1,10 +1,14 @@
 "use client"
 import { useEffect, useState } from "react"
-import Sidebar from "@/components/sidebar"
+import Link from "next/link"
+import AppShell, { PageHeader, PageContainer } from "@/components/app-shell"
 import ModelsCatalog from "@/components/models-catalog"
-import { ExternalLink, RefreshCw, Layers, ShieldCheck } from "lucide-react"
+import { Card, CardContent } from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
+import { Cpu, Code2, FileText, RefreshCw } from "lucide-react"
 import { fetchStats } from "@/lib/api"
 import type { ModelStat } from "@/lib/types"
+import { MODELS, API_BASE_URL } from "@/lib/catalog"
 
 export default function ModelsPage() {
   const [models, setModels] = useState<ModelStat[]>([])
@@ -16,27 +20,12 @@ export default function ModelsPage() {
     setLoading(true)
     setError(null)
     try {
-      let fetched: ModelStat[] | null = null
-      try {
-        const r = await fetch("https://seedinfer.com/api/v1/models", { cache: "no-store" })
-        if (r.ok) {
-          const j = await r.json()
-          if (Array.isArray(j.data)) fetched = j.data.map((m: any) => ({ id: m.id, providers: m.providers ?? 1 }))
-          else if (Array.isArray(j.models)) fetched = j.models
-        }
-      } catch {
-        // Fallback to stats
-      }
-
-      if (!fetched || fetched.length === 0) {
-        const stats = await fetchStats(true)
-        fetched = stats.models ?? [{ id: "google/gemma-4-26b-a4b-nvfp4", providers: 1 }]
-      }
-
-      setModels(fetched)
+      // Provider counts come from our own /api/stats; model list + prices come from lib/catalog
+      const stats = await fetchStats(true)
+      setModels(stats.models ?? [])
       setLastFetch(new Date().toLocaleTimeString())
     } catch (e: any) {
-      setError(e?.message ?? "Failed to fetch models catalog")
+      setError(e?.message ?? "Network statistics unavailable.")
     } finally {
       setLoading(false)
     }
@@ -47,67 +36,67 @@ export default function ModelsPage() {
   }, [])
 
   return (
-    <div className="flex h-screen overflow-hidden bg-bg-primary">
-      <Sidebar />
-      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        {/* Header */}
-        <header className="flex h-14 shrink-0 items-center justify-between border-b border-border-dim bg-bg-secondary px-6 shadow-sm">
-          <div className="flex items-center gap-3">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent-brand/10 text-accent-brand">
-              <Layers className="h-4 w-4" />
-            </div>
-            <div>
-              <h1 className="text-sm font-bold tracking-tight text-text-primary">Models & Pricing Catalog</h1>
-              <p className="font-mono text-[11px] text-text-tertiary">
-                Hardware-attested P2P model deployments · Updated {lastFetch || "just now"}
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <div className="hidden md:flex items-center gap-1.5 rounded-full bg-accent-green/10 border border-accent-green/20 px-3 py-1 text-[11px] font-mono font-medium text-accent-green">
-              <ShieldCheck className="h-3.5 w-3.5" /> End-to-end Encrypted & Attested
-            </div>
-            <a
+    <AppShell>
+      <PageHeader
+        title="Models"
+        description={<>{MODELS.length} models · OpenAI-compatible at {API_BASE_URL} · updated {lastFetch || "—"}</>}
+        actions={
+          <>
+            <Link
               href="/api-console"
-              className="hidden sm:inline-flex items-center gap-1.5 rounded-lg border border-border-default bg-bg-tertiary px-3 py-1.5 text-xs font-semibold text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors"
+              className="hidden sm:inline-flex items-center gap-1.5 rounded-lg border border-border-default bg-bg-tertiary px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-bg-hover hover:text-text-primary"
             >
-              API Console <ExternalLink className="h-3 w-3" />
-            </a>
+              <Code2 className="h-3.5 w-3.5" /> API Console
+            </Link>
+            <Link
+              href="/docs"
+              className="hidden sm:inline-flex items-center gap-1.5 rounded-lg border border-border-default bg-bg-tertiary px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-bg-hover hover:text-text-primary"
+            >
+              <FileText className="h-3.5 w-3.5" /> Docs
+            </Link>
             <button
+              type="button"
               onClick={load}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-border-default bg-bg-tertiary px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-border-default bg-bg-tertiary px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-bg-hover hover:text-text-primary"
             >
               <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
               Refresh
             </button>
-          </div>
-        </header>
+          </>
+        }
+      />
+      <PageContainer>
+            <Card className="border border-accent-brand/20 bg-accent-brand/10">
+              <CardContent className="p-3 flex items-start gap-2">
+                <Cpu className="h-4 w-4 mt-0.5 shrink-0 text-accent-brand" />
+                <div className="min-w-0 flex-1">
+                  <div className="text-xs font-semibold text-text-primary">List models via the API</div>
+                  <div className="mt-0.5 text-xs leading-4 text-text-secondary">
+                    <code className="rounded bg-bg-tertiary px-1">GET {API_BASE_URL}/models</code> returns the same catalog in OpenAI format;{" "}
+                    <code className="rounded bg-bg-tertiary px-1">GET {API_BASE_URL.replace("/v1", "/api/v1")}/pricing</code> returns per-token prices.
+                  </div>
+                </div>
+                <Badge variant="outline" className="shrink-0 border-accent-brand/20 bg-bg-secondary font-mono text-[10px]">
+                  {MODELS.length} models
+                </Badge>
+              </CardContent>
+            </Card>
 
-        {/* Content */}
-        <main className="min-h-0 flex-1 overflow-y-auto bg-bg-primary">
-          <div className="mx-auto max-w-[1600px] space-y-6 p-6 sm:p-8">
             {error && (
-              <div className="rounded-xl border border-accent-red/20 bg-accent-red/10 px-4 py-3 text-xs font-medium text-accent-red">
-                {error}
-              </div>
+              <div className="rounded-xl border border-accent-red/20 bg-accent-red/10 px-4 py-3 text-sm text-accent-red">{error}</div>
             )}
 
             <ModelsCatalog models={models} />
 
-            <footer className="border-t border-border-dim pt-6 font-mono text-[11px] text-text-tertiary flex flex-col sm:flex-row items-center justify-between gap-2">
-              <div>
-                SeedInfer P2P Network · <code className="rounded bg-bg-tertiary px-1.5 py-0.5">GET /api/v1/models</code>
-              </div>
+            <footer className="flex flex-col items-start justify-between gap-2 border-t border-border-dim pt-4 font-mono text-[10px] leading-4 text-text-tertiary sm:flex-row sm:items-center">
+              <div>SeedInfer.com · Prices in USD per 1M tokens · Node counts from live network statistics</div>
               <div className="flex items-center gap-3">
-                <a href="/api-console" className="hover:text-text-secondary underline">OpenRouter Spec</a>
-                <span>·</span>
-                <a href="/provider" className="hover:text-text-secondary underline">Become a Provider</a>
+                <Link href="/api-console" className="underline hover:text-text-secondary">API Console</Link>
+                <span aria-hidden="true">·</span>
+                <Link href="/provider" className="underline hover:text-text-secondary">Become a Provider</Link>
               </div>
             </footer>
-          </div>
-        </main>
-      </div>
-    </div>
+      </PageContainer>
+    </AppShell>
   )
 }

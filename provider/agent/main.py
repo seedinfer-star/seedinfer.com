@@ -416,7 +416,7 @@ async def list_models():
                 "owned_by": "seedinfer",
                 "context_length": 262144, "max_output": 262144,
                 "description": "Gemma 4 26B A4B NVFP4 - High performance MoE model for OpenRouter & SeedInfer P2P",
-                "pricing": {"prompt": "0.00002", "completion": "0.00005", "cache_read": "0.0"},
+                "pricing": {"prompt": "0.00000003", "completion": "0.0000002", "cache_read": "0"},
                 "hf_model": VLLM_MODEL,
             },
             {

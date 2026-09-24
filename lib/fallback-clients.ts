@@ -6,6 +6,8 @@
  * Env-driven, nie leakuje kluczy w odpowiedzi status.
  */
 
+import { LIVE_MODEL, findModel } from "./catalog"
+
 export type UpstreamId = "local" | "nim" | "opencode" | "openrouter" | "modal"
 
 export type UpstreamConfig = {
@@ -128,6 +130,9 @@ export function triggerModalWarmup(): void {
  */
 export function mapModelForUpstream(incomingModel: string, upstreamId: UpstreamId): string {
   const m = (incomingModel || "").toLowerCase()
+  // Accepted public aliases of catalog models resolve to the canonical id (e.g. gemma-4-26b-a4b → google/gemma-4-26b-a4b-nvfp4)
+  const cat = findModel(incomingModel)
+  if (cat && upstreamId === "local") return cat.id
   const isNemotron = m.includes("nemotron") || m.includes("gpt-oss") || m.includes("lightning")
   // If not nemotron, pass through as-is (validation in route will hint)
   if (!isNemotron) return incomingModel
@@ -186,14 +191,21 @@ export function getUpstreamConfigs(): UpstreamConfig[] {
   const openrouterBase = envAny("OPENROUTER_BASE_URL", "OPENROUTER_URL") || "https://openrouter.ai/api/v1"
   const modalBase = envAny("MODAL_BASE_URL", "MODAL_URL") || null
 
+  const nimModel = mapModelForUpstream("seedinfer/nemotron-lightning-1m", "nim")
+  const opencodeModel = mapModelForUpstream("seedinfer/nemotron-lightning-1m", "opencode")
+  const openrouterModel = mapModelForUpstream("seedinfer/nemotron-lightning-1m", "openrouter")
+  const modalModel = mapModelForUpstream("seedinfer/nemotron-lightning-1m", "modal")
+  const localModel = LIVE_MODEL.id
+
+  // Labels are derived from the actual model id so the label always matches what is served.
   const configs: UpstreamConfig[] = [
-    // local jest dynamiczny — baseUrl ustalany z providers-store, tu placeholder
+    // local base URL is dynamic — resolved from providers-store at request time
     {
       id: "local",
-      label: "RTX 5090 NVFP4 (Tailnet :3001)",
+      label: `SeedInfer GPU node · ${localModel}`,
       baseUrl: envAny("VLLM_URL", "LOCAL_VLLM_URL", "SEEDINFER_VLLM_URL") || null,
       chatPath: "/v1/chat/completions",
-      model: "seedinfer/nemotron-lightning-1m",
+      model: localModel,
       apiKey: null,
       apiKeyEnv: "TAILNET (no key, forward Authorization)",
       hasKey: true, // local does not need key
@@ -201,10 +213,10 @@ export function getUpstreamConfigs(): UpstreamConfig[] {
     },
     {
       id: "nim",
-      label: "Nvidia NIM Nemotron",
+      label: `NVIDIA NIM · ${nimModel}`,
       baseUrl: nimBase,
       chatPath: "/chat/completions",
-      model: mapModelForUpstream("seedinfer/nemotron-lightning-1m", "nim"),
+      model: nimModel,
       apiKey: nimKey,
       apiKeyEnv: "NIM_API_KEY (or NVAPI_KEY)",
       hasKey: !!nimKey,
@@ -212,10 +224,10 @@ export function getUpstreamConfigs(): UpstreamConfig[] {
     },
     {
       id: "opencode",
-      label: "Opencode Free Nemotron",
+      label: `OpenCode · ${opencodeModel}`,
       baseUrl: opencodeBase,
       chatPath: "/chat/completions",
-      model: mapModelForUpstream("seedinfer/nemotron-lightning-1m", "opencode"),
+      model: opencodeModel,
       apiKey: opencodeKey,
       apiKeyEnv: "OPENCODE_API_KEY",
       hasKey: !!opencodeKey,
@@ -223,10 +235,10 @@ export function getUpstreamConfigs(): UpstreamConfig[] {
     },
     {
       id: "openrouter",
-      label: "OpenRouter Free Nemotron",
+      label: `OpenRouter · ${openrouterModel}`,
       baseUrl: openrouterBase,
       chatPath: "/chat/completions",
-      model: mapModelForUpstream("seedinfer/nemotron-lightning-1m", "openrouter"),
+      model: openrouterModel,
       apiKey: openrouterKey,
       apiKeyEnv: "OPENROUTER_API_KEY",
       hasKey: !!openrouterKey,
@@ -239,10 +251,10 @@ export function getUpstreamConfigs(): UpstreamConfig[] {
     },
     {
       id: "modal",
-      label: "Modal A100 On-Demand",
+      label: `Modal on-demand · ${modalModel}`,
       baseUrl: modalBase,
       chatPath: "/v1/chat/completions",
-      model: mapModelForUpstream("seedinfer/nemotron-lightning-1m", "modal"),
+      model: modalModel,
       apiKey: modalKey,
       apiKeyEnv: "MODAL_API_KEY",
       hasKey: !!modalBase, // modal needs baseUrl, key optional if public
@@ -255,9 +267,9 @@ export function getUpstreamConfigs(): UpstreamConfig[] {
 
 export function getUpstreamForStatus(): Array<Omit<UpstreamConfig, "apiKey"> & { hasKey: boolean; apiKeyPreview: string | null }> {
   return getUpstreamConfigs().map((c) => {
-    const preview = c.apiKey ? `${c.apiKey.slice(0, 6)}...${c.apiKey.slice(-4)}` : null
-    const { apiKey: _k, ...rest } = c
-    return { ...rest, apiKeyPreview: preview }
+    // Never expose any part of the key or env var names publicly.
+    const { apiKey: _k, apiKeyEnv: _e, headers: _h, ...rest } = c
+    return { ...rest, apiKeyEnv: "", apiKeyPreview: null }
   })
 }
 

@@ -1,25 +1,24 @@
-import { Metadata } from "next"
 import Link from "next/link"
+import AppShell, { PageContainer } from "@/components/app-shell"
+import { CACHE_POLICY, LAST_UPDATED, MIN_VRAM_GB, pageMetadata } from "@/lib/catalog"
 
-export const metadata: Metadata = {
-  title: "Privacy Policy — SeedInfer",
-  description: "SeedInfer Privacy Policy. Zero-data logging architecture, prompt handling, data retention, and your rights.",
-}
+export const metadata = pageMetadata(
+  "Privacy Policy",
+  "SeedInfer Privacy Policy: zero-data logging architecture, prompt handling, data retention and your rights.",
+  "/privacy",
+)
+
+const CACHE_TTL = `${CACHE_POLICY.ttlSeconds} s (max ${CACHE_POLICY.maxSeconds / 60} min)`
 
 export default function PrivacyPolicyPage() {
-  const lastUpdated = "2025-01-15"
+  const lastUpdated = LAST_UPDATED
 
   return (
-    <main className="min-h-screen bg-bg-primary py-12 px-4 sm:px-6 lg:px-8">
+    <AppShell>
+      <PageContainer wide={false}>
       <div className="mx-auto max-w-4xl space-y-12">
         {/* Header */}
-        <header className="text-center space-y-4">
-          <Link
-            href="/"
-            className="inline-flex items-center gap-2 text-text-secondary hover:text-text-primary transition-colors"
-          >
-            ← Back to SeedInfer
-          </Link>
+        <header className="text-center space-y-4 pt-4">
           <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-text-primary">
             Privacy Policy
           </h1>
@@ -35,7 +34,7 @@ export default function PrivacyPolicyPage() {
           </h2>
           <div className="prose prose-invert max-w-none text-sm text-text-secondary space-y-3">
             <p>
-              <strong>SeedInfer operates on a strict Zero-Data Logging architecture.</strong> We do not store, log, or retain your prompts, completions, or any inference request payloads. All inference processing occurs strictly in volatile GPU memory (VRAM/RAM) and is discarded immediately after token generation completes.
+              <strong>SeedInfer operates on a strict Zero-Data Logging architecture.</strong> We do not store, log, or retain your prompts, completions, or any inference request payloads. All inference processing occurs in volatile GPU memory (VRAM/RAM). The only exception is the in-memory prefix (KV) cache, which may keep attention state for up to {CACHE_TTL} so repeated prompt prefixes are billed as free cached input; it is never written to disk.
             </p>
             <p>
               We collect only <strong>aggregated, anonymized traffic statistics</strong> (median latency, request volume, geographic distribution, token throughput) for network routing optimization and capacity planning. No request content is ever persisted to disk.
@@ -54,7 +53,7 @@ export default function PrivacyPolicyPage() {
                 <span className="text-accent-red">✕</span> Prompts & User Inputs
               </h3>
               <p className="text-sm text-text-secondary ml-6">
-                Never written to disk. Processed in VRAM only. Discarded immediately after token generation. No KV cache persistence across requests.
+                Never written to disk. Processed in VRAM only. Prompt-prefix KV cache blocks may be reused in memory for up to {CACHE_TTL} and are then evicted.
               </p>
             </div>
             <div className="rounded-xl border border-border-dim bg-bg-secondary p-5 space-y-2">
@@ -105,7 +104,7 @@ export default function PrivacyPolicyPage() {
               <h4 className="font-mono text-xs uppercase tracking-wide text-text-tertiary">Latency Metrics</h4>
               <ul className="list-disc pl-5 text-sm text-text-secondary space-y-1">
                 <li>Median Time to First Token (TTFT)</li>
-                <li>P50 / P95 / P99 latency percentiles</li>
+                <li>Median and tail latency percentiles</li>
                 <li>Inter-token latency distribution</li>
               </ul>
             </div>
@@ -153,22 +152,22 @@ export default function PrivacyPolicyPage() {
                 <li><strong>Forward:</strong> Request forwarded via encrypted WireGuard (Tailscale) tunnel to provider node.</li>
                 <li><strong>Inference:</strong> vLLM engine loads prompt into GPU VRAM. KV cache allocated in VRAM (FP8 via <code className="bg-bg-tertiary px-1 rounded text-xs">--kv-cache-dtype fp8</code>).</li>
                 <li><strong>Generation:</strong> Tokens streamed back via SSE through same encrypted tunnel.</li>
-                <li><strong>Cleanup:</strong> <strong>Immediately after stream ends</strong>, KV cache freed, prompt tokens evicted from VRAM. No disk write occurs.</li>
+                <li><strong>Cleanup:</strong> <strong>Immediately after stream ends</strong>, the request&apos;s KV cache is released; shared prefix blocks may stay in the in-memory prefix cache for up to {CACHE_TTL}. No disk write occurs.</li>
               </ol>
             </div>
             <div className="rounded-xl border border-border-dim bg-bg-secondary p-5 space-y-3">
-              <h3 className="font-semibold text-text-primary">VRAM Cache Behavior (cv cache)</h3>
+              <h3 className="font-semibold text-text-primary">VRAM Cache Behavior (KV cache)</h3>
               <p className="text-sm text-text-secondary">
                 The vLLM KV cache resides exclusively in GPU VRAM. It functions as a <strong>transient compute buffer</strong>, not persistent storage. Cache entries are:
               </p>
               <ul className="list-disc pl-5 text-sm text-text-secondary space-y-1 ml-4">
-                <li>Allocated per-request (or prefix-cached for shared prefixes within same session)</li>
-                <li>Freed immediately upon request completion or client disconnect</li>
+                <li>Allocated per request; blocks for shared prompt prefixes may be kept in the prefix cache</li>
+                <li>Prefix-cache blocks expire after {CACHE_TTL}; all other blocks are freed on request completion or client disconnect</li>
                 <li>Never serialized to disk, never checkpointed, never backed up</li>
                 <li>Subject to GPU memory pressure eviction (LRU) automatically by vLLM</li>
               </ul>
               <p className="text-sm text-text-secondary">
-                <strong>Retention duration:</strong> Exactly the duration of the inference request (typically 100ms – 30s). Zero persistence beyond that.
+                <strong>Retention duration:</strong> the duration of the inference request, plus at most {CACHE_TTL} for reusable prompt prefixes. Nothing persists beyond that.
               </p>
             </div>
           </div>
@@ -202,7 +201,7 @@ export default function PrivacyPolicyPage() {
           </h2>
           <div className="rounded-xl border border-border-dim bg-bg-secondary p-5 space-y-3">
             <p className="text-sm text-text-secondary">
-              Provider nodes (RTX 5090 operators) run the vLLM engine in isolated Docker containers with:
+              Provider nodes (NVIDIA GPUs with at least {MIN_VRAM_GB}GB VRAM) run the vLLM engine in isolated Docker containers with:
             </p>
             <ul className="list-disc pl-5 text-sm text-text-secondary space-y-2">
               <li><strong>No persistent volumes</strong> mounted for inference workloads</li>
@@ -247,7 +246,7 @@ export default function PrivacyPolicyPage() {
                 </tr>
                 <tr className="bg-accent-red/10">
                   <td className="px-4 py-3 font-mono">KV Cache</td>
-                  <td className="px-4 py-3 font-semibold text-accent-red">Request duration only</td>
+                  <td className="px-4 py-3 font-semibold text-accent-red">Request duration (prefix cache ≤ {CACHE_TTL})</td>
                   <td className="px-4 py-3">GPU VRAM (FP8)</td>
                   <td className="px-4 py-3">Attention computation</td>
                 </tr>
@@ -325,6 +324,7 @@ export default function PrivacyPolicyPage() {
           </p>
         </footer>
       </div>
-    </main>
+      </PageContainer>
+    </AppShell>
   )
 }

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server"
+import { sanitizePublic, publicStatus } from "@/lib/public-sanitize"
 import { listProviders } from "@/lib/providers-store"
 import { getAllRoutingStats } from "@/lib/routing/selector"
 import { getAllStatuses, getAllProviderStatuses, getStats as getFallbackStats } from "@/lib/fallback-state"
@@ -46,11 +47,9 @@ export async function GET(req: Request) {
     return {
       id: p.id,
       verification: p.verification.status,
-      tailscale_ip: p.tailscale_ip,
-      agent_url: p.agent_url,
       last_heartbeat: p.last_heartbeat,
       heartbeat_count: p.heartbeat_count,
-      status: p.status,
+      status: publicStatus(p),
       // routing metrics
       ewmaTtft,
       ewmaLatency,
@@ -100,11 +99,11 @@ export async function GET(req: Request) {
       ttft_threshold_ms: Number(process.env.ROUTING_TTFT_THRESHOLD_MS || 5000),
       concurrent_penalty: 0.5,
       fallback_chain: ["local (WRR EWMA)", "nim", "opencode", "openrouter", "modal"],
-      description: "WRR weighted round robin: weight = (BASE_TTFT/EWMA_TTFT) * 1/(1+concurrent*0.5) * successRate; OpenRouter traffic ignor load, tylko TTFT",
+      description: "WRR weighted round robin: weight = (BASE_TTFT/EWMA_TTFT) * 1/(1+concurrent*0.5) * successRate; OpenRouter traffic ignores load, TTFT only",
     },
   }
 
-  return NextResponse.json(body, {
+  return NextResponse.json(sanitizePublic(body), {
     headers: {
       "Cache-Control": "no-store, max-age=0",
       "Content-Type": "application/json",

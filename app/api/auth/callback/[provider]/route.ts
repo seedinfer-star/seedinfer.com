@@ -91,10 +91,10 @@ export async function GET(req: Request, ctx: { params: Promise<{ provider: strin
 
   try {
     if (provider === "google") {
-      // Element requires refinement — set GOOGLE_CLIENT_ID etc
+      // OAuth requires GOOGLE_CLIENT_ID env
       const clientId = process.env.GOOGLE_CLIENT_ID?.trim();
       const clientSecret = process.env.GOOGLE_CLIENT_SECRET?.trim();
-      if (!clientId || !clientSecret) throw new Error("Element requires refinement — set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET");
+      if (!clientId || !clientSecret) throw new Error("Google sign-in is not available yet");
       const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -162,7 +162,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ provider: strin
       // github
       const clientId = process.env.GITHUB_CLIENT_ID?.trim();
       const clientSecret = process.env.GITHUB_CLIENT_SECRET?.trim();
-      if (!clientId || !clientSecret) throw new Error("Element requires refinement — set GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET");
+      if (!clientId || !clientSecret) throw new Error("GitHub sign-in is not available yet");
       const tokenRes = await fetch("https://github.com/login/oauth/access_token", {
         method: "POST",
         headers: { Accept: "application/json", "Content-Type": "application/json" },

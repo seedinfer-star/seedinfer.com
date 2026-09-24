@@ -15,6 +15,7 @@ import {
 } from "recharts"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
+import { useThemeColors } from "@/components/ui/use-theme-colors"
 import type { StatsResponse, TimePoint } from "@/lib/types"
 
 type Range = "30m" | "24h" | "7d" | "30d"
@@ -47,6 +48,14 @@ function toCumulative(series: TimePoint[]) {
 export default function NetworkTraffic({ stats }: { stats: StatsResponse | null }) {
   const [range, setRange] = useState<Range>("30m")
   const [mode, setMode] = useState<Mode>("per-minute")
+  const c = useThemeColors()
+  const tooltipStyle = {
+    background: "rgb(var(--bg-elevated))",
+    border: "1px solid rgb(var(--border-default))",
+    borderRadius: 8,
+    fontSize: 12,
+    color: "rgb(var(--text-primary))",
+  }
 
   const series = useMemo(() => {
     if (!stats) return []
@@ -72,8 +81,8 @@ export default function NetworkTraffic({ stats }: { stats: StatsResponse | null 
   }, [stats, range])
 
   const donutData = [
-    { name: "Input", value: totals.prompt, color: "#818cf8" },
-    { name: "Output", value: totals.completion, color: "#34d399" },
+    { name: "Input", value: totals.prompt, color: c.brand },
+    { name: "Output", value: totals.completion, color: c.green },
   ]
 
   const ranges: Range[] = ["30m", "24h", "7d", "30d"]
@@ -82,8 +91,8 @@ export default function NetworkTraffic({ stats }: { stats: StatsResponse | null 
     <div className="space-y-3">
       {/* controls */}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-[13px] font-semibold tracking-tight text-text-primary">Network traffic</h2>
-        <div className="flex items-center gap-2">
+        <h2 className="section-title">Network traffic</h2>
+        <div className="flex flex-wrap items-center gap-2">
           <div className="inline-flex rounded-lg border border-border-dim bg-bg-tertiary p-1">
             {ranges.map((r) => {
               const disabled = r !== "30m"
@@ -142,18 +151,18 @@ export default function NetworkTraffic({ stats }: { stats: StatsResponse | null 
               <AreaChart data={series} margin={{ left: 0, right: 8, top: 8, bottom: 0 }}>
                 <defs>
                   <linearGradient id="reqFill" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#818cf8" stopOpacity={0.28} />
-                    <stop offset="95%" stopColor="#818cf8" stopOpacity={0} />
+                    <stop offset="5%" stopColor={c.brand} stopOpacity={0.28} />
+                    <stop offset="95%" stopColor={c.brand} stopOpacity={0} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--border-dim)" vertical={false} />
-                <XAxis dataKey="time" tick={{ fontSize: 10, fill: "var(--text-tertiary)" }} tickLine={false} axisLine={false} interval="preserveStartEnd" minTickGap={24} />
-                <YAxis tick={{ fontSize: 10, fill: "var(--text-tertiary)" }} tickLine={false} axisLine={false} width={36} />
+                <CartesianGrid strokeDasharray="3 3" stroke={c.borderDim} vertical={false} />
+                <XAxis dataKey="time" tick={{ fontSize: 10, fill: c.textTertiary }} tickLine={false} axisLine={false} interval="preserveStartEnd" minTickGap={24} />
+                <YAxis tick={{ fontSize: 10, fill: c.textTertiary }} tickLine={false} axisLine={false} width={36} />
                 <Tooltip
-                  contentStyle={{ background: "var(--bg-secondary)", border: "1px solid var(--border-default)", borderRadius: 8, fontSize: 12 }}
-                  labelStyle={{ color: "var(--text-tertiary)", fontSize: 11 }}
+                  contentStyle={tooltipStyle}
+                  labelStyle={{ color: "rgb(var(--text-tertiary))", fontSize: 11 }}
                 />
-                <Area type="monotone" dataKey="requests" stroke="#818cf8" strokeWidth={1.8} fill="url(#reqFill)" dot={false} />
+                <Area type="monotone" dataKey="requests" stroke={c.brand} strokeWidth={1.8} fill="url(#reqFill)" dot={false} />
               </AreaChart>
             </ResponsiveContainer>
           </CardContent>
@@ -171,27 +180,27 @@ export default function NetworkTraffic({ stats }: { stats: StatsResponse | null 
               <AreaChart data={series} margin={{ left: 0, right: 8, top: 8, bottom: 0 }}>
                 <defs>
                   <linearGradient id="promptFill" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#818cf8" stopOpacity={0.32} />
-                    <stop offset="95%" stopColor="#818cf8" stopOpacity={0} />
+                    <stop offset="5%" stopColor={c.brand} stopOpacity={0.32} />
+                    <stop offset="95%" stopColor={c.brand} stopOpacity={0} />
                   </linearGradient>
                   <linearGradient id="compFill" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#34d399" stopOpacity={0.35} />
-                    <stop offset="95%" stopColor="#34d399" stopOpacity={0} />
+                    <stop offset="5%" stopColor={c.green} stopOpacity={0.35} />
+                    <stop offset="95%" stopColor={c.green} stopOpacity={0} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--border-dim)" vertical={false} />
-                <XAxis dataKey="time" tick={{ fontSize: 10, fill: "var(--text-tertiary)" }} tickLine={false} axisLine={false} interval="preserveStartEnd" minTickGap={24} />
-                <YAxis tick={{ fontSize: 10, fill: "var(--text-tertiary)" }} tickFormatter={(v) => (v >= 1e6 ? `${(v/1e6).toFixed(1)}M` : v >= 1e3 ? `${(v/1e3).toFixed(0)}k` : String(v))} tickLine={false} axisLine={false} width={42} />
+                <CartesianGrid strokeDasharray="3 3" stroke={c.borderDim} vertical={false} />
+                <XAxis dataKey="time" tick={{ fontSize: 10, fill: c.textTertiary }} tickLine={false} axisLine={false} interval="preserveStartEnd" minTickGap={24} />
+                <YAxis tick={{ fontSize: 10, fill: c.textTertiary }} tickFormatter={(v) => (v >= 1e6 ? `${(v/1e6).toFixed(1)}M` : v >= 1e3 ? `${(v/1e3).toFixed(0)}k` : String(v))} tickLine={false} axisLine={false} width={42} />
                 <Tooltip
-                  contentStyle={{ background: "var(--bg-secondary)", border: "1px solid var(--border-default)", borderRadius: 8, fontSize: 12 }}
+                  contentStyle={tooltipStyle}
                 />
-                <Area type="monotone" dataKey="prompt" stackId="1" stroke="#818cf8" fill="url(#promptFill)" strokeWidth={1.5} />
-                <Area type="monotone" dataKey="completion" stackId="1" stroke="#34d399" fill="url(#compFill)" strokeWidth={1.5} />
+                <Area type="monotone" dataKey="prompt" stackId="1" stroke={c.brand} fill="url(#promptFill)" strokeWidth={1.5} />
+                <Area type="monotone" dataKey="completion" stackId="1" stroke={c.green} fill="url(#compFill)" strokeWidth={1.5} />
               </AreaChart>
             </ResponsiveContainer>
             <div className="mt-1 flex items-center justify-center gap-3 text-[10px]">
-              <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-[#818cf8]" /> Input</span>
-              <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-[#34d399]" /> Output</span>
+              <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-accent-brand" /> Input</span>
+              <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-accent-green" /> Output</span>
             </div>
           </CardContent>
         </Card>
@@ -221,9 +230,9 @@ export default function NetworkTraffic({ stats }: { stats: StatsResponse | null 
                 </Pie>
                 <Tooltip
                   formatter={(v: number) => [(v as number).toLocaleString(), "tokens"]}
-                  contentStyle={{ background: "var(--bg-secondary)", border: "1px solid var(--border-default)", borderRadius: 8, fontSize: 12 }}
+                  contentStyle={tooltipStyle}
                 />
-                <Legend verticalAlign="bottom" height={24} iconType="circle" wrapperStyle={{ fontSize: 11, color: "var(--text-secondary)" }} />
+                <Legend verticalAlign="bottom" height={24} iconType="circle" wrapperStyle={{ fontSize: 11, color: "rgb(var(--text-secondary))" }} />
               </PieChart>
             </ResponsiveContainer>
             <div className="text-center font-mono text-[10px] text-text-tertiary">

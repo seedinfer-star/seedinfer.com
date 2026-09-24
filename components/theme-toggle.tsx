@@ -2,7 +2,6 @@
 
 import { useTheme } from "./theme-provider"
 import { Sun, Moon } from "lucide-react"
-import { useEffect, useState } from "react"
 import { cn } from "@/lib/utils"
 
 interface ThemeToggleProps {
@@ -11,48 +10,42 @@ interface ThemeToggleProps {
 }
 
 export default function ThemeToggle({ variant = "icon", className }: ThemeToggleProps) {
-  const { theme, toggleTheme, setTheme } = useTheme()
-  const [mounted, setMounted] = useState(false)
-
-  useEffect(() => {
-    setMounted(true)
-  }, [])
+  const { theme, toggleTheme, setTheme, mounted } = useTheme()
 
   if (!mounted) {
-    return (
-      <div className={cn("h-8 w-8 rounded-lg bg-bg-tertiary border border-border-dim animate-pulse", className)} />
-    )
+    if (variant === "menu") return <div className={cn("h-8 w-full rounded-lg skeleton", className)} />
+    if (variant === "segmented") return <div className={cn("h-9 w-56 rounded-xl skeleton", className)} />
+    return <div className={cn("h-8 w-8 rounded-lg skeleton", className)} />
   }
 
+  const isDark = theme === "dark"
+  const nextLabel = isDark ? "Switch to light theme" : "Switch to dark theme"
+
   if (variant === "segmented") {
+    const opt = (value: "light" | "dark", label: string, Icon: typeof Sun) => (
+      <button
+        type="button"
+        onClick={() => setTheme(value)}
+        aria-pressed={theme === value}
+        className={cn(
+          "flex flex-1 items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors",
+          theme === value
+            ? "border border-border-subtle bg-bg-secondary text-text-primary shadow-sm"
+            : "text-text-tertiary hover:text-text-secondary"
+        )}
+      >
+        <Icon className="h-3.5 w-3.5" />
+        <span>{label}</span>
+      </button>
+    )
     return (
-      <div className={cn("inline-flex items-center gap-1 rounded-xl border border-border-dim bg-bg-tertiary p-1", className)}>
-        <button
-          onClick={() => setTheme("light")}
-          className={cn(
-            "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-all",
-            theme === "light"
-              ? "bg-bg-secondary text-text-primary shadow-sm border border-border-subtle"
-              : "text-text-tertiary hover:text-text-secondary"
-          )}
-          title="Switch to White (Light) mode"
-        >
-          <Sun className="h-3.5 w-3.5 text-amber-500" />
-          <span>White mode</span>
-        </button>
-        <button
-          onClick={() => setTheme("dark")}
-          className={cn(
-            "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-all",
-            theme === "dark"
-              ? "bg-bg-secondary text-text-primary shadow-sm border border-border-subtle"
-              : "text-text-tertiary hover:text-text-secondary"
-          )}
-          title="Switch to Dark mode"
-        >
-          <Moon className="h-3.5 w-3.5 text-indigo-400" />
-          <span>Dark mode</span>
-        </button>
+      <div
+        role="group"
+        aria-label="Theme"
+        className={cn("inline-flex items-center gap-1 rounded-xl border border-border-dim bg-bg-tertiary p-1", className)}
+      >
+        {opt("light", "Light", Sun)}
+        {opt("dark", "Dark", Moon)}
       </div>
     )
   }
@@ -60,49 +53,35 @@ export default function ThemeToggle({ variant = "icon", className }: ThemeToggle
   if (variant === "menu") {
     return (
       <button
+        type="button"
         onClick={toggleTheme}
+        aria-label={nextLabel}
         className={cn(
-          "flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors",
+          "flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary",
           className
         )}
-        title={theme === "dark" ? "Switch to White (Light) mode" : "Switch to Dark mode"}
       >
-        <div className="flex items-center gap-2">
-          {theme === "dark" ? (
-            <Sun className="h-3.5 w-3.5 text-amber-500" />
-          ) : (
-            <Moon className="h-3.5 w-3.5 text-indigo-500" />
-          )}
-          <span>Appearance</span>
-        </div>
-        <span className="font-mono text-[10px] uppercase tracking-wider text-text-tertiary">
-          {theme === "dark" ? "Dark" : "White"}
+        <span className="flex items-center gap-2">
+          {isDark ? <Moon className="h-3.5 w-3.5" /> : <Sun className="h-3.5 w-3.5" />}
+          <span>Theme</span>
         </span>
+        <span className="font-mono text-[10px] uppercase tracking-wider text-text-tertiary">{isDark ? "Dark" : "Light"}</span>
       </button>
     )
   }
 
   return (
     <button
+      type="button"
       onClick={toggleTheme}
+      title={nextLabel}
+      aria-label={nextLabel}
       className={cn(
-        "relative inline-flex h-8 items-center justify-center gap-1.5 rounded-xl border border-border-default bg-bg-tertiary px-2.5 text-xs font-medium text-text-secondary transition-all hover:bg-bg-hover hover:text-text-primary active:scale-95 shadow-sm",
+        "inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border-default bg-bg-secondary text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary",
         className
       )}
-      title={theme === "dark" ? "Switch to White (Light) mode" : "Switch to Dark mode"}
-      aria-label="Toggle theme mode"
     >
-      {theme === "dark" ? (
-        <>
-          <Sun className="h-3.5 w-3.5 text-amber-400 transition-transform duration-300 rotate-0 hover:rotate-45" />
-          <span className="hidden sm:inline text-[11px] font-medium">White mode</span>
-        </>
-      ) : (
-        <>
-          <Moon className="h-3.5 w-3.5 text-indigo-600 transition-transform duration-300" />
-          <span className="hidden sm:inline text-[11px] font-medium">Dark mode</span>
-        </>
-      )}
+      {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
     </button>
   )
 }

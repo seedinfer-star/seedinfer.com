@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import type { ProviderLocation } from "@/lib/types"
 
-const Map = dynamic(() => import("./map"), { ssr: false, loading: () => <div className="h-[360px] animate-pulse rounded-xl bg-bg-tertiary" /> })
+const Map = dynamic(() => import("./map"), { ssr: false, loading: () => <div className="skeleton h-[360px] rounded-xl" /> })
 
 type Props = {
   locations: ProviderLocation[]
@@ -18,10 +18,10 @@ export default function LiveNetworkFlow({ locations, regions }: Props) {
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <h2 className="text-[13px] font-semibold tracking-tight text-text-primary">Live Network Flow</h2>
+        <h2 className="section-title">Provider locations</h2>
         <Badge variant="success" className="font-mono text-[10px] uppercase tracking-wide">
           <span className="mr-1.5 h-1.5 w-1.5 animate-pulse rounded-full bg-accent-green" />
-          Live · MapLibre
+          Live
         </Badge>
       </div>
 
@@ -35,7 +35,7 @@ export default function LiveNetworkFlow({ locations, regions }: Props) {
           <CardContent className="p-2 pt-0">
             <Map locations={locations} height={360} />
             <p className="mt-2 font-mono text-[10px] text-text-tertiary">
-              MapLibre GL · dots sized by providers
+              Dot size = providers per city · locations are coarse (city level) for privacy
             </p>
           </CardContent>
         </Card>
@@ -48,6 +48,9 @@ export default function LiveNetworkFlow({ locations, regions }: Props) {
               </CardTitle>
             </CardHeader>
             <CardContent className="grid grid-cols-1 gap-2 p-3 pt-0">
+              {topRegions.length === 0 && (
+                <p className="rounded-lg border border-dashed border-border-dim px-3 py-4 text-center text-xs text-text-tertiary">No regions reported yet.</p>
+              )}
               {topRegions.map((r) => (
                 <div key={r.key} className="flex items-center justify-between rounded-lg border border-border-dim bg-bg-tertiary/60 px-3 py-2">
                   <div className="min-w-0">
@@ -73,6 +76,9 @@ export default function LiveNetworkFlow({ locations, regions }: Props) {
               </CardTitle>
             </CardHeader>
             <CardContent className="p-3 pt-0">
+              {top.length === 0 && (
+                <p className="rounded-lg border border-dashed border-border-dim px-3 py-4 text-center text-xs text-text-tertiary">No provider locations reported yet.</p>
+              )}
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 {top.map((loc) => (
                   <div key={loc.key} className="rounded-lg border border-border-dim bg-bg-tertiary/50 p-2.5">

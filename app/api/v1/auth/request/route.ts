@@ -85,7 +85,7 @@ function errorResponse(message: string, status = 503) {
   return NextResponse.json(
     {
       error: message,
-      hint: "Headscale control plane unavailable. Retry: curl -fsSL https://seedinfer.com/api/v1/auth/request | jq — or contact support via dashboard.seedinfer.com / docs.seedinfer.com",
+      hint: "Provider onboarding is temporarily unavailable. Retry in 30s or see https://seedinfer.com/docs",
       login_server: "https://tailnet.seedinfer.com",
       gateway: "https://seedinfer.com",
       retry_after: 30,

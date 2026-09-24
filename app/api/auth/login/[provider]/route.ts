@@ -43,7 +43,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ provider: strin
     return NextResponse.json({ error: "unsupported provider, use google or github" }, { status: 400 });
   }
 
-  // Element requires refinement — set GOOGLE_CLIENT_ID etc
+  // OAuth requires GOOGLE_CLIENT_ID / GITHUB_CLIENT_ID env
   const googleId = process.env.GOOGLE_CLIENT_ID?.trim();
   const githubId = process.env.GITHUB_CLIENT_ID?.trim();
   const oauthEnabled = process.env.OAUTH_ENABLED ?? "true"; // default enabled if IDs present
@@ -53,13 +53,13 @@ export async function GET(req: Request, ctx: { params: Promise<{ provider: strin
 
   if (provider === "google" && !googleId) {
     return NextResponse.json(
-      { error: "Element requires refinement — set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in .env (Google Cloud Console OAuth client)" },
+      { error: "Google sign-in is not available yet. Please use email and password." },
       { status: 503 }
     );
   }
   if (provider === "github" && !githubId) {
     return NextResponse.json(
-      { error: "Element requires refinement — set GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET in .env (GitHub OAuth App)" },
+      { error: "GitHub sign-in is not available yet. Please use email and password." },
       { status: 503 }
     );
   }

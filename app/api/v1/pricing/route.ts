@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server"
+import { MODELS, CACHE_POLICY, perTokenUsd, usd } from "@/lib/catalog"
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -13,60 +14,37 @@ export async function OPTIONS() {
 export async function GET() {
   const body = {
     object: "pricing",
-    data: [
-      {
-        id: "seedinfer/nemotron-lightning-1m",
-        object: "model" as const,
-        pricing: {
-          prompt: "0.00002",
-          completion: "0.00005",
-          cache_read: "0.0",
-        },
-        // human readable
-        per_1m: {
-          input: "$0.02",
-          output: "$0.05",
-          cache_read: "$0.00",
-        },
-        context_length: 1048576,
-        max_output: 1048576,
-        cache: "60s free / 5min max (prefix caching)",
-        description: "Nemotron Lightning 1M (2M KV) - $0.02/1M in $0.05/1M out cache 60s free",
-        status: "active",
-        aliases: ["gpt-oss-20b"],
+    data: MODELS.map((m) => ({
+      id: m.id,
+      object: "model" as const,
+      name: m.name,
+      hugging_face_id: m.hfId || undefined,
+      // per-token USD (per-1M / 1e6)
+      pricing: {
+        prompt: perTokenUsd(m.pricePer1M.input),
+        completion: perTokenUsd(m.pricePer1M.output),
+        cache_read: perTokenUsd(m.pricePer1M.cachedInput),
       },
-      {
-        id: "qwen3.6-35b-a3b",
-        object: "model" as const,
-        pricing: {
-          prompt: "0.00006",
-          completion: "0.0005",
-        },
-        per_1m: { input: "$0.06", output: "$0.50" },
-        context_length: 131072,
-        description: "Qwen 3.6 35B A3B — is coming",
-        status: "is coming",
+      // human readable, per 1M tokens
+      per_1m: {
+        input: usd(m.pricePer1M.input),
+        output: usd(m.pricePer1M.output),
+        cache_read: usd(m.pricePer1M.cachedInput),
       },
-      {
-        id: "gemma-4-26b-a4b",
-        object: "model" as const,
-        pricing: {
-          prompt: "modal",
-          completion: "modal",
-        },
-        per_1m: { input: "on Modal", output: "on Modal" },
-        description: "Gemma 4 26B A4B — is coming · on Modal",
-        status: "is coming",
-      },
-    ],
+      context_length: m.contextLength,
+      max_output: m.contextLength,
+      description: m.description,
+      status: m.status,
+      aliases: m.status === "live" ? m.aliases : [],
+    })),
     currency: "USD",
-    unit: "per 1M tokens",
-    cache_policy: "prefix caching 60s free, 5min max",
+    unit: "pricing = USD per token; per_1m = USD per 1M tokens",
+    cache_policy: CACHE_POLICY.label,
   }
 
   return NextResponse.json(body, {
     headers: {
-      "Cache-Control": "public, s-maxage=3600, stale-while-revalidate=86400",
+      "Cache-Control": "public, s-maxage=300, stale-while-revalidate=600",
       "Content-Type": "application/json",
       ...CORS_HEADERS,
     },

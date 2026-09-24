@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server"
+import { sanitizePublic } from "@/lib/public-sanitize"
 import { upsertProvider, getProvider } from "@/lib/providers-store"
 import { getProviderStat } from "@/lib/routing/selector"
 import { getProviderCircuitState } from "@/lib/fallback-state"
@@ -167,7 +168,7 @@ export async function POST(req: Request) {
       ok: true,
       provider_id: stored.id,
       status: stored.status,
-      verification: stored.verification,
+      verification: sanitizePublic(stored.verification),
       last_heartbeat: stored.last_heartbeat,
       heartbeat_count: stored.heartbeat_count,
       // hint for provider: should poll verify status
@@ -196,9 +197,9 @@ export async function GET() {
       example: {
         id: "provider-5090-xxx",
         chip: "GeForce RTX 5090",
-        current_model: "seedinfer/nemotron-lightning-1m",
+        current_model: "google/gemma-4-26b-a4b-nvfp4",
         vllm_health: { status: "ok" },
-        gpu: { count: 1, devices: [{ name: "NVIDIA GeForce RTX 5090", memory_total_mb: 24576 }] },
+        gpu: { count: 1, devices: [{ name: "NVIDIA GeForce RTX 5090", memory_total_mb: 32768 }] },
       },
     },
     { headers: CORS_HEADERS }

@@ -1,173 +1,223 @@
 "use client"
-import { useEffect, useState } from "react"
-import Sidebar from "@/components/sidebar"
+import { useCallback, useEffect, useRef, useState } from "react"
+import Link from "next/link"
+import AppShell, { PageContainer, PageHeader } from "@/components/app-shell"
 import KpiGrid from "@/components/kpi-grid"
 import NetworkTraffic from "@/components/network-traffic"
 import LiveNetworkFlow from "@/components/live-network-flow"
 import ProviderFleet from "@/components/provider-fleet"
 import ModelsCatalog from "@/components/models-catalog"
 import TransparencyFooter from "@/components/transparency-footer"
-import HeroMission from "@/components/hero-mission"
 import Economics from "@/components/economics"
 import Calculator from "@/components/calculator"
 import WhiteGlove from "@/components/whiteglove"
 import Roadmap from "@/components/roadmap"
-import ThemeToggle from "@/components/theme-toggle"
+import { Card } from "@/components/ui/card"
 import { fetchStats } from "@/lib/api"
 import type { StatsResponse } from "@/lib/types"
-import { RefreshCw, AlertTriangle, Server, Terminal, FileText } from "lucide-react"
-import Link from "next/link"
+import { LIVE_MODEL, REVENUE_SHARE_PCT, priceLabel } from "@/lib/catalog"
+import { RefreshCw, AlertTriangle, Server, ArrowRight } from "lucide-react"
+
+const REFRESH_MS = 15_000
 
 export default function StatsDashboard() {
   const [stats, setStats] = useState<StatsResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [lastFetch, setLastFetch] = useState<string>("")
+  const [lastFetch, setLastFetch] = useState<string | null>(null)
+  const hasData = useRef(false)
 
-  const load = async (force = false) => {
+  const load = useCallback(async (force = false) => {
     try {
       setError(null)
-      if (!stats) setLoading(true)
+      if (!hasData.current) setLoading(true)
       const data = await fetchStats(force)
+      hasData.current = true
       setStats(data)
       setLastFetch(new Date().toLocaleTimeString())
     } catch (e: any) {
-      setError(e?.message ?? "Failed to load stats — SeedInfer Network Statistics unavailable")
+      setError(e?.message ?? "Network statistics are temporarily unavailable")
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
 
   useEffect(() => {
     load()
-    const id = setInterval(() => load(true), 15_000)
+    const id = setInterval(() => load(true), REFRESH_MS)
     return () => clearInterval(id)
-  }, [])
+  }, [load])
+
+  const ready = !!stats
 
   return (
-    <div className="flex h-screen overflow-hidden bg-bg-primary">
-      <Sidebar />
-      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <header className="flex h-[48px] shrink-0 items-center justify-between border-b border-border-dim bg-bg-secondary px-4">
-          <div className="min-w-0">
-            <h1 className="truncate text-[13px] font-semibold tracking-tight text-text-primary">Network stats</h1>
-            <p className="truncate font-mono text-[11px] text-text-tertiary">
-              SeedInfer P2P inference · live from /api/stats · cache 15s
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="hidden font-mono text-[10px] text-text-tertiary sm:inline">Last fetch: {lastFetch || "—"}</span>
-            <button
-              onClick={() => load(true)}
-              className="inline-flex items-center gap-1.5 rounded-xl border border-border-default bg-bg-tertiary px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-all"
-            >
-              <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
-              Refresh
-            </button>
-            <ThemeToggle variant="icon" />
-          </div>
-        </header>
-
-        <main className="min-h-0 flex-1 overflow-y-auto bg-bg-primary">
-          <div className="mx-auto max-w-[1600px] space-y-8 p-4 sm:p-6 lg:space-y-10">
-            {error && (
-              <div className="flex items-start gap-2 rounded-xl border border-accent-red/20 bg-accent-red/10 px-4 py-3 text-sm text-accent-red">
-                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-                <div className="min-w-0 flex-1">
-                  <div className="font-semibold">Upstream unavailable (502)</div>
-                  <div className="mt-0.5 font-mono text-xs leading-4 break-all">{error}</div>
-                  <div className="mt-1 font-mono text-[11px] text-accent-red/80">
-                    Retrying every 15s. Check{" "}
-                    <code className="rounded bg-accent-red/10 px-1">/api/stats</code>
-                  </div>
-                </div>
-              </div>
+    <AppShell>
+      <PageHeader
+        title="Network stats"
+        description={
+          <>
+            Live from <code>/api/stats</code> · refresh 15 s ·{" "}
+            {lastFetch ? (
+              <>updated {lastFetch}</>
+            ) : (
+              <span className="skeleton inline-block h-2.5 w-14 align-middle" aria-label="Loading" />
             )}
-            {loading && !stats && !error && (
-              <div className="rounded-xl border border-border-dim bg-bg-secondary px-4 py-3 text-sm text-text-tertiary">
-                Loading stats from <code className="rounded bg-bg-tertiary px-1">/api/stats</code> …
-              </div>
-            )}
-            {!loading && !stats && error && (
-              <div className="rounded-xl border border-border-dim bg-bg-secondary px-4 py-8 text-center">
-                <div className="font-mono text-sm font-semibold text-text-primary">No data — upstream unavailable</div>
-                <div className="mx-auto mt-2 max-w-xl font-mono text-xs leading-4 text-text-tertiary">
-                  Make sure <code className="rounded bg-bg-tertiary px-1">/api/stats</code> is reachable
-                  or check the logs. Returning 502 error.
-                </div>
-              </div>
-            )}
+          </>
+        }
+        actions={
+          <button
+            type="button"
+            onClick={() => load(true)}
+            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border-default bg-bg-secondary px-3 text-xs font-medium text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
+            <span className="hidden sm:inline">Refresh</span>
+          </button>
+        }
+      />
 
-            {/* S0 — Hero Mission */}
-            <HeroMission />
-
-            {/* S1 — Provider CTA — one-liner + fleet links (SeedInfer-first) */}
-            <div className="rounded-xl border border-accent-brand/20 bg-gradient-to-r from-accent-brand/10 via-bg-secondary to-bg-secondary p-4">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="inline-flex items-center gap-1 rounded-full bg-accent-green/15 px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide text-accent-green">Gemma 4 NVFP4 · 1M ctx</span>
-                    <span className="inline-flex items-center rounded-full border border-border-dim bg-bg-tertiary px-2 py-0.5 font-mono text-[10px] text-text-secondary">$0.03 / $0.20 per 1M</span>
-                    <span className="inline-flex items-center rounded-full border border-border-dim bg-bg-tertiary px-2 py-0.5 font-mono text-[10px] text-text-secondary">CUDA 13.3 · 580+ · 47900/47901</span>
-                    <span className="hidden sm:inline font-mono text-[11px] text-text-tertiary">RTX 5090 32GB min · Ubuntu 24.04 · 50GB HF · 60GB+ free</span>
-                  </div>
-                  <div className="mt-2 flex flex-col gap-1">
-                    <div className="text-sm font-semibold text-text-primary">Run a node — Become a Provider</div>
-                    <div className="flex flex-wrap items-center gap-2 font-mono text-xs text-text-secondary">
-                      <Terminal className="h-3.5 w-3.5 text-accent-brand" />
-                      <code className="rounded bg-bg-tertiary px-1.5 py-0.5 text-[11px]">curl -fsSL https://seedinfer.com/install.sh | bash -s -- --authkey hskey-xxx</code>
-                      <span className="text-text-tertiary">· host 1:1 marlin/flashinfer/fp8/0.93/128/4096 · fleet</span>
-                      <Link href="/providers" className="text-accent-brand hover:underline">/providers</Link>
-                      <span className="text-text-tertiary">·</span>
-                      <Link href="/docs" className="text-accent-brand hover:underline">/docs</Link>
-                    </div>
-                  </div>
-                </div>
-                <div className="flex shrink-0 flex-wrap items-center gap-2">
-                  <Link href="/provider" className="inline-flex items-center gap-1.5 rounded-xl bg-accent-brand px-4 py-2 text-sm font-semibold text-white hover:bg-accent-brand-hover">
-                    <Server className="h-4 w-4" /> Become a Provider →
-                  </Link>
-                  <Link href="/providers" className="inline-flex items-center gap-1.5 rounded-xl border border-border-default bg-bg-tertiary px-4 py-2 text-sm font-medium text-text-primary hover:bg-bg-hover">
-                    <Server className="h-4 w-4" /> Fleet
-                  </Link>
-                  <Link href="/docs" className="inline-flex items-center gap-1.5 rounded-xl border border-border-default bg-bg-secondary px-3 py-2 text-sm font-medium text-text-secondary hover:bg-bg-hover">
-                    <FileText className="h-3.5 w-3.5" /> Docs
-                  </Link>
-                </div>
+      <PageContainer className="space-y-10">
+        {error && (
+          <div
+            role="alert"
+            className="flex items-start gap-2 rounded-xl border border-accent-red/20 bg-accent-red/10 px-4 py-3 text-sm text-accent-red"
+          >
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+            <div className="min-w-0 flex-1">
+              <div className="font-semibold">Network statistics unavailable</div>
+              <div className="mt-0.5 break-all font-mono text-xs">{error}</div>
+              <div className="mt-1 font-mono text-[11px] text-accent-red/80">
+                {ready ? "Showing the last successful snapshot. " : ""}Retrying every 15 s.
               </div>
             </div>
+          </div>
+        )}
 
-            <KpiGrid stats={stats} loading={loading} />
+        {/* KPIs */}
+        <section aria-labelledby="kpi-h" className="space-y-3">
+          <h2 id="kpi-h" className="section-title">
+            Network at a glance
+          </h2>
+          <KpiGrid stats={stats} loading={!ready} />
+        </section>
 
-            {/* S3 — Economics · why 32GB */}
-            <Economics />
+        {/* Traffic */}
+        {ready ? (
+          <NetworkTraffic stats={stats} />
+        ) : (
+          <ChartsSkeleton />
+        )}
 
-            <NetworkTraffic stats={stats} />
+        {/* Map */}
+        {ready ? (
+          <LiveNetworkFlow locations={stats.provider_locations ?? []} regions={stats.provider_regions ?? []} />
+        ) : (
+          <MapSkeleton />
+        )}
 
-            <LiveNetworkFlow locations={stats?.provider_locations ?? []} regions={stats?.provider_regions ?? []} />
+        {/* Fleet */}
+        {ready ? <ProviderFleet providers={stats.providers ?? []} /> : <FleetSkeleton />}
 
-            {/* S6 — Net-Profit Calculator */}
-            <Calculator />
+        {/* Models */}
+        {ready ? <ModelsCatalog models={stats.models ?? []} /> : null}
 
-            <ProviderFleet providers={stats?.providers ?? []} />
-
-            {/* S8 — White-Glove Concierge */}
-            <WhiteGlove />
-
-            {/* S9 — Roadmap 4 phases */}
-            <Roadmap />
-
-            <ModelsCatalog models={stats?.models ?? []} />
-
-            <TransparencyFooter />
-
-            <div className="border-t border-border-dim pt-4 font-mono text-[10px] leading-4 text-text-tertiary">
-              SeedInfer.com · Built with Next.js 15 App Router + Tailwind 3.4 + shadcn/ui + Recharts + MapLibre GL ·
-              Data: <code className="rounded bg-bg-tertiary px-1">/api/stats</code> (revalidate 15s). On error returns 502
-              with OpenAI-compatible error shape.
+        {/* Provider CTA */}
+        <Card className="overflow-hidden border-accent-brand/20 bg-gradient-to-r from-accent-brand/10 via-bg-secondary to-bg-secondary p-5">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="inline-flex items-center rounded-full bg-accent-green/15 px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide text-accent-green">
+                  {REVENUE_SHARE_PCT}% revenue share
+                </span>
+                <span className="inline-flex items-center rounded-full border border-border-dim bg-bg-tertiary px-2 py-0.5 font-mono text-[10px] text-text-secondary">
+                  Serving {LIVE_MODEL.shortName} · {priceLabel(LIVE_MODEL)} per 1M
+                </span>
+              </div>
+              <h2 className="mt-2 text-base font-semibold tracking-tight text-text-primary">Run a node on your NVIDIA GPU</h2>
+              <p className="mt-1 max-w-2xl text-sm text-text-secondary">
+                One command installs the agent, joins the network and starts serving. Providers keep {REVENUE_SHARE_PCT}% of
+                what their GPU earns.
+              </p>
+            </div>
+            <div className="flex shrink-0 flex-wrap gap-2">
+              <Link
+                href="/provider"
+                className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-accent-brand px-4 text-sm font-medium text-white transition-colors hover:bg-accent-brand-hover"
+              >
+                <Server className="h-4 w-4" /> Become a provider
+              </Link>
+              <Link
+                href="/providers"
+                className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-border-default bg-bg-secondary px-4 text-sm font-medium text-text-primary transition-colors hover:bg-bg-hover"
+              >
+                Provider fleet <ArrowRight className="h-3.5 w-3.5" />
+              </Link>
             </div>
           </div>
-        </main>
+        </Card>
+
+        <Economics />
+        <Calculator />
+        <WhiteGlove />
+        <Roadmap />
+        <TransparencyFooter />
+      </PageContainer>
+    </AppShell>
+  )
+}
+
+function ChartsSkeleton() {
+  return (
+    <div className="space-y-3" aria-busy="true" aria-label="Loading traffic charts">
+      <div className="skeleton h-4 w-32" />
+      <div className="grid gap-3 lg:grid-cols-3">
+        {Array.from({ length: 3 }).map((_, i) => (
+          <Card key={i} className="h-[280px] p-4">
+            <div className="skeleton h-3 w-28" />
+            <div className="skeleton mt-4 h-[210px] w-full" />
+          </Card>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function MapSkeleton() {
+  return (
+    <div className="space-y-3" aria-busy="true" aria-label="Loading provider map">
+      <div className="skeleton h-4 w-36" />
+      <div className="grid gap-3 lg:grid-cols-[1.6fr_1fr]">
+        <Card className="p-4">
+          <div className="skeleton h-3 w-44" />
+          <div className="skeleton mt-4 h-[360px] w-full rounded-xl" />
+        </Card>
+        <Card className="space-y-2 p-4">
+          <div className="skeleton h-3 w-24" />
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="skeleton h-11 w-full" />
+          ))}
+        </Card>
+      </div>
+    </div>
+  )
+}
+
+function FleetSkeleton() {
+  return (
+    <div className="space-y-3" aria-busy="true" aria-label="Loading provider fleet">
+      <div className="skeleton h-4 w-28" />
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <Card key={i} className="h-[220px] p-4">
+            <div className="skeleton h-3 w-24" />
+            <div className="skeleton mt-3 h-3 w-40" />
+            <div className="skeleton mt-6 h-16 w-full" />
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <div className="skeleton h-10" />
+              <div className="skeleton h-10" />
+            </div>
+          </Card>
+        ))}
       </div>
     </div>
   )

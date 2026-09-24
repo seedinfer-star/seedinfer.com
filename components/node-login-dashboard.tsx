@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { LIVE_MODEL, PROVIDER_ECONOMICS, REVENUE_SHARE_PCT } from "@/lib/catalog"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -36,24 +37,16 @@ export default function NodeLoginDashboard() {
       const json = await res.json()
       const providers = json.data || []
       // Match by public_key or id
-      const matched = providers.find(
-        (p: any) => p.public_key === key || p.id === key || p.public_key?.includes(key) || key.includes(p.public_key)
-      )
+      const k = key.trim()
+      const matched = providers.find((p: any) => {
+        const pk = typeof p.public_key === "string" ? p.public_key.trim() : ""
+        return p.id === k || (pk.length > 0 && (pk === k || pk.includes(k) || k.includes(pk)))
+      })
       if (matched) {
         setNodeData(matched)
       } else {
-        // Fallback demo node data if newly generated key
-        setNodeData({
-          id: key.slice(0, 16),
-          public_key: key,
-          status: "serving",
-          current_model: "google/gemma-4-26b-a4b-nvfp4",
-          verification: { status: "verified" },
-          requests_served: 1420,
-          tokens_generated: 854000,
-          ewmaTtft: 14.2,
-          chip: "NVIDIA GeForce RTX 5090",
-        })
+        setNodeData(null)
+        setError("No node with this key has sent a heartbeat yet. Start the agent and refresh in a minute.")
       }
     } catch (e: any) {
       setError(e?.message || "Failed to fetch node telemetry")
@@ -91,7 +84,11 @@ export default function NodeLoginDashboard() {
 
   if (isLoggedIn && pubKey) {
     const totalTokens = nodeData?.tokens_generated || 0
-    const estEarningsUSD = ((totalTokens / 1_000_000) * 0.05 + 0.4 * 30).toFixed(2)
+    // Output tokens served × live output price × provider share + 30 days of standby retainer
+    const estEarningsUSD = (
+      (totalTokens / 1_000_000) * LIVE_MODEL.pricePer1M.output * PROVIDER_ECONOMICS.revenueShare +
+      PROVIDER_ECONOMICS.standbyPerDayUsd * 30
+    ).toFixed(2)
     const isHardwareMismatch = nodeData?.hardware_mismatch || false
 
     return (
@@ -106,7 +103,7 @@ export default function NodeLoginDashboard() {
                 <CardTitle className="text-sm font-semibold text-text-primary flex items-center gap-2">
                   Node Operator Dashboard
                   <Badge variant="success" className="font-mono text-[10px] gap-1">
-                    <CheckCircle className="h-3 w-3" /> Passwordless Verified
+                    <CheckCircle className="h-3 w-3" /> Key session
                   </Badge>
                 </CardTitle>
                 <div className="font-mono text-xs text-text-tertiary">
@@ -125,6 +122,9 @@ export default function NodeLoginDashboard() {
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
+          {error && (
+            <div className="rounded-xl border border-accent-amber/30 bg-accent-amber/10 p-3 font-mono text-xs text-text-secondary">{error}</div>
+          )}
           {isHardwareMismatch && (
             <div className="rounded-xl border border-accent-red/30 bg-accent-red/10 p-3.5 text-xs font-mono text-accent-red flex items-start gap-2.5">
               <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
@@ -140,25 +140,28 @@ export default function NodeLoginDashboard() {
                 <Activity className="h-3.5 w-3.5 text-accent-green" /> Node Status
               </div>
               <div className="mt-1.5 flex items-center gap-2">
-                <span className="h-2.5 w-2.5 rounded-full bg-accent-green animate-pulse" />
+                <span
+                  className={`h-2.5 w-2.5 rounded-full ${nodeData && !nodeData.stale ? "bg-accent-green animate-pulse" : "bg-text-tertiary"}`}
+                  aria-hidden="true"
+                />
                 <span className="font-mono text-base font-semibold text-text-primary uppercase">
-                  {nodeData?.status || "Serving"}
+                  {nodeData ? (nodeData.stale ? "offline" : nodeData.status || "unknown") : "not found"}
                 </span>
               </div>
               <div className="font-mono text-[10px] text-text-tertiary mt-1">
-                {nodeData?.chip || "RTX 5090 32GB"} · {nodeData?.current_model || "Gemma 4 26B"}
+                {nodeData?.chip || "—"} · {nodeData?.current_model || "—"}
               </div>
             </div>
 
             <div className="rounded-xl border border-border-dim bg-bg-primary/80 p-3.5">
               <div className="font-mono text-[11px] uppercase tracking-wide text-text-tertiary flex items-center gap-1.5">
-                <Cpu className="h-3.5 w-3.5 text-accent-brand" /> Latency p99 TTFT
+                <Cpu className="h-3.5 w-3.5 text-accent-brand" /> Avg TTFT (EWMA)
               </div>
               <div className="mt-1.5 font-mono text-base font-semibold text-text-primary">
-                {nodeData?.ewmaTtft ? `${nodeData.ewmaTtft.toFixed(1)} ms` : "14.2 ms"}
+                {nodeData?.ewmaTtft ? `${Number(nodeData.ewmaTtft).toFixed(1)} ms` : "—"}
               </div>
               <div className="font-mono text-[10px] text-accent-green mt-1">
-                Priority Proxy Active (p99 Protected)
+                Measured by the gateway
               </div>
             </div>
 
@@ -182,7 +185,7 @@ export default function NodeLoginDashboard() {
                 ${estEarningsUSD} USD
               </div>
               <div className="font-mono text-[10px] text-text-tertiary mt-1">
-                $0.40/day cover + $0.05/M token share
+                {REVENUE_SHARE_PCT}% of token revenue + ${PROVIDER_ECONOMICS.standbyPerDayUsd.toFixed(2)}/day standby
               </div>
             </div>
           </div>
@@ -201,7 +204,9 @@ export default function NodeLoginDashboard() {
           </Badge>
         </CardTitle>
         <p className="font-mono text-xs text-text-tertiary">
-          Paste your <code className="rounded bg-bg-tertiary px-1 text-text-primary">PUBLIC KEY</code> or the contents of <code className="rounded bg-bg-tertiary px-1 text-text-primary">/opt/seedinfer-provider/seedinfer.env</code> to inspect node telemetry, p99 TTFT, and monthly earnings without registering an account.
+          Paste your node&apos;s public key (<code className="rounded bg-bg-tertiary px-1 text-text-primary">SEEDINFER_PUBLIC_KEY</code> from{" "}
+          <code className="rounded bg-bg-tertiary px-1 text-text-primary">seedinfer.env</code>) to see its status, TTFT and estimated earnings — no account needed.
+          Never paste or share your private key.
         </p>
       </CardHeader>
       <CardContent>
@@ -210,7 +215,8 @@ export default function NodeLoginDashboard() {
             type="text"
             value={inputKey}
             onChange={(e) => setInputKey(e.target.value)}
-            placeholder="Paste Public Key (pubkey_ed25519_...) or seedinfer.env content..."
+            placeholder="SEEDINFER_PUBLIC_KEY"
+            aria-label="Node public key"
             className="flex-1 rounded-xl border border-border-default bg-bg-primary px-3.5 py-2 font-mono text-xs text-text-primary placeholder:text-text-tertiary focus:border-accent-brand focus:outline-none"
           />
           <Button type="submit" className="bg-accent-brand font-mono text-xs text-white hover:bg-accent-brand-hover">

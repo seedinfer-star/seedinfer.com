@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server"
+import { sanitizePublic, sanitizeProvider } from "@/lib/public-sanitize"
 import { verifyProvider, getProvider } from "@/lib/providers-store"
 import { getProviderStat } from "@/lib/routing/selector"
 import { getProviderCircuitState } from "@/lib/fallback-state"
@@ -66,10 +67,10 @@ export async function POST(req: Request) {
       {
         ok: true,
         provider_id: result.provider.id,
-        verification: result.provider.verification,
+        verification: sanitizePublic(result.provider.verification),
         passed: result.passed,
-        checks: result.checks,
-        provider: result.provider,
+        checks: sanitizePublic(result.checks),
+        provider: sanitizeProvider(result.provider),
         routing: routingStat,
         circuit,
         ttft_probe_ms: ttft,
@@ -121,7 +122,7 @@ export async function GET(req: Request) {
     {
       message: "Use POST /api/v1/providers/verify {provider_id, agent_url?}",
       example: { provider_id: "provider-5090-xxx", agent_url: "http://100.64.0.10:3001" },
-      hint: "Gateway wykonuje health check na providerze: GET /health oraz POST /v1/chat/completions {model:'seedinfer/nemotron-lightning-1m',messages:[{role:'user',content:'ping'}],max_tokens:5}",
+      hint: "Gateway runs health checks on the provider: GET /health oraz POST /v1/chat/completions {model:'google/gemma-4-26b-a4b-nvfp4',messages:[{role:'user',content:'ping'}],max_tokens:5}",
     },
     { headers: CORS_HEADERS }
   )

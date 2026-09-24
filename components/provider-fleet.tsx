@@ -6,11 +6,14 @@ import { Input } from "@/components/ui/input"
 import type { Provider } from "@/lib/types"
 import { Cpu, HardDrive, MemoryStick, ShieldCheck, Search, Activity, Zap, Clock, CheckCircle2, XCircle, Loader2 } from "lucide-react"
 
-type Props = { providers: Provider[] & Array<Provider & { verification?: { status: string; checks?: any[]; last_check?: string | null; failure_reason?: string } }> }
+type Props = {
+  /** Section heading; pass null to hide (when the parent renders its own header). */
+  title?: string | null
+  providers: Provider[] & Array<Provider & { verification?: { status: string; checks?: any[]; last_check?: string | null; failure_reason?: string } }> }
 
 type SortKey = "tokens" | "requests" | "memory" | "gpu"
 
-export default function ProviderFleet({ providers }: Props) {
+export default function ProviderFleet({ providers, title = "Provider fleet" }: Props) {
   const [q, setQ] = useState("")
   const [model, setModel] = useState("all")
   const [trust, setTrust] = useState("all")
@@ -19,7 +22,7 @@ export default function ProviderFleet({ providers }: Props) {
 
   const models = useMemo(() => {
     const s = new Set<string>()
-    providers.forEach((p) => p.models.forEach((m) => s.add(m)))
+    providers.forEach((p) => (p.models ?? []).forEach((m) => s.add(m)))
     return ["all", ...Array.from(s).sort()]
   }, [providers])
 
@@ -27,14 +30,14 @@ export default function ProviderFleet({ providers }: Props) {
     let arr = [...providers]
     if (q) {
       const qq = q.toLowerCase()
-      arr = arr.filter((p) => p.chip.toLowerCase().includes(qq) || p.id.toLowerCase().includes(qq) || p.current_model.toLowerCase().includes(qq))
+      arr = arr.filter((p) => [p.chip, p.id, p.current_model].some((v) => String(v ?? "").toLowerCase().includes(qq)))
     }
-    if (model !== "all") arr = arr.filter((p) => p.models.includes(model) || p.current_model === model)
+    if (model !== "all") arr = arr.filter((p) => (p.models ?? []).includes(model) || p.current_model === model)
     if (trust !== "all") arr = arr.filter((p) => p.trust_level === trust)
     if (status !== "all") arr = arr.filter((p) => p.status === status)
     arr.sort((a, b) => {
-      if (sort === "tokens") return b.tokens_generated - a.tokens_generated
-      if (sort === "requests") return b.requests_served - a.requests_served
+      if (sort === "tokens") return (b.tokens_generated ?? 0) - (a.tokens_generated ?? 0)
+      if (sort === "requests") return (b.requests_served ?? 0) - (a.requests_served ?? 0)
       if (sort === "memory") return b.memory_gb - a.memory_gb
       if (sort === "gpu") return b.gpu_cores - a.gpu_cores
       return 0
@@ -45,23 +48,29 @@ export default function ProviderFleet({ providers }: Props) {
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-[13px] font-semibold tracking-tight text-text-primary">
-          Provider fleet{" "}
-          <span className="font-mono text-xs font-normal text-text-tertiary">· {providers.length} total · showing {filtered.length}</span>
-        </h2>
+        {title !== null ? (
+          <h2 className="section-title">
+            {title}{" "}
+            <span className="font-mono text-xs font-normal text-text-tertiary">· {providers.length} total · showing {filtered.length}</span>
+          </h2>
+        ) : (
+          <span className="font-mono text-xs text-text-tertiary">
+            {providers.length} total · showing {filtered.length}
+          </span>
+        )}
         <div className="flex flex-wrap items-center gap-2">
-          <div className="relative">
+          <div className="relative w-full sm:w-auto">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-text-tertiary" />
-            <Input placeholder="Filter chip, model, id…" value={q} onChange={(e) => setQ(e.target.value)} className="h-8 w-[220px] pl-8" />
+            <Input aria-label="Filter providers" placeholder="Filter chip, model, id…" value={q} onChange={(e) => setQ(e.target.value)} className="h-8 w-full pl-8 sm:w-[220px]" />
           </div>
-          <select value={model} onChange={(e) => setModel(e.target.value)} className="h-8 rounded-lg border border-border-default bg-bg-secondary px-2 text-xs text-text-primary">
+          <select aria-label="Model" value={model} onChange={(e) => setModel(e.target.value)} className="h-8 flex-1 rounded-lg border border-border-default bg-bg-secondary px-2 text-xs text-text-primary sm:flex-none">
             {models.slice(0, 20).map((m) => (
               <option key={m} value={m}>
                 {m === "all" ? "All models" : m}
               </option>
             ))}
           </select>
-          <select value={trust} onChange={(e) => setTrust(e.target.value)} className="h-8 rounded-lg border border-border-default bg-bg-secondary px-2 text-xs text-text-primary">
+          <select aria-label="Trust level" value={trust} onChange={(e) => setTrust(e.target.value)} className="h-8 flex-1 rounded-lg border border-border-default bg-bg-secondary px-2 text-xs text-text-primary sm:flex-none">
             <option value="all">All trust</option>
             <option value="hardware">hardware</option>
             <option value="self_signed">self_signed</option>
@@ -69,7 +78,7 @@ export default function ProviderFleet({ providers }: Props) {
             <option value="software">software</option>
             <option value="unverified">unverified</option>
           </select>
-          <select value={status} onChange={(e) => setStatus(e.target.value)} className="h-8 rounded-lg border border-border-default bg-bg-secondary px-2 text-xs text-text-primary">
+          <select aria-label="Status" value={status} onChange={(e) => setStatus(e.target.value)} className="h-8 flex-1 rounded-lg border border-border-default bg-bg-secondary px-2 text-xs text-text-primary sm:flex-none">
             <option value="all">All status</option>
             <option value="online">online</option>
             <option value="serving">serving</option>
@@ -77,7 +86,7 @@ export default function ProviderFleet({ providers }: Props) {
             <option value="draining">draining</option>
             <option value="untrusted">untrusted</option>
           </select>
-          <select value={sort} onChange={(e) => setSort(e.target.value as SortKey)} className="h-8 rounded-lg border border-border-default bg-bg-secondary px-2 text-xs text-text-primary">
+          <select aria-label="Sort" value={sort} onChange={(e) => setSort(e.target.value as SortKey)} className="h-8 flex-1 rounded-lg border border-border-default bg-bg-secondary px-2 text-xs text-text-primary sm:flex-none">
             <option value="tokens">Sort: tokens</option>
             <option value="requests">Sort: requests</option>
             <option value="memory">Sort: memory</option>
@@ -176,7 +185,7 @@ export default function ProviderFleet({ providers }: Props) {
               <div className="rounded-lg border border-border-dim bg-bg-tertiary/60 p-2">
                 <div className="truncate font-mono text-[10px] text-text-secondary">{p.current_model}</div>
                 <div className="mt-1 flex flex-wrap gap-1">
-                  {p.models.slice(0, 3).map((m) => (
+                  {(p.models ?? []).slice(0, 3).map((m) => (
                     <span key={m} className="rounded bg-bg-elevated px-1.5 py-0.5 font-mono text-[9px] text-text-tertiary">
                       {m.split("/").pop()}
                     </span>
@@ -186,11 +195,11 @@ export default function ProviderFleet({ providers }: Props) {
               <div className="grid grid-cols-2 gap-2 font-mono text-[10px]">
                 <div className="rounded bg-bg-tertiary px-2 py-1.5">
                   <div className="text-text-tertiary">Requests</div>
-                  <div className="font-semibold text-text-primary">{p.requests_served.toLocaleString()}</div>
+                  <div className="font-semibold text-text-primary">{(p.requests_served ?? 0).toLocaleString()}</div>
                 </div>
                 <div className="rounded bg-bg-tertiary px-2 py-1.5">
                   <div className="text-text-tertiary">Tokens</div>
-                  <div className="font-semibold text-text-primary">{p.tokens_generated.toLocaleString()}</div>
+                  <div className="font-semibold text-text-primary">{(p.tokens_generated ?? 0).toLocaleString()}</div>
                 </div>
               </div>
             </CardContent>

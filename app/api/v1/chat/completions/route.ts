@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server"
+import { API_BASE_URL, LIVE_MODEL } from "@/lib/catalog"
 import { listProviders, type StoredProvider } from "@/lib/providers-store"
 import {
   isCircuitOpen,
@@ -66,22 +67,14 @@ function openAIError(
   })
 }
 
-const CURL_EXAMPLE = `curl https://seedinfer.com/api/v1/chat/completions \\
+const CURL_EXAMPLE = `curl ${API_BASE_URL}/chat/completions \\
   -H "Content-Type: application/json" \\
   -H "Authorization: Bearer $SEEDINFER_API_KEY" \\
   -d '{
-    "model": "seedinfer/nemotron-lightning-1m",
+    "model": "${LIVE_MODEL.id}",
     "messages": [{"role": "user", "content": "Explain P2P inference on RTX 5090 in one paragraph."}],
     "stream": false,
     "max_tokens": 512
-  }'`
-
-const TAILNET_EXAMPLE = `curl https://tailnet.seedinfer.com/v1/chat/completions \\
-  -H "Content-Type: application/json" \\
-  -H "Authorization: Bearer $SEEDINFER_API_KEY" \\
-  -d '{
-    "model": "seedinfer/nemotron-lightning-1m",
-    "messages": [{"role": "user", "content": "Hello via Tailnet"}]
   }'`
 
 // ---------------------------------------------------------------------------
@@ -178,14 +171,12 @@ export async function GET() {
   const configs = getUpstreamConfigs()
   const avail = configs.filter((c) => c.hasKey && c.baseUrl).map((c) => c.id)
   return openAIError(
-    "Faza 0 - Nemotron na RTX 5090 via Tailnet, use https://tailnet.seedinfer.com, coming soon public endpoint. Use POST /api/v1/chat/completions with OpenAI-compatible payload.",
-    "service_unavailable",
-    "service_unavailable",
-    503,
+    `Use POST ${API_BASE_URL}/chat/completions with an OpenAI-compatible payload (model "${LIVE_MODEL.id}").`,
+    "invalid_request_error",
+    "method_not_allowed",
+    405,
     {
-      hint: "Faza 0 - Nemotron na RTX 5090 via Tailnet",
-      tailnet_url: "https://tailnet.seedinfer.com",
-      public_endpoint: "coming soon public endpoint",
+      hint: `POST ${API_BASE_URL}/chat/completions`,
       curl_example: CURL_EXAMPLE,
       local_provider: localUrl ? "available" : "unavailable",
       fallback_chain: ["local", "nim", "opencode", "openrouter", "modal"],
@@ -209,7 +200,7 @@ export async function POST(req: Request) {
   }
   if (!body.model) {
     return openAIError("Missing 'model' in request body", "invalid_request_error", "missing_model", 400, {
-      hint: `Use model "seedinfer/nemotron-lightning-1m". Example: ${CURL_EXAMPLE}`,
+      hint: `Use model "${LIVE_MODEL.id}". Example: ${CURL_EXAMPLE}`,
     })
   }
 
@@ -306,9 +297,9 @@ export async function POST(req: Request) {
     } else {
       console.warn(`[routing] No provider selected for request (all >90% saturated or circuit open)`)
     }
-    // If all local providers circuit open, fallback to fastest verified (ignore circuit) — najszybszy verified fallback
+    // If all local providers circuit open, fall back to the fastest verified provider (ignoring the circuit breaker)
     if (attempts.length === 0 && verifiedProviders.length > 0) {
-      // all circuit open → fallback na najszybszy verified (sort by EWMA TTFT)
+      // all circuits open → fall back to the fastest verified provider (sorted by EWMA TTFT)
       const fallbackSorted = [...verifiedProviders].sort((a, b) => {
         const at = (a as any).ewmaTtft ?? 99999
         const bt = (b as any).ewmaTtft ?? 99999
@@ -412,7 +403,7 @@ export async function POST(req: Request) {
       "service_unavailable",
       "all_upstreams_down",
       503,
-      { hint: "Try again or contact support. Check /api/v1/fallback/status and env NIM_API_KEY, OPENCODE_API_KEY, OPENROUTER_API_KEY, MODAL_BASE_URL." },
+      { hint: "Try again shortly or contact support." },
       {
         "X-SeedInfer-Upstream": "none",
         "X-SeedInfer-Fallback-Reason": "no_upstreams_configured",
@@ -420,7 +411,7 @@ export async function POST(req: Request) {
     )
   }
 
-  // Modal warmup handling: fire-and-forget parallel gdy local fail (brak verified lub timeout/5xx/429)
+  // Modal warmup handling: fire-and-forget in parallel when local fails (no verified provider, timeout, 5xx or 429)
   let modalWarmupTriggered = false
   const ensureModalWarmup = () => {
     if (modalWarmupTriggered) return
@@ -800,7 +791,7 @@ export async function POST(req: Request) {
       "rate_limit_exceeded",
       429,
       {
-        hint: "Network capacity saturated. OpenRouter / client should retry after specified interval.",
+        hint: "Network capacity saturated. Retry after the Retry-After interval.",
         retry_after: 2,
         tried: attempts.map((a) => a.providerId || a.id),
       },
@@ -814,7 +805,7 @@ export async function POST(req: Request) {
 
   const hint =
     lastError.includes("modal") && lastError.includes("timeout")
-      ? "Modal A100 cold start ~2min — try again shortly or use NIM/OpenRouter"
+      ? "A fallback backend is warming up — please try again in about two minutes."
       : "Try again or contact support"
 
   console.error(`[chat] all upstreams down lastError=${lastError}`)

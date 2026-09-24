@@ -1,3 +1,5 @@
+import { LIVE_MODEL, MODELS, REVENUE_SHARE_PCT, STANDBY_LABEL, priceLabel } from "@/lib/catalog"
+
 type Phase = {
   kicker: string
   title: string
@@ -5,36 +7,39 @@ type Phase = {
   desc: string
 }
 
+const nemotron = MODELS.find((m) => m.family === "Nemotron")!
+const qwen = MODELS.find((m) => m.family === "Qwen")!
+
 const PHASES: Phase[] = [
   {
-    kicker: "FAZA 0 · NOW",
-    title: "Nemotron Lightning 1M",
+    kicker: "Phase 0 · Now (Q3 2026)",
+    title: `${LIVE_MODEL.name} live`,
     status: "active",
-    desc: "$0.02/$0.05 · 2M KV · Headscale RTX 5090 32GB · whitelist 20 × $0.40/day + $5 credits + 99% share",
+    desc: `${priceLabel(LIVE_MODEL)} per 1M · ${LIVE_MODEL.contextLabel} context · ${REVENUE_SHARE_PCT}% revenue share · standby ${STANDBY_LABEL}`,
   },
   {
-    kicker: "FAZA 1 · Q4 2025",
-    title: "Qwen 3.6 35B A3B + Gemma 4",
-    status: "is coming",
-    desc: "Vision + MoE · 100 nodes · 60% share stable",
+    kicker: "Phase 1 · Q4 2026",
+    title: `${nemotron.shortName} + ${qwen.shortName}`,
+    status: "coming soon",
+    desc: `${nemotron.contextLabel}-context Nemotron (${priceLabel(nemotron)}) and Qwen (${priceLabel(qwen)}) · target 100 nodes · ${REVENUE_SHARE_PCT}% share`,
   },
   {
-    kicker: "FAZA 2 · Q1 2026",
-    title: "1000+ nodes · Edge expansion",
+    kicker: "Phase 2 · H1 2027",
+    title: "Open provider marketplace",
     status: "planned",
-    desc: "WhiteGlove scale · 96GB HBM · referral",
+    desc: `Target 300–1,000 nodes · more GPU classes · ${REVENUE_SHARE_PCT}% share`,
   },
   {
-    kicker: "FAZA 3 · 2026",
-    title: "Electricity-cost parity",
+    kicker: "Phase 3 · 2027+",
+    title: "Electricity-price parity",
     status: "vision",
-    desc: "Builder price = electricity + 10% → 0 margin",
+    desc: `Target: token prices approaching the electricity cost of inference · ${REVENUE_SHARE_PCT}% share`,
   },
 ]
 
 function statusBadgeClass(status: string) {
   if (status === "active") return "bg-accent-green/15 text-accent-green border-accent-green/20"
-  if (status === "is coming") return "bg-accent-amber/15 text-accent-amber border-accent-amber/20"
+  if (status === "coming soon") return "bg-accent-amber/15 text-accent-amber border-accent-amber/20"
   return "bg-bg-tertiary text-text-tertiary border-border-dim"
 }
 
@@ -43,7 +48,7 @@ export default function Roadmap() {
     <section className="col-span-12 py-8">
       {/* Header */}
       <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-text-tertiary">
-        ROADMAP · 4 PHASES
+        Roadmap · 4 phases
       </p>
       <h2 className="mt-2 text-xl font-semibold tracking-tight text-text-primary sm:text-2xl">
         Roadmap · from electricity cost to parity
@@ -96,13 +101,6 @@ export default function Roadmap() {
         </div>
       </div>
 
-      {/* Future metrics placeholder — NO MOCKS */}
-      <div className="mt-6 flex items-center justify-center rounded-lg border border-dashed border-border-default bg-bg-secondary p-3 text-center">
-        <span className="font-mono text-[11px] leading-4 text-text-tertiary">Element requires refinement</span>
-      </div>
-      <p className="mt-1.5 text-center font-mono text-[10px] leading-3 text-text-tertiary">
-        Live progress metrics pending — verified metering & timeline integration required
-      </p>
     </section>
   )
 }

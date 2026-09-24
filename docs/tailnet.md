@@ -351,7 +351,7 @@ tailscale netcheck
 - **Bez exit node / subnet router** — gateway nie ogłasza `0.0.0.0/0` domyślnie. Włącz w `tailscale up --advertise-routes` na Pi jeśli potrzebny.
 - **Provider porty** — otwarte tylko `3000,5432,6379,8000` do gateway. Nie otwieraj `22` via Tailnet ACL — używaj Tailscale SSH lub normalnego SSH przez Tailnet IP (`ssh seedinfer@100.64.0.1` gdy Pi w Tailnecie).
 - **Backup** — `/mnt/nvme/headscale/db.sqlite` → NextCloud 5TB (cron `rsync`); logi Headscale na Pi (json-file 10m).
-- **Frontend Phase 0** — UI pokazuje tylko `seedinfer/nemotron-lightning-1m` (1M ctx · 2M KV · $0.02/$0.05 · cache 60s free/5min max). `components/models-catalog.tsx` filtruje modele, `app/api/stats/route.ts` + `lib/api.ts` map upstream SeedInfer Network (7 modeli) → 1 model, `lib/mock-faza0.json` as canonical fallback. Qwen/Gemma widoczne jako disabled *Phase 1 — soon*. After Phase 1 remove `isFaza0Model` filtr.
+- **Frontend Phase 0** — UI shows the catalog from `lib/catalog.ts` (live: `google/gemma-4-26b-a4b-nvfp4`, $0.03/$0.20, 256K ctx; Nemotron/Qwen coming soon). `components/models-catalog.tsx` filtruje modele, `app/api/stats/route.ts` + `lib/api.ts` map upstream SeedInfer Network (7 modeli) → 1 model, `lib/mock-faza0.json` as canonical fallback. Qwen/Gemma widoczne jako disabled *Phase 1 — soon*. After Phase 1 remove `isFaza0Model` filtr.
 
 ---
 

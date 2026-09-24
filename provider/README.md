@@ -2,7 +2,7 @@
 
 Kontener **Linux (x86_64)** dla dostawcy GPU (node). Serwuje **OpenAI-compatible `/v1/chat/completions`** przez **vLLM nightly (CUDA 13.3)** + rejestruje noda w **Headscale** i heartbeat do **SeedInfer gateway**.
 
-> Phase 0: tylko `seedinfer/nemotron-lightning-1m` (1M context, 2M KV, alias `gpt-oss-20b`), `runtime: nvidia`, expose `47900:8000` (vLLM) + `47901:3001` (agent) — host 47900/47901 wolne (nie kolidują z 3000/3002/8004-8007), can be overridden via env.
+> Phase 0: live model `google/gemma-4-26b-a4b-nvfp4` (Gemma 4 26B A4B NVFP4, 256K context, $0.03 / $0.20 per 1M); `seedinfer/nemotron-lightning-1m` coming soon, `runtime: nvidia`, expose `47900:8000` (vLLM) + `47901:3001` (agent) — host 47900/47901 wolne (nie kolidują z 3000/3002/8004-8007), can be overridden via env.
 
 ---
 
@@ -167,7 +167,7 @@ Interval: 30s, timeout 10s, log warn on fail
 ## Host requirements
 
 - Ubuntu 24.04+ (noble), kernel 6.8+, NVIDIA driver **580.65+** (CUDA 13.3 Blackwell), fallback 570.86+ (CUDA 13.2) / 550.90+ (CUDA 12.4 legacy), `nvidia-container-toolkit`, Docker 24+ + compose plugin, `tailscale` 1.82+
-- GPU: **RTX 5090 32GB (GB202, minimum)** lub welcome A100 40/80, H100 80, L40S 48, RTX 6000 Ada 48, RTX 6000 Pro Blackwell, RTX 4500 Blackwell 32GB, RTX 5000 Blackwell — zob. macierz GPU poniżej. VRAM <32GB warn, <16GB error; dla 1M ctx komfortowo 32GB+. `nvidia-smi` musi widzieć GPU. VRAM <24GB wymaga `VLLM_GPU_MEMORY_UTILIZATION=0.80` i mniejszego `VLLM_MAX_MODEL_LEN`.
+- GPU: **NVIDIA ≥32GB VRAM (reference RTX 5090 32GB; 24GB cards not supported yet)** lub welcome A100 40/80, H100 80, L40S 48, RTX 6000 Ada 48, RTX 6000 Pro Blackwell, RTX 4500 Blackwell 32GB, RTX 5000 Blackwell — zob. macierz GPU poniżej. VRAM <32GB warn, <16GB error; dla 1M ctx komfortowo 32GB+. `nvidia-smi` musi widzieć GPU. VRAM <24GB wymaga `VLLM_GPU_MEMORY_UTILIZATION=0.80` i mniejszego `VLLM_MAX_MODEL_LEN`.
 - Disk: 50GB+ na `/root/.cache/huggingface` (model ~40GB) — host provider host: ``./models/cache` 60GB+ total  **60GB+ free** wystarczy na provider (`vllm nightly 28.8GB + NVFP4 ~30GB + cache ~60GB`, zostanie ~108G). Sprawdź `df -h `./models/cache`. Jeśli mało miejsca: `docker system prune -a` + `rm -rf ./models/cache/.../snapshots` lub `./models/cache`. Can be overridden via env: `VLLM_PORT=47900 AGENT_PORT=47901`
 - Network: UDP do `tailnet.seedinfer.com:41641` (WireGuard) lub fallback HTTPS via Cloudflare Tunnel
 

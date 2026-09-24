@@ -1,136 +1,79 @@
 "use client"
 import { useState } from "react"
-import Sidebar from "@/components/sidebar"
+import Link from "next/link"
+import AppShell, { PageHeader, PageContainer } from "@/components/app-shell"
 import ThemeToggle from "@/components/theme-toggle"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { KeyRound, ExternalLink, Clock, Copy, Check, Eye, EyeOff, Shield } from "lucide-react"
+import { KeyRound, FileText, Copy, Check, Shield } from "lucide-react"
+import { API_BASE_URL, GITHUB_URL } from "@/lib/catalog"
 
 export default function SettingsPage() {
-  const [revealed, setRevealed] = useState(false)
   const [copied, setCopied] = useState(false)
-  const mockKey = "sk-seedinfer-xxxxxxxxxxxxxxxxxxxx"
 
   const copy = async () => {
     try {
-      await navigator.clipboard.writeText(mockKey)
+      await navigator.clipboard.writeText(API_BASE_URL)
       setCopied(true)
       setTimeout(() => setCopied(false), 1500)
     } catch {}
   }
 
   return (
-    <div className="flex h-screen overflow-hidden bg-bg-primary">
-      <Sidebar />
-      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <header className="flex h-[48px] shrink-0 items-center justify-between border-b border-border-dim bg-bg-secondary px-4">
-          <div className="min-w-0">
-            <h1 className="truncate text-[13px] font-semibold tracking-tight text-text-primary">Settings</h1>
-            <p className="truncate font-mono text-[11px] text-text-tertiary">API keys · team · preferences — Coming soon</p>
-          </div>
-          <a
-            href="https://docs.seedinfer.com"
-            target="_blank"
-            rel="noopener noreferrer"
+    <AppShell>
+      <PageHeader
+        title="Settings"
+        description="API keys · preferences"
+        actions={
+          <Link
+            href="/docs"
             className="inline-flex items-center gap-1.5 rounded-lg border border-border-default bg-bg-tertiary px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-bg-hover hover:text-text-primary"
           >
-            docs.seedinfer.com <ExternalLink className="h-3 w-3" />
-          </a>
-        </header>
-
-        <main className="min-h-0 flex-1 overflow-y-auto bg-bg-primary">
-          <div className="mx-auto max-w-[1600px] space-y-6 p-4 sm:p-6">
-            <Card className="border border-amber-500/20 bg-amber-500/10">
-              <CardContent className="p-3 flex items-start gap-2">
-                <Clock className="h-4 w-4 mt-0.5 shrink-0 text-amber-600" />
-                <div className="min-w-0 flex-1">
-                  <div className="text-xs font-semibold text-text-primary">Coming soon — proxy to docs.seedinfer.com</div>
-                  <div className="mt-0.5 text-xs leading-4 text-text-secondary">
-                    Settings will proxy <code className="rounded bg-bg-tertiary px-1">GET /v1/keys</code> &{" "}
-                    <code className="rounded bg-bg-tertiary px-1">POST /v1/keys</code> (API key rotation, scopes) to{" "}
-                    <a href="https://docs.seedinfer.com" target="_blank" rel="noopener noreferrer" className="font-medium text-accent-brand underline">
-                      docs.seedinfer.com
-                    </a>
-                    . Currently mock UI.
-                  </div>
-                </div>
-                <Badge variant="outline" className="shrink-0 border-amber-500/20 bg-bg-secondary font-mono text-[10px]">Coming soon</Badge>
-              </CardContent>
-            </Card>
-
+            <FileText className="h-3.5 w-3.5" /> Docs
+          </Link>
+        }
+      />
+      <PageContainer>
             <div className="grid gap-6 lg:grid-cols-3">
               <Card className="lg:col-span-2 border border-border-dim bg-bg-secondary">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2 text-[13px]">
                     <KeyRound className="h-4 w-4 text-accent-brand" />
                     API keys
-                    <Badge variant="outline" className="font-mono text-[10px]">mock</Badge>
+                    <Badge variant="outline" className="font-mono text-[10px]">coming soon</Badge>
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  {/* Pay-As-You-Go Key */}
-                  <div className="rounded-xl border border-border-dim bg-bg-primary p-3 space-y-2">
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="font-mono text-[10px] uppercase tracking-wide text-text-tertiary">Pay-As-You-Go Key (sk_live_...)</div>
-                      <div className="flex items-center gap-1.5">
-                        <Badge variant="outline" className="font-mono text-[9px] border-accent-green/30 text-accent-green">Standard SLA Priority</Badge>
-                        <Badge variant="success" className="font-mono text-[9px]">active</Badge>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Input
-                        value={revealed ? "sk_live_8f9a2b1c4e7d3019284756" : "•".repeat(32)}
-                        readOnly
-                        className="h-9 flex-1 font-mono text-xs"
-                      />
-                      <button
-                        onClick={() => setRevealed((v) => !v)}
-                        className="rounded-lg border border-border-default bg-bg-tertiary p-2 text-text-tertiary hover:bg-bg-hover hover:text-text-primary"
-                        aria-label="Reveal"
-                      >
-                        {revealed ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                      </button>
-                      <button
-                        onClick={copy}
-                        className="inline-flex items-center gap-1 rounded-lg border border-border-default bg-bg-tertiary px-3 py-2 text-xs font-medium text-text-secondary hover:bg-bg-hover"
-                      >
-                        {copied ? <Check className="h-3.5 w-3.5 text-accent-green" /> : <Copy className="h-3.5 w-3.5" />}
-                        {copied ? "Copied" : "Copy"}
-                      </button>
-                    </div>
-                    <p className="font-mono text-[11px] text-text-tertiary">
-                      Direct credit balance usage. Priority: <code className="rounded bg-bg-tertiary px-1 text-accent-green">standard</code> (Top priority on Orange Pi 4 Pro router).
+                  <div className="rounded-xl border border-dashed border-border-default bg-bg-primary p-4">
+                    <div className="text-sm font-semibold text-text-primary">Self-service API keys are coming soon</div>
+                    <p className="mt-1 text-xs leading-5 text-text-secondary">
+                      You will be able to create, rotate and revoke keys here. Keys are used as{" "}
+                      <code className="rounded bg-bg-tertiary px-1">Authorization: Bearer sk-seedinfer-...YOUR_KEY</code> for{" "}
+                      <code className="rounded bg-bg-tertiary px-1">POST {API_BASE_URL}/chat/completions</code>. To get early access, open an issue on{" "}
+                      <a href={GITHUB_URL} target="_blank" rel="noopener noreferrer" className="text-accent-brand underline">GitHub</a>.
                     </p>
                   </div>
 
-                  {/* Subscription Dedicated Key */}
-                  <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-3 space-y-2">
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="font-mono text-[10px] uppercase tracking-wide text-amber-500 font-semibold">Subscription Dedicated Key (sk_sub_...)</div>
-                      <div className="flex items-center gap-1.5">
-                        <Badge variant="outline" className="font-mono text-[9px] border-amber-500/30 text-amber-500">Lowest / Background Priority</Badge>
-                        <Badge variant="outline" className="font-mono text-[9px] border-border-default">Tier GO 2x</Badge>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="space-y-1.5 rounded-xl border border-border-dim bg-bg-primary p-3">
+                      <div className="flex flex-wrap items-center justify-between gap-1.5">
+                        <span className="font-mono text-[10px] uppercase tracking-wide text-text-tertiary">Pay-as-you-go key</span>
+                        <Badge variant="outline" className="border-accent-green/30 font-mono text-[9px] text-accent-green">Standard priority</Badge>
                       </div>
+                      <code className="block font-mono text-xs text-text-primary">sk_live_…</code>
+                      <p className="font-mono text-[11px] leading-4 text-text-tertiary">Draws from your credit balance. Routed at standard (highest) priority.</p>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <Input
-                        value={revealed ? "sk_sub_go_7483920194857639201" : "•".repeat(32)}
-                        readOnly
-                        className="h-9 flex-1 font-mono text-xs"
-                      />
-                      <button
-                        onClick={copy}
-                        className="inline-flex items-center gap-1 rounded-lg border border-border-default bg-bg-tertiary px-3 py-2 text-xs font-medium text-text-secondary hover:bg-bg-hover"
-                      >
-                        {copied ? <Check className="h-3.5 w-3.5 text-accent-green" /> : <Copy className="h-3.5 w-3.5" />}
-                        {copied ? "Copied" : "Copy"}
-                      </button>
+                    <div className="space-y-1.5 rounded-xl border border-accent-amber/20 bg-accent-amber/5 p-3">
+                      <div className="flex flex-wrap items-center justify-between gap-1.5">
+                        <span className="font-mono text-[10px] uppercase tracking-wide text-accent-amber">Subscription key</span>
+                        <Badge variant="outline" className="border-accent-amber/30 font-mono text-[9px] text-accent-amber">Background priority</Badge>
+                      </div>
+                      <code className="block font-mono text-xs text-text-primary">sk_sub_…</code>
+                      <p className="font-mono text-[11px] leading-4 text-text-tertiary">
+                        Issued with a GO / GOAT / PRO plan. Uses the plan quota and is routed at background priority.
+                      </p>
                     </div>
-                    <p className="font-mono text-[11px] text-text-tertiary">
-                      Dedicated subscription key. Priority: <code className="rounded bg-bg-tertiary px-1 text-amber-500">background</code> (Lowest priority on Orange Pi 4 Pro router).
-                    </p>
                   </div>
 
                   <div className="flex flex-wrap gap-2">
@@ -175,31 +118,20 @@ export default function SettingsPage() {
                     </div>
                     <div className="flex items-center justify-between gap-2 rounded-xl border border-border-dim bg-bg-primary px-3 py-2.5">
                       <span className="font-medium text-text-primary">Base API URL</span>
-                      <span className="font-mono text-[11px] text-text-tertiary">api.seedinfer.com</span>
+                      <button onClick={copy} className="inline-flex items-center gap-1 font-mono text-[11px] text-text-tertiary hover:text-text-primary">
+                        {API_BASE_URL} {copied ? <Check className="h-3 w-3 text-accent-green" /> : <Copy className="h-3 w-3" />}
+                      </button>
                     </div>
-                    <p className="font-mono text-[10px] text-text-tertiary">
-                      Docs: <a href="https://docs.seedinfer.com" target="_blank" rel="noopener noreferrer" className="text-accent-brand underline">docs.seedinfer.com</a>
-                    </p>
                   </CardContent>
                 </Card>
 
-                <Card className="border border-border-dim bg-bg-secondary">
-                  <CardContent className="p-3 font-mono text-[11px] leading-4 text-text-tertiary">
-                    Mock keys only — real key management via <code className="rounded bg-bg-tertiary px-1">POST /v1/keys</code> after proxy cutover.
-                  </CardContent>
-                </Card>
               </div>
             </div>
 
             <div className="border-t border-border-dim pt-4 font-mono text-[10px] leading-4 text-text-tertiary">
-              SeedInfer.com · Settings — API keys & scopes · Coming soon — proxy to{" "}
-              <a href="https://docs.seedinfer.com" target="_blank" rel="noopener noreferrer" className="text-accent-brand underline">
-                docs.seedinfer.com
-              </a>
+              SeedInfer.com · Settings
             </div>
-          </div>
-        </main>
-      </div>
-    </div>
+      </PageContainer>
+    </AppShell>
   )
 }

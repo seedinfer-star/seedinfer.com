@@ -1,18 +1,47 @@
 "use client"
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import Link from "next/link"
-import Sidebar from "@/components/sidebar"
+import AppShell, { PageContainer, PageHeader, SectionHeader } from "@/components/app-shell"
 import ProviderFleet from "@/components/provider-fleet"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Copy, Check, Server, Terminal, RefreshCw, Cpu, HardDrive, Zap, FileText, ChevronDown, Activity, KeyRound, ExternalLink, ShieldCheck } from "lucide-react"
+import { Copy, Check, Server, Terminal, RefreshCw, FileText, ExternalLink, ShieldCheck, AlertTriangle, KeyRound } from "lucide-react"
 import { fetchStats, fetchGatewayProviders } from "@/lib/api"
 import type { StatsResponse } from "@/lib/types"
 import type { GatewayProvider } from "@/lib/api"
+import {
+  LIVE_MODEL,
+  MIN_VRAM_GB,
+  PROVIDER_ECONOMICS,
+  REFERENCE_GPU,
+  REVENUE_SHARE_PCT,
+  SITE_URL,
+  priceLabel,
+} from "@/lib/catalog"
 
-const ONE_LINER_SIMPLE = `curl -fsSL https://seedinfer.com/install.sh | bash -s -- --authkey YOUR_AUTHKEY`
-const ONE_LINER_AUTO = `curl -fsSL https://seedinfer.com/install.sh | bash -s -- --authkey $(curl -s https://seedinfer.com/api/v1/auth/request | jq -r .authkey)`
-const ONE_LINER_CUSTOM = `curl -fsSL https://seedinfer.com/install.sh | bash -s -- --authkey YOUR_AUTHKEY --model google/gemma-4-26b-a4b-nvfp4 --gateway https://seedinfer.com --hostname provider-5090`
+const INSTALL_URL = `${SITE_URL}/install.sh`
+const ONE_LINER_SIMPLE = `curl -fsSL ${INSTALL_URL} | bash -s -- --authkey YOUR_AUTHKEY`
+const ONE_LINER_AUTO = `curl -fsSL ${INSTALL_URL} | bash -s -- --authkey $(curl -s ${SITE_URL}/api/v1/auth/request | jq -r .authkey)`
+const ONE_LINER_CUSTOM = `curl -fsSL ${INSTALL_URL} | bash -s -- --authkey YOUR_AUTHKEY --model ${LIVE_MODEL.id} --gateway ${SITE_URL} --hostname my-gpu-node`
+const HEARTBEAT_S = PROVIDER_ECONOMICS.heartbeatIntervalSec
+
+const VERIFY_SNIPPET = `curl -fsS http://127.0.0.1:47901/health | jq
+curl -fsS http://127.0.0.1:47900/v1/models | jq
+curl http://127.0.0.1:47901/v1/chat/completions \\
+  -H "Content-Type: application/json" \\
+  -d '{"model":"${LIVE_MODEL.id}","messages":[{"role":"user","content":"ping"}],"max_tokens":32}'`
+
+const REQUIREMENTS: [string, string][] = [
+  ["Model served", `${LIVE_MODEL.name} · ${LIVE_MODEL.contextLabel} ctx`],
+  ["GPU", `NVIDIA, ≥ ${MIN_VRAM_GB} GB VRAM (reference: ${REFERENCE_GPU.name})`],
+  ["OS", "Ubuntu 24.04 LTS"],
+  ["Driver / CUDA", "580.65+ / 13.x"],
+  ["Runtime", "Docker 24+ with nvidia-container-toolkit"],
+  ["Disk", "≥ 60 GB free (model cache)"],
+  ["Ports (host)", "47900 (vLLM) · 47901 (agent)"],
+  ["Network", "Outbound UDP 41641 (WireGuard mesh)"],
+  ["Payout wallet", `${PROVIDER_ECONOMICS.payoutAsset} on ${PROVIDER_ECONOMICS.payoutChain} (EVM 0x… address)`],
+]
 
 function CopyButton({ text, label }: { text: string; label?: string }) {
   const [copied, setCopied] = useState(false)
@@ -25,13 +54,29 @@ function CopyButton({ text, label }: { text: string; label?: string }) {
   }
   return (
     <button
+      type="button"
       onClick={onCopy}
-      className="inline-flex items-center gap-1.5 rounded-lg border border-border-default bg-bg-tertiary px-2.5 py-1 font-mono text-[11px] text-text-secondary hover:bg-bg-hover hover:text-text-primary"
-      title={label || "Copy"}
+      className="inline-flex items-center gap-1.5 rounded-md border border-border-default bg-bg-secondary px-2 py-1 font-mono text-[11px] text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary"
+      aria-label={label ? `Copy: ${label}` : "Copy to clipboard"}
     >
       {copied ? <Check className="h-3.5 w-3.5 text-accent-green" /> : <Copy className="h-3.5 w-3.5" />}
-      {copied ? "Copied" : label || "Copy"}
+      {copied ? "Copied" : "Copy"}
     </button>
+  )
+}
+
+function CommandBlock({ title, cmd, note }: { title: string; cmd: string; note?: React.ReactNode }) {
+  return (
+    <div>
+      <div className="mb-1.5 flex items-center justify-between gap-2">
+        <span className="font-mono text-[11px] uppercase tracking-wide text-text-tertiary">{title}</span>
+        <CopyButton text={cmd} label={title} />
+      </div>
+      <pre className="overflow-x-auto rounded-lg border border-border-dim bg-bg-primary p-3 font-mono text-xs leading-5 text-text-primary">
+        {cmd}
+      </pre>
+      {note && <p className="mt-1.5 text-xs text-text-tertiary">{note}</p>}
+    </div>
   )
 }
 
@@ -40,338 +85,254 @@ export default function ProvidersPage() {
   const [gateway, setGateway] = useState<GatewayProvider[] | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [lastFetch, setLastFetch] = useState<string>("")
+  const [lastFetch, setLastFetch] = useState<string | null>(null)
+  const loaded = useRef(false)
 
-  const load = async (force = false) => {
+  const load = useCallback(async (force = false) => {
     try {
       setError(null)
-      if (!stats && !gateway) setLoading(true)
-      const [gw, data] = await Promise.allSettled([
-        fetchGatewayProviders(force),
-        fetchStats(force),
-      ])
+      if (!loaded.current) setLoading(true)
+      const [gw, data] = await Promise.allSettled([fetchGatewayProviders(force), fetchStats(force)])
       if (gw.status === "fulfilled") setGateway(gw.value)
-      else setGateway([])
+      else setGateway((prev) => prev ?? [])
       if (data.status === "fulfilled") setStats(data.value as StatsResponse)
-      else if (gw.status === "rejected") setError((data as PromiseRejectedResult).reason?.message ?? "Failed to load")
+      if (gw.status === "rejected" && data.status === "rejected") {
+        setError((gw as PromiseRejectedResult).reason?.message ?? "Failed to load providers")
+      }
+      loaded.current = true
       setLastFetch(new Date().toLocaleTimeString())
     } catch (e: any) {
-      setError(e?.message ?? "Failed to load")
+      setError(e?.message ?? "Failed to load providers")
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
 
   useEffect(() => {
     load()
-    const id = setInterval(() => load(true), 15000)
+    const id = setInterval(() => load(true), 15_000)
     return () => clearInterval(id)
-  }, [])
+  }, [load])
 
-  const verifiedCount = gateway?.filter((g) => (g as any).verification?.status === "verified").length ?? 0
+  // One fleet list: gateway registry is the source of truth; fall back to the
+  // network snapshot from /api/stats only when the gateway reports no nodes.
+  const gatewayList = gateway ?? []
+  const usingFallback = gateway !== null && gatewayList.length === 0 && (stats?.providers?.length ?? 0) > 0
+  const fleet: GatewayProvider[] = usingFallback ? ((stats?.providers ?? []) as GatewayProvider[]) : gatewayList
+  const verifiedCount = gatewayList.filter((g) => g.verification?.status === "verified").length
+  const ready = gateway !== null
 
   return (
-    <div className="flex h-screen overflow-hidden bg-bg-primary">
-      <Sidebar />
-      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <header className="flex h-[48px] shrink-0 items-center justify-between border-b border-border-dim bg-bg-secondary px-4">
-          <div className="min-w-0">
-            <h1 className="truncate text-[13px] font-semibold tracking-tight text-text-primary">SeedInfer Providers · Become a node</h1>
-            <p className="truncate font-mono text-[11px] text-text-tertiary">
-              Gateway fleet <code className="rounded bg-bg-tertiary px-1">/api/v1/providers</code> · NVFP4 1M ctx $0.03/$0.20 · CUDA 13.3 · 47900/47901 · {gateway?.length ?? 0} nodes · last fetch {lastFetch || "—"}
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <Link
-              href="/docs"
-              className="hidden sm:inline-flex items-center gap-1.5 rounded-lg border border-border-default bg-bg-tertiary px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-bg-hover hover:text-text-primary"
+    <AppShell>
+      <PageHeader
+        title="Providers"
+        description={
+          ready ? (
+            <>
+              {gatewayList.length} nodes · {verifiedCount} verified · updated {lastFetch}
+            </>
+          ) : (
+            <span className="skeleton inline-block h-2.5 w-40 align-middle" aria-label="Loading" />
+          )
+        }
+        actions={
+          <>
+            <button
+              type="button"
+              onClick={() => load(true)}
+              className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border-default bg-bg-secondary px-3 text-xs font-medium text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary"
+              aria-label="Refresh"
             >
-              <FileText className="h-3.5 w-3.5" /> Docs
-            </Link>
+              <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
+              <span className="hidden sm:inline">Refresh</span>
+            </button>
             <Link
               href="/provider/portal"
-              className="inline-flex items-center gap-1.5 rounded-lg border border-border-default bg-bg-tertiary px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-bg-hover hover:text-text-primary"
+              className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border-default bg-bg-secondary px-3 text-xs font-medium text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary"
             >
-              <KeyRound className="h-3.5 w-3.5 text-accent-brand" /> Provider Portal
+              <KeyRound className="h-3.5 w-3.5 text-accent-brand" />
+              <span className="hidden sm:inline">Provider Portal</span>
+              <span className="sr-only sm:hidden">Provider Portal</span>
             </Link>
             <Link
               href="/provider"
-              className="inline-flex items-center gap-1.5 rounded-lg bg-accent-brand px-3 py-1.5 text-xs font-semibold text-white hover:bg-accent-brand-hover"
+              className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-accent-brand px-3 text-xs font-medium text-white transition-colors hover:bg-accent-brand-hover"
             >
-              <Server className="h-3.5 w-3.5" /> Become a Provider →
+              <Server className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Become a provider</span>
+              <span className="sm:hidden">Join</span>
             </Link>
-            <button
-              onClick={() => load(true)}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-border-default bg-bg-tertiary px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-bg-hover hover:text-text-primary"
-            >
-              <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
-              Refresh
-            </button>
-          </div>
-        </header>
+          </>
+        }
+      />
 
-        <main className="min-h-0 flex-1 overflow-y-auto bg-bg-primary">
-          <div className="mx-auto max-w-[1600px] space-y-6 p-4 sm:p-6">
-            {/* One-liner + Requirements — primary CTA */}
-            <Card className="overflow-hidden border border-accent-brand/20 bg-gradient-to-br from-accent-brand/10 via-bg-secondary to-bg-secondary">
-              <CardContent className="p-5">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge variant="success" className="gap-1">
-                    <ShieldCheck className="h-3 w-3" /> NVFP4 · 1M ctx
-                  </Badge>
-                  <Badge variant="outline" className="font-mono text-[10px]">google/gemma-4-26b-a4b-nvfp4</Badge>
-                  <Badge variant="outline" className="font-mono text-[10px] border-accent-brand/30 text-accent-brand">$0.03 / $0.20 per 1M</Badge>
-                  <Badge variant="outline" className="font-mono text-[10px]">CUDA 13.3 · driver 580+</Badge>
-                  <Badge variant="outline" className="font-mono text-[10px]">47900:8000 + 47901:3001</Badge>
-                  <span className="ml-auto flex items-center gap-2">
-                    <Link href="/docs" className="inline-flex items-center gap-1 font-mono text-xs text-accent-brand hover:underline">
-                      Docs / hardware <ExternalLink className="h-3 w-3" />
-                    </Link>
-                    <span className="font-mono text-[11px] text-text-tertiary">·</span>
-                    <Link href="/provider#install" className="inline-flex items-center gap-1 font-mono text-xs text-text-secondary hover:text-text-primary">
-                      Full guide on /provider →
-                    </Link>
-                  </span>
-                </div>
-                <h2 className="mt-3 text-base font-semibold tracking-tight text-text-primary flex items-center gap-2">
-                  <Terminal className="h-4 w-4 text-accent-brand" /> One-liner — terminal Linux (plug-and-play)
-                  <Badge variant="outline" className="ml-2 font-mono text-[10px]">curl | bash</Badge>
-                </h2>
-                <p className="mt-1 font-mono text-xs leading-4 text-text-tertiary">
-                  Runs: <code className="rounded bg-bg-tertiary px-1">nvidia-smi</code> check (VRAM 32GB min, 16GB hard min, ports 47900/47901 free → env <code className="rounded bg-bg-tertiary px-1">VLLM_PORT/AGENT_PORT</code>) → Docker + <code className="rounded bg-bg-tertiary px-1">nvidia-ctk</code> + <code className="rounded bg-bg-tertiary px-1">tailscale</code> →{" "}
-                  <code className="rounded bg-bg-tertiary px-1">tailscale up --login-server https://tailnet.seedinfer.com --authkey XXX --advertise-tags tag:provider</code> →{" "}
-                  <code className="rounded bg-bg-tertiary px-1">docker compose up -d --build</code> (host 47900:8000, 47901:3001) → heartbeat every 30s → verified fleet.
-                </p>
+      <PageContainer>
+        {/* Install */}
+        <Card className="overflow-hidden border-accent-brand/20 bg-gradient-to-br from-accent-brand/10 via-bg-secondary to-bg-secondary">
+          <CardContent className="p-5 pt-5">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant="success" className="gap-1">
+                <ShieldCheck className="h-3 w-3" /> {REVENUE_SHARE_PCT}% revenue share
+              </Badge>
+              <Badge variant="outline" className="font-mono">
+                {LIVE_MODEL.id}
+              </Badge>
+              <Badge variant="outline" className="border-accent-brand/30 font-mono text-accent-brand">
+                {priceLabel(LIVE_MODEL)} per 1M
+              </Badge>
+            </div>
+            <h2 className="mt-3 flex items-center gap-2 text-base font-semibold tracking-tight text-text-primary">
+              <Terminal className="h-4 w-4 text-accent-brand" /> Install a node with one command
+            </h2>
+            <p className="mt-1 max-w-3xl text-sm text-text-secondary">
+              The installer checks your GPU (<code className="font-mono text-xs">nvidia-smi</code>, ≥ {MIN_VRAM_GB} GB VRAM),
+              sets up Docker + the NVIDIA container toolkit, joins the SeedInfer mesh network and starts the inference
+              agent. Your node sends a heartbeat every {HEARTBEAT_S} s and is auto-verified after 2 heartbeats.
+            </p>
 
-                <div className="mt-4 grid gap-6 lg:grid-cols-[1.65fr_1fr]">
-                  <div className="space-y-3">
-                    <div>
-                      <div className="mb-1.5 flex items-center justify-between">
-                        <span className="font-mono text-[11px] uppercase tracking-wide text-text-tertiary">1 · Simple (recommended)</span>
-                        <CopyButton text={ONE_LINER_SIMPLE} />
-                      </div>
-                      <pre className="overflow-x-auto rounded-xl border border-border-dim bg-bg-primary p-3 font-mono text-xs leading-4 text-text-primary">{ONE_LINER_SIMPLE}</pre>
-                      <p className="mt-1 font-mono text-[11px] text-text-tertiary">
-                        Replace <code className="rounded bg-bg-tertiary px-1">YOUR_AUTHKEY</code> with a key from{" "}
-                        <code className="rounded bg-bg-tertiary px-1">/api/v1/auth/request</code> or the Generate button on{" "}
-                        <Link href="/provider" className="text-accent-brand underline">/provider</Link>. Gateway: <code className="rounded bg-bg-tertiary px-1">https://seedinfer.com</code>.
-                      </p>
-                    </div>
-                    <div>
-                      <div className="mb-1.5 flex items-center justify-between">
-                        <span className="font-mono text-[11px] uppercase tracking-wide text-text-tertiary">2 · Auto-fetch key (jq)</span>
-                        <CopyButton text={ONE_LINER_AUTO} />
-                      </div>
-                      <pre className="overflow-x-auto rounded-xl border border-border-dim bg-bg-primary p-3 font-mono text-xs leading-4 text-text-secondary">{ONE_LINER_AUTO}</pre>
-                      <p className="mt-1 font-mono text-[11px] text-text-tertiary">
-                        For scripts — fetches authkey from <code className="rounded bg-bg-tertiary px-1">/api/v1/auth/request</code> and installs immediately. Requires <code className="rounded bg-bg-tertiary px-1">jq</code>.
-                      </p>
-                    </div>
-                    <div>
-                      <div className="mb-1.5 flex items-center justify-between">
-                        <span className="font-mono text-[11px] uppercase tracking-wide text-text-tertiary">3 · Full options + hostname</span>
-                        <CopyButton text={ONE_LINER_CUSTOM} />
-                      </div>
-                      <pre className="overflow-x-auto rounded-xl border border-border-dim bg-bg-primary p-3 font-mono text-xs leading-4 text-text-secondary">{ONE_LINER_CUSTOM}</pre>
-                    </div>
-                    <div className="flex flex-wrap gap-2 font-mono text-xs">
-                      <a href="/install.sh" className="inline-flex items-center gap-1 text-accent-brand hover:underline">
-                        <FileText className="h-3.5 w-3.5" /> /install.sh
-                      </a>
-                      <span className="text-text-tertiary">·</span>
-                      <a href="/api/install" className="text-text-tertiary hover:text-text-primary">/api/install</a>
-                      <span className="text-text-tertiary">·</span>
-                      <a href="/api/v1/auth/request" className="text-text-tertiary hover:text-text-primary">/api/v1/auth/request</a>
-                      <span className="text-text-tertiary">·</span>
-                      <Link href="/docs" className="text-accent-brand hover:underline">/docs → hardware</Link>
-                    </div>
-                  </div>
-
-                  <div className="space-y-3">
-                    <Card className="border border-border-dim bg-bg-primary/70">
-                      <CardHeader className="pb-2">
-                        <CardTitle className="flex items-center gap-2 text-xs font-mono uppercase tracking-wide text-text-tertiary">
-                          <ShieldCheck className="h-3.5 w-3.5" /> Quick requirements
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent className="space-y-1.5 pt-0 font-mono text-xs">
-                        <div className="flex items-center justify-between rounded-lg bg-bg-tertiary px-2.5 py-2">
-                          <span className="text-text-tertiary">Model</span>
-                          <span className="font-medium text-text-primary">NVFP4 · 1M ctx $0.03/$0.20</span>
-                        </div>
-                        <div className="flex items-center justify-between rounded-lg bg-bg-tertiary px-2.5 py-2">
-                          <span className="text-text-tertiary">GPU min</span>
-                          <span className="font-medium text-accent-brand">RTX 5090 32GB GB202</span>
-                        </div>
-                        <div className="flex items-center justify-between rounded-lg bg-bg-tertiary px-2.5 py-2">
-                          <span className="text-text-tertiary">VRAM math</span>
-                          <span className="font-medium text-text-primary">16-22 +6 KV =22-28GB</span>
-                        </div>
-                        <div className="flex items-center justify-between rounded-lg bg-bg-tertiary px-2.5 py-2">
-                          <span className="text-text-tertiary">OS</span>
-                          <span className="font-medium text-text-primary">Ubuntu 24.04 noble</span>
-                        </div>
-                        <div className="flex items-center justify-between rounded-lg bg-bg-tertiary px-2.5 py-2">
-                          <span className="text-text-tertiary">Driver / CUDA</span>
-                          <span className="font-medium text-text-primary">580.65+ / 13.3</span>
-                        </div>
-                        <div className="flex items-center justify-between rounded-lg bg-bg-tertiary px-2.5 py-2">
-                          <span className="text-text-tertiary">Docker</span>
-                          <span className="font-medium text-text-primary">24+ + nvidia-ctk</span>
-                        </div>
-                        <div className="flex items-center justify-between rounded-lg bg-bg-tertiary px-2.5 py-2">
-                          <span className="text-text-tertiary">HF cache</span>
-                          <span className="font-medium text-text-primary">50GB+ (~60GB total)</span>
-                        </div>
-                        <div className="flex items-center justify-between rounded-lg bg-bg-tertiary px-2.5 py-2">
-                          <span className="text-text-tertiary">Free space</span>
-                          <span className="font-medium text-text-primary">60GB+ free (df -h)</span>
-                        </div>
-                        <div className="flex items-center justify-between rounded-lg bg-bg-tertiary px-2.5 py-2">
-                          <span className="text-text-tertiary">Ports</span>
-                          <span className="font-medium text-text-primary">47900:8000 + 47901:3001</span>
-                        </div>
-                        <div className="flex items-center justify-between rounded-lg bg-bg-tertiary px-2.5 py-2">
-                          <span className="text-text-tertiary">Net</span>
-                          <span className="font-medium text-text-primary">UDP 41641</span>
-                        </div>
-                        <div className="flex items-center justify-between rounded-lg bg-bg-tertiary px-2.5 py-2 border border-accent-brand/20 bg-accent-brand/5">
-                          <span className="text-text-tertiary">Payout Wallet</span>
-                          <span className="font-medium text-accent-green">Base Chain (EVM 0x...)</span>
-                        </div>
-                        <div className="rounded-lg border border-dashed border-border-default bg-bg-secondary p-2.5 font-mono text-[11px] leading-3 text-text-secondary">
-                          <strong className="text-text-primary">Flags host 1:1:</strong> marlin + flashinfer + fp8 · 0.93 · 1048576 · 128 · 4096 · <code className="rounded bg-bg-tertiary px-1">VLLM_ATTENTION_BACKEND=FLASHINFER</code> +{" "}
-                          <code className="rounded bg-bg-tertiary px-1">tailscale</code> auto.
-                        </div>
-                        <Link
-                          href="/docs"
-                          className="flex items-center justify-center gap-1.5 rounded-lg border border-accent-brand/20 bg-accent-brand/10 px-3 py-2 text-xs font-medium text-accent-brand hover:bg-accent-brand/15"
-                        >
-                          <FileText className="h-3.5 w-3.5" /> Full hardware docs → /docs
-                        </Link>
-                      </CardContent>
-                    </Card>
-                    <div className="rounded-xl border border-border-dim bg-bg-primary p-3">
-                      <div className="font-mono text-[10px] uppercase tracking-wide text-text-tertiary">Verify after install</div>
-                      <pre className="mt-1 overflow-x-auto rounded-lg bg-bg-tertiary p-2 font-mono text-[11px] text-text-secondary">{`curl -fsS http://127.0.0.1:47901/health | jq
-curl -fsS http://127.0.0.1:47900/v1/models | jq
-curl http://127.0.0.1:47901/v1/chat/completions \\
-  -H "Content-Type: application/json" \\
-  -d '{"model":"google/gemma-4-26b-a4b-nvfp4","messages":[{"role":"user","content":"ping"}],"max_tokens":32}'`}</pre>
-                      <p className="mt-1 font-mono text-[11px] text-text-tertiary">
-                        Fleet: <code className="rounded bg-bg-tertiary px-1">GET /api/v1/providers</code> · heartbeat co 30s · auto-verify po 2 heartbeat.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            {error && (
-              <div className="rounded-xl border border-accent-red/20 bg-accent-red/10 px-4 py-3 text-sm text-accent-red">
-                {error} — upstream unavailable.
-              </div>
-            )}
-            {loading && !stats && !gateway && !error && (
-              <div className="rounded-xl border border-border-dim bg-bg-secondary px-4 py-3 text-sm text-text-tertiary">
-                Loading providers from <code className="rounded bg-bg-tertiary px-1">/api/v1/providers</code> +{" "}
-                <code className="rounded bg-bg-tertiary px-1">/api/stats</code> …
-              </div>
-            )}
-            {!loading && !stats && !gateway && error && (
-              <div className="rounded-xl border border-border-dim bg-bg-secondary px-4 py-6 text-center text-sm text-text-tertiary">
-                No data — upstream unavailable (502).
-              </div>
-            )}
-
-            {/* SeedInfer gateway fleet — PRIMARY */}
-            <div className="space-y-3">
-              <div className="flex flex-wrap items-center gap-2">
-                <h3 className="text-sm font-semibold text-text-primary flex items-center gap-2">
-                  <Server className="h-4 w-4 text-accent-brand" /> SeedInfer gateway fleet —{" "}
-                  <code className="rounded bg-bg-tertiary px-1 text-xs font-mono">/api/v1/providers</code>
-                  <span className="font-normal text-text-tertiary">· primary</span>
-                </h3>
-                <Badge variant={verifiedCount > 0 ? "success" : "outline"} className="font-mono text-[10px]">
-                  {verifiedCount} verified · {gateway?.length ?? 0} total
-                </Badge>
-                <span className="font-mono text-[11px] text-text-tertiary hidden sm:inline">
-                  pending/verifying opacity 60 · verified = official node ·{" "}
-                  <code className="rounded bg-bg-tertiary px-1">heartbeat 30s</code>
-                </span>
-                <div className="ml-auto flex items-center gap-2">
-                  <Link href="/provider" className="inline-flex items-center gap-1 font-mono text-xs text-accent-brand hover:underline">
-                    Add your node → <KeyRound className="h-3 w-3" />
-                  </Link>
-                  <span className="font-mono text-xs text-text-tertiary">·</span>
-                  <a href="/api/v1/providers" target="_blank" className="inline-flex items-center gap-1 font-mono text-xs text-text-tertiary hover:text-text-primary">
-                    JSON <ExternalLink className="h-3 w-3" />
+            <div className="mt-5 grid gap-6 lg:grid-cols-[1.6fr_1fr]">
+              <div className="min-w-0 space-y-4">
+                <CommandBlock
+                  title="1 · Recommended"
+                  cmd={ONE_LINER_SIMPLE}
+                  note={
+                    <>
+                      Replace <code className="font-mono">YOUR_AUTHKEY</code> with a key generated on{" "}
+                      <Link href="/provider" className="text-accent-brand hover:underline">
+                        Become a provider
+                      </Link>
+                      .
+                    </>
+                  }
+                />
+                <CommandBlock
+                  title="2 · Auto-fetch key (needs jq)"
+                  cmd={ONE_LINER_AUTO}
+                  note="Requests an auth key and installs in one go — handy for scripted setups."
+                />
+                <CommandBlock title="3 · All options" cmd={ONE_LINER_CUSTOM} />
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+                  <a href={INSTALL_URL} className="inline-flex items-center gap-1 text-accent-brand hover:underline">
+                    <FileText className="h-3.5 w-3.5" /> View install.sh
                   </a>
+                  <Link href="/docs" className="inline-flex items-center gap-1 text-text-secondary hover:text-text-primary">
+                    Hardware docs <ExternalLink className="h-3 w-3" />
+                  </Link>
+                  <Link href="/provider#install" className="text-text-secondary hover:text-text-primary">
+                    Full provider guide →
+                  </Link>
                 </div>
               </div>
-              {gateway && gateway.length === 0 ? (
-                <Card className="border border-border-dim bg-bg-secondary p-6 text-center">
-                  <div className="text-sm font-medium text-text-primary">No providers in gateway — awaiting heartbeat</div>
-                  <div className="mt-1 font-mono text-xs text-text-tertiary">
-                    Provider runs: <code className="rounded bg-bg-tertiary px-1">curl -fsSL https://seedinfer.com/install.sh | bash -s -- --authkey XXX</code> → heartbeat every 30s → auto-verify after 2 heartbeats (~60s) → verified (green).
-                  </div>
-                  <div className="mt-3 flex flex-wrap justify-center gap-2">
-                    <Link href="/provider" className="inline-flex items-center gap-2 rounded-xl bg-accent-brand px-4 py-2 text-sm font-medium text-white hover:bg-accent-brand-hover">
-                      <Terminal className="h-4 w-4" /> Become a Provider
-                    </Link>
-                    <Link href="/docs" className="inline-flex items-center gap-2 rounded-xl border border-border-default bg-bg-tertiary px-4 py-2 text-sm font-medium text-text-primary hover:bg-bg-hover">
-                      <FileText className="h-4 w-4" /> Docs / hardware
-                    </Link>
-                  </div>
+
+              <div className="min-w-0 space-y-4">
+                <Card className="bg-bg-primary/60">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="flex items-center gap-2 font-mono text-[11px] uppercase tracking-wide text-text-tertiary">
+                      <ShieldCheck className="h-3.5 w-3.5" /> Requirements
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <dl className="divide-y divide-border-dim text-xs">
+                      {REQUIREMENTS.map(([k, v]) => (
+                        <div key={k} className="flex items-start justify-between gap-4 py-2">
+                          <dt className="shrink-0 text-text-tertiary">{k}</dt>
+                          <dd className="text-right font-medium text-text-primary">{v}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                  </CardContent>
                 </Card>
-              ) : (
-                <ProviderFleet providers={(gateway as any) ?? []} />
-              )}
-              <div className="rounded-lg border border-dashed border-border-default bg-bg-secondary p-2.5 font-mono text-[11px] text-text-tertiary">
-                Fleet page <code className="rounded bg-bg-tertiary px-1">/api/v1/providers</code> returns <code>verification.status</code> +{" "}
-                <code>heartbeat_count</code> + <code>tailscale_ip</code>. UI: <code>pending</code>🟡 / <code>verifying</code>🔵 opacity 60, <code>verified</code>🟢 opacity 100 (official), <code>failed</code>🔴. Manual:{" "}
-                <code className="rounded bg-bg-tertiary px-1">curl -X POST https://seedinfer.com/api/v1/providers/verify -H &apos;Content-Type: application/json&apos; -d &apos;&#123;&quot;provider_id&quot;:&quot;xxx&quot;&#125;&apos;</code>
-              </div>
-            </div>
-
-            {/* Upstream fleet — SECONDARY collapsed */}
-            <details className="group rounded-xl border border-border-dim bg-bg-secondary">
-              <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-4 py-3 text-xs font-semibold text-text-primary">
-                <span className="flex items-center gap-2">
-                  <Activity className="h-3.5 w-3.5 text-text-tertiary" /> Upstream fleet —{" "}
-                  <code className="rounded bg-bg-tertiary px-1 font-mono text-[11px]">/api/stats</code>{" "}
-                  <span className="font-normal text-text-tertiary">(secondary, reference only)</span>
-                  <Badge variant="outline" className="ml-1 font-mono text-[10px]">{stats?.providers?.length ?? 0} providers</Badge>
-                  <Badge variant="outline" className="ml-1 font-mono text-[10px]">{stats?.active_providers ?? "—"} active</Badge>
-                </span>
-                <span className="flex items-center gap-1 font-mono text-[11px] text-text-tertiary">
-                  <span className="hidden sm:inline">proxies /api/stats</span>
-                  <ChevronDown className="h-4 w-4 transition-transform group-open:rotate-180" />
-                </span>
-              </summary>
-              <div className="border-t border-border-dim p-4 space-y-3">
-                <div className="rounded-lg border border-accent-amber/20 bg-accent-amber/10 p-3 font-mono text-[11px] leading-4 text-text-secondary">
-                  <strong className="text-text-primary">SeedInfer Network Reference</strong> — data from <code className="rounded bg-bg-tertiary px-1">/api/stats</code>. SeedInfer gateway fleet (<code className="rounded bg-bg-tertiary px-1">/api/v1/providers</code>) is the source of truth — nodes with heartbeat + verification. Network stats serve only as a comparison.{" "}
-                  <Link href="/docs" className="text-accent-brand underline">See /docs</Link> and{" "}
-                  <Link href="/stats" className="text-accent-brand underline">/stats</Link>.
+                <div className="rounded-xl border border-border-dim bg-bg-primary/60 p-4">
+                  <div className="mb-1.5 flex items-center justify-between">
+                    <span className="font-mono text-[11px] uppercase tracking-wide text-text-tertiary">Verify after install</span>
+                    <CopyButton text={VERIFY_SNIPPET} label="verify commands" />
+                  </div>
+                  <pre className="overflow-x-auto rounded-lg bg-bg-tertiary p-3 font-mono text-[11px] leading-5 text-text-secondary">
+                    {VERIFY_SNIPPET}
+                  </pre>
+                  <p className="mt-2 text-xs text-text-tertiary">
+                    Heartbeat every {HEARTBEAT_S} s · auto-verified after 2 heartbeats.
+                  </p>
                 </div>
-                <ProviderFleet providers={stats?.providers ?? []} />
               </div>
-            </details>
-
-            <div className="border-t border-border-dim pt-4 font-mono text-[10px] leading-4 text-text-tertiary flex flex-wrap gap-2">
-              <span>
-                SeedInfer.com · Gateway fleet <code className="rounded bg-bg-tertiary px-1">/api/v1/providers</code> (heartbeat + verification) + heartbeat{" "}
-                <code className="rounded bg-bg-tertiary px-1">POST /api/v1/providers/heartbeat</code> · One-liner{" "}
-                <code className="rounded bg-bg-tertiary px-1">https://seedinfer.com/install.sh</code> · Host 47900:8000 (vLLM) 47901:3001 (agent) ·{" "}
-                <Link href="/docs" className="text-accent-brand underline">/docs</Link> ·{" "}
-                <Link href="/provider" className="text-accent-brand underline">/provider</Link> · SeedInfer Network Statistics{" "}
-                <code className="rounded bg-bg-tertiary px-1">/api/stats</code> (secondary collapsed).
-              </span>
             </div>
+          </CardContent>
+        </Card>
+
+        {error && (
+          <div
+            role="alert"
+            className="flex items-start gap-2 rounded-xl border border-accent-red/20 bg-accent-red/10 px-4 py-3 text-sm text-accent-red"
+          >
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>{error} — the provider registry is temporarily unavailable. Retrying every 15 s.</span>
           </div>
-        </main>
-      </div>
-    </div>
+        )}
+
+        {/* Fleet — rendered once */}
+        <section className="space-y-3">
+          <SectionHeader
+            eyebrow="Registry"
+            title="Network nodes"
+            description={
+              usingFallback
+                ? "No nodes registered with the gateway yet — showing the latest network snapshot instead."
+                : "Verified nodes serve traffic; pending and verifying nodes are shown dimmed."
+            }
+            actions={
+              <>
+                <Badge variant={verifiedCount > 0 ? "success" : "outline"} className="font-mono">
+                  {verifiedCount} verified · {gatewayList.length} total
+                </Badge>
+                <a
+                  href="/api/v1/providers"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 font-mono text-xs text-text-tertiary hover:text-text-primary"
+                >
+                  JSON <ExternalLink className="h-3 w-3" />
+                </a>
+              </>
+            }
+          />
+
+          {!ready ? (
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4" aria-busy="true">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <Card key={i} className="h-[220px] p-4">
+                  <div className="skeleton h-3 w-24" />
+                  <div className="skeleton mt-3 h-3 w-40" />
+                  <div className="skeleton mt-6 h-16 w-full" />
+                </Card>
+              ))}
+            </div>
+          ) : fleet.length === 0 ? (
+            <Card className="p-8 text-center">
+              <div className="text-sm font-medium text-text-primary">No nodes online yet</div>
+              <p className="mx-auto mt-1 max-w-lg text-xs text-text-tertiary">
+                Run the installer above. Your node appears here after its first heartbeat and turns green once
+                verified (about a minute).
+              </p>
+              <div className="mt-4 flex flex-wrap justify-center gap-2">
+                <Link
+                  href="/provider"
+                  className="inline-flex h-9 items-center gap-2 rounded-lg bg-accent-brand px-4 text-sm font-medium text-white hover:bg-accent-brand-hover"
+                >
+                  <Terminal className="h-4 w-4" /> Become a provider
+                </Link>
+                <Link
+                  href="/docs"
+                  className="inline-flex h-9 items-center gap-2 rounded-lg border border-border-default bg-bg-secondary px-4 text-sm font-medium text-text-primary hover:bg-bg-hover"
+                >
+                  <FileText className="h-4 w-4" /> Docs
+                </Link>
+              </div>
+            </Card>
+          ) : (
+            <ProviderFleet title={null} providers={fleet as any} />
+          )}
+        </section>
+      </PageContainer>
+    </AppShell>
   )
 }

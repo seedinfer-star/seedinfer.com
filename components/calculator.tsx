@@ -2,8 +2,19 @@
 
 import { useState } from "react"
 import Link from "next/link"
-import { Badge } from "@/components/ui/badge"
-import ProviderContactForm from "@/components/provider-contact-form"
+import {
+  MODELS,
+  LIVE_MODEL,
+  PROVIDER_ECONOMICS,
+  REVENUE_SHARE_PCT,
+  PROTOCOL_FEE_PCT,
+  STANDBY_LABEL,
+  PAYOUT_LABEL,
+  REFERENCE_GPU,
+  MIN_VRAM_GB,
+  usd,
+  type CatalogModel,
+} from "@/lib/catalog"
 import {
   Calculator as CalculatorIcon,
   Coins,
@@ -26,261 +37,96 @@ import {
   Wifi,
   Unlock,
   Lock,
-  BadgeCheck,
-  Clock,
-  Terminal,
-  Download,
-  ExternalLink,
 } from "lucide-react"
 
-type ModelProfile = {
-  id: "nemotron" | "gemma"
-  name: string
-  version: string
-  inputRate: number // $ per 1M
-  outputRate: number // $ per 1M
-  baseInputDaily: number // M tokens @ 30% load
-  baseOutputDaily: number // M tokens @ 30% load
-  efficiencyMultiplier: number
-  badgeText: string
-  description: string
+const BASELINE_UTIL = 30 // %
+const BASE_INPUT_DAILY_M = 200 // M input tokens/day at 30% load (assumption, adjustable)
+const BASE_OUTPUT_DAILY_M = 20 // M output tokens/day at 30% load (assumption, adjustable)
+const AVG_POWER_W = 220 // average wall draw at ~30% load (assumption)
+const DAYS = 30
+
+type Estimate = {
+  gross: number
+  providerShare: number
+  retainer: number
+  power: number
+  kwh: number
+  net: number
 }
 
-const MODELS: Record<string, ModelProfile> = {
-  nemotron: {
-    id: "nemotron",
-    name: "NVIDIA Nemotron 3.5 Lightning 30B",
-    version: "A3B NVFP4 · 1M Ctx",
-    inputRate: 0.02,
-    outputRate: 0.10,
-    baseInputDaily: 600, // 3x efficiency vs Gemma (200M x 3)
-    baseOutputDaily: 60, // 3x efficiency vs Gemma (20M x 3)
-    efficiencyMultiplier: 3.0,
-    badgeText: "3x Compute & Power Efficiency",
-    description: "Ultra-optimized architectural efficiency. Processes 3x token throughput per Watt with lower builder tariffs.",
-  },
-  gemma: {
-    id: "gemma",
-    name: "Gemma 4 26B A4B",
-    version: "NVFP4 W4A16 · 1M Ctx",
-    inputRate: 0.03,
-    outputRate: 0.20,
-    baseInputDaily: 200,
-    baseOutputDaily: 20,
-    efficiencyMultiplier: 1.0,
-    badgeText: "Standard NVFP4 Baseline",
-    description: "Phase 0 default model pricing ($0.03 in / $0.20 out per 1M) with standard 200M/20M daily throughput baseline at 30% load.",
-  },
+/** Single formula used for EVERY number on this card (headline, statement, comparison). */
+export function estimateMonthly(
+  m: CatalogModel,
+  inputM: number,
+  outputM: number,
+  electricityRate: number,
+  powerW = AVG_POWER_W,
+): Estimate {
+  const gross = (inputM * m.pricePer1M.input + outputM * m.pricePer1M.output) * DAYS
+  const providerShare = gross * PROVIDER_ECONOMICS.revenueShare
+  const retainer = PROVIDER_ECONOMICS.standbyPerDayUsd * DAYS
+  const kwh = (powerW * 24 * DAYS) / 1000
+  const power = kwh * electricityRate
+  return { gross, providerShare, retainer, power, kwh, net: providerShare + retainer - power }
 }
+
+const money = (n: number, d = 2) => `${n < 0 ? "-" : ""}$${Math.abs(n).toFixed(d)}`
 
 export default function Calculator() {
-  const [selectedModelKey, setSelectedModelKey] = useState<"nemotron" | "gemma">("gemma")
-  const currentModel = MODELS[selectedModelKey]
+  const [selectedId, setSelectedId] = useState<string>(LIVE_MODEL.id)
+  const currentModel: CatalogModel = MODELS.find((m) => m.id === selectedId) ?? LIVE_MODEL
 
-  const [utilization, setUtilization] = useState<number>(30)
+  const [utilization, setUtilization] = useState<number>(BASELINE_UTIL)
   const [electricityRate, setElectricityRate] = useState<number>(0.25)
-  const [inputTokensDaily, setInputTokensDaily] = useState<number>(currentModel.baseInputDaily)
-  const [outputTokensDaily, setOutputTokensDaily] = useState<number>(currentModel.baseOutputDaily)
+  const [inputTokensDaily, setInputTokensDaily] = useState<number>(BASE_INPUT_DAILY_M)
+  const [outputTokensDaily, setOutputTokensDaily] = useState<number>(BASE_OUTPUT_DAILY_M)
 
-  // Handle Model Switching
-  const handleModelSwitch = (key: "nemotron" | "gemma") => {
-    setSelectedModelKey(key)
-    const model = MODELS[key]
-    const ratio = utilization / 30
-    setInputTokensDaily(Math.round(model.baseInputDaily * ratio))
-    setOutputTokensDaily(Math.round(model.baseOutputDaily * ratio))
-  }
-
-  // Handle Utilization Slider adjustment
   const handleUtilizationChange = (newUtil: number) => {
     setUtilization(newUtil)
-    const ratio = newUtil / 30
-    setInputTokensDaily(Math.round(currentModel.baseInputDaily * ratio))
-    setOutputTokensDaily(Math.round(currentModel.baseOutputDaily * ratio))
+    const ratio = newUtil / BASELINE_UTIL
+    setInputTokensDaily(Math.round(BASE_INPUT_DAILY_M * ratio))
+    setOutputTokensDaily(Math.round(BASE_OUTPUT_DAILY_M * ratio))
   }
 
-  // Dynamic Financial Calculations
-  const dailyTrafficRevenue =
-    (inputTokensDaily * currentModel.inputRate) +
-    (outputTokensDaily * currentModel.outputRate)
-  const monthlyTrafficRevenue = dailyTrafficRevenue * 30
-
-  const dailyRetainer = 0.40
-  const monthlyRetainer = dailyRetainer * 30 // $12.00 / month
-
-  const powerDrawW = 220 // 220W average power draw per hour
-  const monthlyKwh = (powerDrawW * 24 * 30) / 1000 // 158.4 kWh (~160 kWh)
-  const monthlyPowerCost = monthlyKwh * electricityRate // ~$39.60 @ $0.25/kWh
-
-  const grossMonthlyIncome = monthlyTrafficRevenue + monthlyRetainer
-  const netMonthlyProfit = grossMonthlyIncome - monthlyPowerCost
+  const est = estimateMonthly(currentModel, inputTokensDaily, outputTokensDaily, electricityRate)
+  const baselineFor = (m: CatalogModel) => estimateMonthly(m, BASE_INPUT_DAILY_M, BASE_OUTPUT_DAILY_M, 0.25)
+  const gpu = REFERENCE_GPU
+  const sharePct = REVENUE_SHARE_PCT
+  const feePct = PROTOCOL_FEE_PCT
 
   return (
-    <section id="calculator" className="col-span-12 rounded-2xl border border-accent-brand/20 bg-gradient-to-br from-accent-brand/10 via-bg-secondary to-bg-secondary p-6 sm:p-8 shadow-md">
-      {/* Integrated Hero Banner Header */}
-      <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between border-b border-border-dim pb-6 mb-6">
-        <div className="min-w-0 flex-1">
-          {/* Badges */}
-          <div className="flex flex-wrap items-center gap-1.5 mb-3">
-            <Badge variant="success" className="gap-1 font-mono text-[10px]">
-              <BadgeCheck className="h-3 w-3" /> Flagship: Gemma 4 26B A4B
-            </Badge>
-            <Badge variant="outline" className="font-mono text-[10px] border-accent-brand/30 text-accent-brand">
-              Zero-Account Ed25519 Auth
-            </Badge>
-            <Badge variant="outline" className="font-mono text-[10px]">
-              Hardware Fingerprint Lock
-            </Badge>
-            <Badge variant="outline" className="font-mono text-[10px]">
-              CUDA 13.3 · Driver 580+
-            </Badge>
-            <Badge variant="outline" className="font-mono text-[10px] border-accent-green/30 text-accent-green">
-              Fair Monthly Waterfall Settlement
-            </Badge>
-          </div>
-
-          <div className="flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.16em] text-accent-brand mb-1">
+    <section id="calculator" className="col-span-12 rounded-2xl border border-border-dim bg-bg-secondary p-6 sm:p-8">
+      {/* Section Header */}
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <div className="flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.16em] text-accent-brand">
             <Sparkles className="h-3.5 w-3.5" /> Provider Revenue & Net-Profit Calculator
           </div>
-          <h2 className="text-2xl font-bold tracking-tight text-text-primary sm:text-3xl">
-            Become a Node Operator — High-Yield GPU Monetization
+          <h2 className="mt-1 text-2xl font-bold tracking-tight text-text-primary sm:text-3xl">
+            Real-World Hardware Economics
           </h2>
-          
-          <p className="mt-2 max-w-3xl text-xs sm:text-sm leading-5 text-text-secondary">
-            Serve flagship <code className="rounded bg-bg-tertiary px-1.5 py-0.5 font-mono text-xs text-text-primary">google/gemma-4-26b-a4b-nvfp4</code> & <code className="rounded bg-bg-tertiary px-1.5 py-0.5 font-mono text-xs text-text-primary">seedinfer/nemotron-lightning-1m</code> models on your RTX 5090 32GB rig. 
-            No account registration needed — automated Ed25519 key generation and hardware-bound identity protection in seconds.
-            Fair monthly settlement model: <strong className="text-text-primary">$0.40/day standby coverage</strong> (for &ge;50% uptime since joining) to cover electricity + <strong className="text-text-primary">network surplus profit share from processed traffic</strong>. Automated USDC payouts on Base network.
+          <p className="mt-1.5 max-w-3xl font-mono text-xs leading-5 text-text-secondary">
+            Line-by-line estimate for hosting models on an <strong className="text-text-primary">NVIDIA {gpu.name}</strong> reference node. Providers receive {sharePct}% of token revenue ({feePct}% protocol fee) plus a standby retainer of {STANDBY_LABEL}. Throughput and power figures are adjustable assumptions, not guarantees.
           </p>
-
-          {/* Quick Metrics Grid */}
-          <div className="mt-4 grid gap-2.5 sm:grid-cols-3">
-            <div className="rounded-xl border border-border-dim bg-bg-tertiary/60 p-3">
-              <div className="font-mono text-[10px] uppercase tracking-wide text-text-tertiary flex items-center gap-1">
-                <Clock className="h-3 w-3 text-accent-brand" /> Standby Electricity Cover
-              </div>
-              <div className="mt-1 font-mono text-sm font-semibold text-text-primary">$0.40 / day</div>
-              <div className="font-mono text-[10px] text-text-tertiary">$0.01667/h (after completed hour, uptime &ge;50%)</div>
-            </div>
-            <div className="rounded-xl border border-border-dim bg-bg-tertiary/60 p-3">
-              <div className="font-mono text-[10px] uppercase tracking-wide text-text-tertiary flex items-center gap-1">
-                <Coins className="h-3 w-3 text-accent-green" /> Profit Sharing
-              </div>
-              <div className="mt-1 font-mono text-sm font-semibold text-text-primary">Proportional Share</div>
-              <div className="font-mono text-[10px] text-text-tertiary">from net revenue based on processed volume and model rates</div>
-            </div>
-            <div className="rounded-xl border border-border-dim bg-bg-tertiary/60 p-3">
-              <div className="font-mono text-[10px] uppercase tracking-wide text-text-tertiary flex items-center gap-1">
-                <Cpu className="h-3 w-3 text-accent-brand" /> Context & Hardware
-              </div>
-              <div className="mt-1 font-mono text-sm font-semibold text-text-primary">1M · RTX 5090 32GB</div>
-              <div className="font-mono text-[10px] text-text-tertiary">NVFP4 W4A16+FP8 KV ~22-28GB VRAM</div>
-            </div>
-          </div>
-
-          <div className="mt-4 flex flex-wrap items-center gap-2">
-            <a
-              href="#install"
-              className="inline-flex items-center gap-2 rounded-xl bg-accent-brand px-4 py-2 text-xs font-medium text-white hover:bg-accent-brand-hover transition-colors"
-            >
-              <Terminal className="h-4 w-4" /> One-liner install
-            </a>
-            <a
-              href="/provider.tar.gz"
-              className="inline-flex items-center gap-2 rounded-xl border border-border-default bg-bg-tertiary px-4 py-2 text-xs font-medium text-text-primary hover:bg-bg-hover transition-colors"
-            >
-              <Download className="h-4 w-4" /> provider.tar.gz
-            </a>
-            <a
-              href="https://seedinfer.com/install.sh"
-              target="_blank"
-              className="inline-flex items-center gap-1 font-mono text-xs text-text-tertiary hover:text-text-primary transition-colors"
-            >
-              https://seedinfer.com/install.sh <ExternalLink className="h-3 w-3" />
-            </a>
-          </div>
         </div>
-
-        {/* Minimum Node Requirements Box */}
-        <div className="w-full shrink-0 border border-border-dim bg-bg-primary/80 rounded-xl p-4 lg:w-[360px] space-y-2.5">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 text-xs font-mono uppercase tracking-wide text-text-tertiary font-semibold">
-              <ShieldCheck className="h-3.5 w-3.5 text-accent-brand" /> Minimum Node Requirements
-            </div>
-            <Badge variant="outline" className="font-mono text-[9px] border-accent-brand/30 text-accent-brand">
-              Plug & Play Autostart
-            </Badge>
-          </div>
-
-          <div className="grid grid-cols-2 gap-1.5 font-mono text-[11px]">
-            <div className="flex items-center justify-between rounded-lg bg-bg-tertiary px-2 py-1.5">
-              <span className="text-text-tertiary">OS</span>
-              <span className="font-semibold text-text-primary">Ubuntu 24.04+</span>
-            </div>
-            <div className="flex items-center justify-between rounded-lg bg-bg-tertiary px-2 py-1.5">
-              <span className="text-text-tertiary">Driver</span>
-              <span className="font-semibold text-text-primary">580+ (cu13.3)</span>
-            </div>
-            <div className="flex items-center justify-between rounded-lg bg-bg-tertiary px-2 py-1.5">
-              <span className="text-text-tertiary">GPU</span>
-              <span className="font-semibold text-text-primary">RTX 5090</span>
-            </div>
-            <div className="flex items-center justify-between rounded-lg bg-bg-tertiary px-2 py-1.5">
-              <span className="text-text-tertiary">VRAM</span>
-              <span className="font-semibold text-text-primary">32GB (16 min)</span>
-            </div>
-            <div className="flex items-center justify-between rounded-lg bg-bg-tertiary px-2 py-1.5">
-              <span className="text-text-tertiary">Docker</span>
-              <span className="font-semibold text-text-primary">24+ + nvidia-ctk</span>
-            </div>
-            <div className="flex items-center justify-between rounded-lg bg-bg-tertiary px-2 py-1.5">
-              <span className="text-text-tertiary">Disk</span>
-              <span className="font-semibold text-text-primary">60GB+ free</span>
-            </div>
-          </div>
-
-          <div className="rounded-lg border border-dashed border-border-default bg-bg-secondary p-2.5 font-mono text-[10px] leading-4 text-text-secondary space-y-1">
-            <div>• <strong>Ports:</strong> 47900 (vLLM) + 47901 (Agent).</div>
-            <div>• <strong>Tailscale:</strong> Container runs isolated (no conflict with personal host tailnet).</div>
-            <div>• <strong>Autostart:</strong> Plug & Play systemd service autostarts on boot.</div>
-          </div>
-
-          <a
-            href="#custom-application-form"
-            className="block rounded-lg border border-accent-brand/30 bg-accent-brand/10 p-2 text-center font-mono text-[11px] text-accent-brand hover:bg-accent-brand/20 transition-colors font-medium"
-          >
-            Don't meet specs? Apply with custom hardware &rarr;
-          </a>
+        <div className="flex shrink-0 items-center gap-2">
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-accent-green/30 bg-accent-green/10 px-3 py-1 font-mono text-xs font-semibold text-accent-green">
+            <CheckCircle2 className="h-3.5 w-3.5" /> {sharePct}% revenue share
+          </span>
         </div>
       </div>
 
-      {/* Custom Hardware Application Form Section */}
-      <div id="custom-application-form" className="mt-8">
-        <ProviderContactForm />
-      </div>
-
-      {/* Realistic Expectations Banner: Expected Median Earnings (~$120/mo Net) */}
+      {/* Expectations banner */}
       <div className="mt-6 rounded-xl border border-accent-brand/30 bg-gradient-to-r from-accent-brand/10 via-bg-primary to-bg-primary p-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-start gap-3">
-            <Scale className="h-5 w-5 shrink-0 text-accent-brand mt-0.5" />
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="font-mono text-xs font-bold text-text-primary uppercase tracking-wider">
-                  Realistic Earnings Expectation
-                </span>
-                <span className="rounded-full bg-accent-brand/20 px-2 py-0.5 font-mono text-[10px] font-bold text-accent-brand">
-                  Network Median: ~$120/mo Net
-                </span>
-              </div>
-              <p className="mt-1 font-mono text-xs leading-5 text-text-secondary">
-                While high-utilization top-tier nodes earn <strong className="text-accent-green">$330–$512/mo net</strong> during peak traffic, the <strong className="text-text-primary">expected network median for average RTX 5090 nodes settles realistically around ~$120 USD/month net profit</strong> after deducting electricity costs. We believe in complete honesty over hyped promises.
-              </p>
-            </div>
-          </div>
-          <div className="shrink-0 font-mono text-right sm:text-right text-left">
-            <div className="text-[10px] uppercase text-text-tertiary">Network Median Net</div>
-            <div className="text-xl font-extrabold text-accent-brand">~$120 / mo</div>
-            <div className="text-[9px] text-text-tertiary">after power deduction</div>
+        <div className="flex items-start gap-3">
+          <Scale className="h-5 w-5 shrink-0 text-accent-brand mt-0.5" />
+          <div>
+            <span className="font-mono text-xs font-bold text-text-primary uppercase tracking-wider">Estimates, not guarantees</span>
+            <p className="mt-1 font-mono text-xs leading-5 text-text-secondary">
+              Earnings depend on real network demand. The network is at an early stage, so actual traffic per node may be far below the
+              baseline assumption ({BASE_INPUT_DAILY_M}M input / {BASE_OUTPUT_DAILY_M}M output tokens per day at {BASELINE_UTIL}% load).
+              Payouts: {PAYOUT_LABEL}.
+            </p>
           </div>
         </div>
       </div>
@@ -294,58 +140,41 @@ export default function Calculator() {
           <span className="text-[11px] text-text-tertiary">Select model architecture to calculate yield</span>
         </div>
 
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          {/* Model Option 1: Nemotron */}
-          <button
-            type="button"
-            onClick={() => handleModelSwitch("nemotron")}
-            className={`flex flex-col text-left p-4 rounded-xl border transition-all ${
-              selectedModelKey === "nemotron"
-                ? "border-accent-brand bg-accent-brand/10 shadow-md ring-1 ring-accent-brand"
-                : "border-border-dim bg-bg-secondary hover:border-border-default hover:bg-bg-tertiary/50"
-            }`}
-          >
-            <div className="flex items-center justify-between">
-              <span className="font-mono text-xs font-bold text-text-primary">
-                NVIDIA Nemotron 3.5 Lightning 30B
-              </span>
-              <span className="rounded bg-accent-green/15 px-2 py-0.5 font-mono text-[10px] font-bold text-accent-green">
-                3x Compute Efficient
-              </span>
-            </div>
-            <div className="mt-1 font-mono text-[11px] text-accent-brand">
-              Rate: $0.02 / 1M in · $0.10 / 1M out
-            </div>
-            <p className="mt-2 font-mono text-[10px] leading-4 text-text-tertiary">
-              3x energy efficiency allows <strong className="text-text-secondary">600M In / 60M Out</strong> tokens/day at 30% GPU load ($220W/h). Yields <strong className="text-accent-green">~$512/mo Net</strong>.
-            </p>
-          </button>
-
-          {/* Model Option 2: Gemma 4 */}
-          <button
-            type="button"
-            onClick={() => handleModelSwitch("gemma")}
-            className={`flex flex-col text-left p-4 rounded-xl border transition-all ${
-              selectedModelKey === "gemma"
-                ? "border-accent-brand bg-accent-brand/10 shadow-md ring-1 ring-accent-brand"
-                : "border-border-dim bg-bg-secondary hover:border-border-default hover:bg-bg-tertiary/50"
-            }`}
-          >
-            <div className="flex items-center justify-between">
-              <span className="font-mono text-xs font-bold text-text-primary">
-                Gemma 4 26B A4B
-              </span>
-              <span className="rounded bg-bg-tertiary px-2 py-0.5 font-mono text-[10px] text-text-secondary">
-                Standard Baseline
-              </span>
-            </div>
-            <div className="mt-1 font-mono text-[11px] text-accent-brand">
-              Rate: $0.03 / 1M in · $0.30 / 1M out
-            </div>
-            <p className="mt-2 font-mono text-[10px] leading-4 text-text-tertiary">
-              Standard throughput <strong className="text-text-secondary">200M In / 20M Out</strong> tokens/day at 30% GPU load. Higher output tariff tier yields <strong className="text-accent-green">~$332/mo Net</strong>.
-            </p>
-          </button>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          {MODELS.map((m) => {
+            const base = baselineFor(m)
+            const active = selectedId === m.id
+            return (
+              <button
+                key={m.id}
+                type="button"
+                onClick={() => setSelectedId(m.id)}
+                className={`flex flex-col text-left p-4 rounded-xl border transition-all ${
+                  active
+                    ? "border-accent-brand bg-accent-brand/10 shadow-md ring-1 ring-accent-brand"
+                    : "border-border-dim bg-bg-secondary hover:border-border-default hover:bg-bg-tertiary/50"
+                }`}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-mono text-xs font-bold text-text-primary">{m.name}</span>
+                  <span
+                    className={`shrink-0 rounded px-2 py-0.5 font-mono text-[10px] font-bold ${
+                      m.status === "live" ? "bg-accent-green/15 text-accent-green" : "bg-bg-tertiary text-text-secondary"
+                    }`}
+                  >
+                    {m.status === "live" ? "Live" : "Coming soon"}
+                  </span>
+                </div>
+                <div className="mt-1 font-mono text-[11px] text-accent-brand">
+                  Rate: {usd(m.pricePer1M.input)} / 1M in · {usd(m.pricePer1M.output)} / 1M out · {m.contextLabel} ctx
+                </div>
+                <p className="mt-2 font-mono text-[10px] leading-4 text-text-tertiary">
+                  Baseline {BASE_INPUT_DAILY_M}M in / {BASE_OUTPUT_DAILY_M}M out per day, $0.25/kWh →{" "}
+                  <strong className="text-accent-green">{money(base.net, 0)}/mo net</strong>
+                </p>
+              </button>
+            )
+          })}
         </div>
       </div>
 
@@ -359,19 +188,21 @@ export default function Calculator() {
                 <Cpu className="h-4 w-4 text-accent-brand" /> Active Rig Profile & Rates
               </div>
               <span className="rounded bg-accent-brand/10 px-2 py-0.5 font-mono text-[11px] font-medium text-accent-brand">
-                {currentModel.version}
+                {currentModel.quantization.toUpperCase()} · {currentModel.contextLabel} ctx
               </span>
             </div>
             <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="rounded-lg border border-border-dim bg-bg-secondary p-3">
                 <span className="font-mono text-[10px] uppercase text-text-tertiary">GPU Hardware</span>
-                <div className="mt-1 font-mono text-sm font-bold text-text-primary">NVIDIA RTX 5090 (32GB)</div>
-                <div className="mt-0.5 font-mono text-[10px] text-text-tertiary">Blackwell GB202 · 24,576 CUDA cores</div>
+                <div className="mt-1 font-mono text-sm font-bold text-text-primary">NVIDIA {gpu.name}</div>
+                <div className="mt-0.5 font-mono text-[10px] text-text-tertiary">
+                  {gpu.cudaCores?.toLocaleString("en-US")} CUDA cores · {gpu.memBandwidthGBs?.toLocaleString("en-US")} GB/s · {gpu.tdpW} W TDP
+                </div>
               </div>
               <div className="rounded-lg border border-border-dim bg-bg-secondary p-3">
                 <span className="font-mono text-[10px] uppercase text-text-tertiary">Selected Model Rates</span>
                 <div className="mt-1 font-mono text-sm font-bold text-accent-brand">
-                  ${currentModel.inputRate.toFixed(2)} in / ${currentModel.outputRate.toFixed(2)} out
+                  {usd(currentModel.pricePer1M.input)} in / {usd(currentModel.pricePer1M.output)} out
                 </div>
                 <div className="mt-0.5 font-mono text-[10px] text-text-tertiary">Per 1,000,000 processed tokens</div>
               </div>
@@ -401,7 +232,7 @@ export default function Calculator() {
                 />
                 <div className="mt-1 flex justify-between font-mono text-[10px] text-text-tertiary">
                   <span>5% (Low)</span>
-                  <span className="font-semibold text-accent-green">30% (Standard Benchmark)</span>
+                  <span className="font-semibold text-accent-green">30% (baseline assumption)</span>
                   <span>100% (Full Capacity)</span>
                 </div>
               </div>
@@ -424,7 +255,7 @@ export default function Calculator() {
                   onChange={(e) => setInputTokensDaily(Number(e.target.value))}
                   className="h-2 w-full cursor-pointer appearance-none rounded-full bg-bg-tertiary accent-accent-brand"
                 />
-                <p className="font-mono text-[10px] text-text-tertiary">Rate: ${currentModel.inputRate.toFixed(2)} / 1M Input Tokens</p>
+                <p className="font-mono text-[10px] text-text-tertiary">Rate: {usd(currentModel.pricePer1M.input)} / 1M input tokens</p>
               </div>
 
               {/* Output Tokens */}
@@ -442,7 +273,7 @@ export default function Calculator() {
                   onChange={(e) => setOutputTokensDaily(Number(e.target.value))}
                   className="h-2 w-full cursor-pointer appearance-none rounded-full bg-bg-tertiary accent-accent-brand"
                 />
-                <p className="font-mono text-[10px] text-text-tertiary">Rate: ${currentModel.outputRate.toFixed(2)} / 1M Output Tokens</p>
+                <p className="font-mono text-[10px] text-text-tertiary">Rate: {usd(currentModel.pricePer1M.output)} / 1M output tokens</p>
               </div>
             </div>
           </div>
@@ -476,45 +307,15 @@ export default function Calculator() {
             <div className="mt-4 flex items-center justify-between rounded-lg border border-border-dim bg-bg-secondary p-3 font-mono text-xs text-text-secondary">
               <div>
                 <span>Avg Power Draw: </span>
-                <strong className="text-text-primary">220W / hour</strong>
+                <strong className="text-text-primary">{AVG_POWER_W} W average (TDP {gpu.tdpW} W)</strong>
               </div>
               <div>
                 <span>Monthly Energy: </span>
-                <strong className="text-text-primary">{monthlyKwh.toFixed(1)} kWh</strong>
+                <strong className="text-text-primary">{est.kwh.toFixed(1)} kWh</strong>
               </div>
             </div>
           </div>
 
-          {/* Card D — Live Network Leaderboard Benchmarks Proof */}
-          <div className="rounded-xl border border-border-dim bg-bg-primary p-5">
-            <div className="flex items-center justify-between border-b border-border-dim pb-3">
-              <div className="flex items-center gap-2 font-mono text-xs font-semibold uppercase tracking-wider text-text-primary">
-                <Award className="h-4 w-4 text-amber-400" /> Real-World Network Benchmarks (Darkbloom Proof)
-              </div>
-              <span className="font-mono text-[10px] text-text-tertiary">Top 10% Active Nodes</span>
-            </div>
-            <p className="mt-3 font-mono text-xs leading-5 text-text-secondary">
-              Throughput metrics verified by empirical activity across top 10% active GPU nodes on decentralized inference networks:
-            </p>
-
-            <div className="mt-3 grid grid-cols-3 gap-2 font-mono text-xs">
-              <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-2.5 text-center">
-                <div className="text-[10px] text-amber-400 font-bold">🥇 1. forest-komodo-7812</div>
-                <div className="mt-1 text-sm font-extrabold text-text-primary">325.5M</div>
-                <div className="text-[9px] text-text-tertiary">tokens / day</div>
-              </div>
-              <div className="rounded-lg border border-border-dim bg-bg-secondary p-2.5 text-center">
-                <div className="text-[10px] text-text-secondary font-semibold">🥈 2. pluckier-stoat-9536</div>
-                <div className="mt-1 text-sm font-bold text-text-primary">182.9M</div>
-                <div className="text-[9px] text-text-tertiary">tokens / day</div>
-              </div>
-              <div className="rounded-lg border border-border-dim bg-bg-secondary p-2.5 text-center">
-                <div className="text-[10px] text-text-secondary font-semibold">🥉 3. downy-scorpion-2274</div>
-                <div className="mt-1 text-sm font-bold text-text-primary">156.5M</div>
-                <div className="text-[9px] text-text-tertiary">tokens / day</div>
-              </div>
-            </div>
-          </div>
         </div>
 
         {/* Right Column — Live Financial Statement & Net Profit Output */}
@@ -525,21 +326,21 @@ export default function Calculator() {
                 <CalculatorIcon className="h-4 w-4" /> Monthly Profit Summary
               </div>
               <span className="rounded-full bg-accent-green/10 px-2.5 py-0.5 font-mono text-[11px] font-bold text-accent-green">
-                {currentModel.id === "nemotron" ? "$512/mo Net" : "$332/mo Net"}
+                {money(est.net, 0)}/mo net
               </span>
             </div>
 
             {/* Big Net Monthly Profit Highlight */}
             <div className="mt-6 text-center">
               <span className="font-mono text-xs uppercase tracking-widest text-text-tertiary">
-                Estimated Net Profit / Month ({currentModel.id === "nemotron" ? "Nemotron" : "Gemma"})
+                Estimated net / month ({currentModel.shortName})
               </span>
               <div className="mt-2 flex items-center justify-center gap-1 font-mono text-4xl font-extrabold tracking-tight text-accent-green sm:text-5xl">
-                <span>${netMonthlyProfit.toFixed(0)}</span>
+                <span>{money(est.net, 0)}</span>
                 <span className="text-xl font-normal text-text-tertiary">/ mo</span>
               </div>
               <p className="mt-1 font-mono text-[11px] text-text-tertiary">
-                Pure net profit after power deduction on 1x RTX 5090
+                After electricity, on 1× {gpu.name}
               </p>
             </div>
 
@@ -547,18 +348,27 @@ export default function Calculator() {
             <div className="mt-6 space-y-3 rounded-xl border border-border-dim bg-bg-secondary p-4 font-mono text-xs">
               <div className="flex items-center justify-between text-[11px] font-semibold text-text-primary uppercase tracking-wider border-b border-border-dim pb-2">
                 <span>Monthly Statement (30 Days)</span>
-                <span className="text-[10px] text-accent-brand">{currentModel.name.split(" ")[1]}</span>
+                <span className="text-[10px] text-accent-brand">{currentModel.shortName}</span>
               </div>
 
               {/* Traffic Revenue */}
               <div className="flex items-center justify-between">
                 <span className="text-text-secondary flex items-center gap-1">
-                  <Coins className="h-3.5 w-3.5 text-accent-brand" /> Traffic Revenue
+                  <Coins className="h-3.5 w-3.5 text-accent-brand" /> Token revenue (gross)
                 </span>
-                <span className="font-bold text-accent-green">+${monthlyTrafficRevenue.toFixed(2)}</span>
+                <span className="font-bold text-text-primary">{money(est.gross)}</span>
               </div>
               <div className="pl-4 text-[10px] text-text-tertiary">
-                {inputTokensDaily}M in (${currentModel.inputRate.toFixed(2)}) + {outputTokensDaily}M out (${currentModel.outputRate.toFixed(2)}) / day
+                {inputTokensDaily}M in × {usd(currentModel.pricePer1M.input)} + {outputTokensDaily}M out × {usd(currentModel.pricePer1M.output)} per day × {DAYS}
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-text-secondary flex items-center gap-1">
+                  <Coins className="h-3.5 w-3.5 text-accent-brand" /> Your share ({sharePct}%)
+                </span>
+                <span className="font-bold text-accent-green">+{money(est.providerShare)}</span>
+              </div>
+              <div className="pl-4 text-[10px] text-text-tertiary">
+                {feePct}% protocol fee: -{money(est.gross - est.providerShare)}
               </div>
 
               {/* Standby Retainer */}
@@ -566,10 +376,10 @@ export default function Calculator() {
                 <span className="text-text-secondary flex items-center gap-1">
                   <DollarSign className="h-3.5 w-3.5 text-accent-brand" /> Standby Retainer
                 </span>
-                <span className="font-bold text-accent-green">+${monthlyRetainer.toFixed(2)}</span>
+                <span className="font-bold text-accent-green">+{money(est.retainer)}</span>
               </div>
               <div className="pl-4 text-[10px] text-text-tertiary">
-                $0.40 / day guaranteed rate (&ge;50% uptime)
+                {STANDBY_LABEL} (assumes every day qualifies)
               </div>
 
               {/* Electricity Cost */}
@@ -577,24 +387,25 @@ export default function Calculator() {
                 <span className="text-text-secondary flex items-center gap-1">
                   <Zap className="h-3.5 w-3.5 text-amber-400" /> Electricity Cost
                 </span>
-                <span className="font-bold text-accent-red">-${monthlyPowerCost.toFixed(2)}</span>
+                <span className="font-bold text-accent-red">-{money(est.power)}</span>
               </div>
               <div className="pl-4 text-[10px] text-text-tertiary">
-                220W/h (~{monthlyKwh.toFixed(0)} kWh) @ ${electricityRate.toFixed(2)}/kWh
+                {AVG_POWER_W} W avg (~{est.kwh.toFixed(0)} kWh) @ ${electricityRate.toFixed(2)}/kWh
               </div>
 
               {/* Formula & Total Net Calculation */}
               <div className="mt-3 flex items-center justify-between rounded-lg bg-accent-green/10 p-3 pt-3 border-t-2 border-accent-green/30 text-sm">
                 <span className="font-bold text-text-primary">Net Monthly Profit</span>
-                <span className="font-extrabold text-accent-green">${netMonthlyProfit.toFixed(2)}</span>
+                <span className="font-extrabold text-accent-green">{money(est.net)}</span>
               </div>
             </div>
 
-            {/* Efficiency Explanation Note */}
             <div className="mt-4 flex items-start gap-2 rounded-xl border border-accent-brand/20 bg-accent-brand/5 p-3">
               <Info className="h-4 w-4 shrink-0 text-accent-brand mt-0.5" />
               <p className="font-mono text-[11px] leading-4 text-text-secondary">
-                <strong className="text-text-primary">Model Energy Efficiency:</strong> Nemotron 3.5 achieves 3x token/Watt compute efficiency over Gemma 4. At $0.02/$0.10 rates, 3x higher throughput (600M in / 60M out) yields <strong className="text-accent-green">$540 traffic + $12 retainer - $40 power = $512/mo Net Profit</strong>.
+                <strong className="text-text-primary">Formula:</strong> net = token revenue × {PROVIDER_ECONOMICS.revenueShare} + $
+                {PROVIDER_ECONOMICS.standbyPerDayUsd.toFixed(2)} × {DAYS} days − kWh × tariff. Payouts: {PAYOUT_LABEL}.
+                {currentModel.status !== "live" && " This model is coming soon — figures are a projection."}
               </p>
             </div>
 
@@ -603,11 +414,11 @@ export default function Calculator() {
               href="/provider"
               className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-accent-brand px-5 py-3 text-sm font-bold text-white shadow-lg transition-colors hover:bg-accent-brand-hover"
             >
-              <Server className="h-4 w-4" /> Deploy {currentModel.id === "nemotron" ? "Nemotron" : "Gemma"} Node on RTX 5090 <ArrowUpRight className="h-4 w-4" />
+              <Server className="h-4 w-4" /> Become a provider <ArrowUpRight className="h-4 w-4" />
             </Link>
 
             <p className="mt-2 text-center font-mono text-[10px] text-text-tertiary">
-              NVIDIA RTX 5090 (32GB VRAM) required · Ubuntu 24.04 LTS · vLLM + Docker
+              NVIDIA GPU with ≥{MIN_VRAM_GB}GB VRAM · Ubuntu 24.04 LTS · vLLM + Docker · 24GB cards not supported yet
             </p>
           </div>
         </div>
@@ -645,21 +456,10 @@ export default function Calculator() {
             </thead>
             <tbody className="divide-y divide-border-dim">
               <tr>
-                <td className="p-3 font-semibold text-text-primary">Max Net Monthly Income (RTX 5090)</td>
-                <td className="p-3 text-text-secondary bg-red-500/5">
-                  <span className="font-bold text-red-400">$152 / mo Max Net</span> ($252 gross - $100 power @ 100% 24/7 occupancy)
-                </td>
+                <td className="p-3 font-semibold text-text-primary">How you earn</td>
+                <td className="p-3 text-text-secondary bg-red-500/5">Hourly rental while a tenant occupies the machine</td>
                 <td className="p-3 font-bold text-accent-green bg-accent-green/5">
-                  $330 – $512 / mo Net Profit (up to 3x higher yield)
-                </td>
-              </tr>
-              <tr>
-                <td className="p-3 font-semibold text-text-primary">Expected Network Median Net</td>
-                <td className="p-3 text-text-secondary bg-red-500/5">
-                  ~$50 – $90 / mo (frequent empty unrented slots)
-                </td>
-                <td className="p-3 font-bold text-accent-brand bg-accent-green/5">
-                  ~$120 / mo Net (plus $0.40/day standby cover)
+                  {sharePct}% of token revenue + {STANDBY_LABEL}
                 </td>
               </tr>
               <tr>
@@ -696,10 +496,10 @@ export default function Calculator() {
               <tr>
                 <td className="p-3 font-semibold text-text-primary">Power Consumption & Heat Strain</td>
                 <td className="p-3 text-text-secondary bg-red-500/5">
-                  <strong>500W+ Continuous Heavy Load</strong> (~$100/mo electricity bill @ $0.25/kWh)
+                  <strong>Continuous full load</strong> while rented (up to {gpu.tdpW} W TDP)
                 </td>
                 <td className="p-3 text-accent-green bg-accent-green/5">
-                  <strong>~220W Average Load</strong> (~$40/mo electricity bill @ $0.25/kWh)
+                  <strong>~{AVG_POWER_W} W average at {BASELINE_UTIL}% load</strong> (~{money(baselineFor(currentModel).power, 0)}/mo @ $0.25/kWh)
                 </td>
               </tr>
             </tbody>

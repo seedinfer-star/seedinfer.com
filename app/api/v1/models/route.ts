@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { listProviders } from "@/lib/providers-store"
+import { MODELS, HIDDEN_ROUTING_ALIASES, LIVE_MODEL, perTokenUsd, type CatalogModel } from "@/lib/catalog"
 
 export const dynamic = "force-dynamic"
 
@@ -30,9 +31,11 @@ function buildOpenRouterModelSpec(opts: {
   isReady?: boolean
   isFree?: boolean
   slug?: string
+  cachedPromptCostUsd?: string
+  status?: string
 }) {
-  const contextLen = opts.contextLength || 1048576
-  const maxOut = opts.maxOutput || 1048576
+  const contextLen = opts.contextLength || LIVE_MODEL.contextLength
+  const maxOut = opts.maxOutput || contextLen
   const slug = opts.slug || opts.id
 
   return {
@@ -42,10 +45,10 @@ function buildOpenRouterModelSpec(opts: {
     // Identity (required)
     id: opts.id,
     name: opts.name,
-    hugging_face_id: opts.hugging_face_id || "nvidia/Nemotron-4-34B-Instruct",
+    hugging_face_id: opts.hugging_face_id || "",
     created: 1735689600, // 2025-01-01 00:00 UTC — stable
     quantization: opts.quantization || "nvfp4",
-    tokenizer: opts.tokenizer || "Nemotron",
+    tokenizer: opts.tokenizer || "",
     description: opts.description,
 
     // Input modalities: text with context constraints, pricing, capacity
@@ -58,7 +61,7 @@ function buildOpenRouterModelSpec(opts: {
         },
         pricing: [
           { type: "prompt", unit: "token", cost_usd: opts.promptCostUsd },
-          { type: "cached_prompt", unit: "token", cost_usd: "0.00000" },
+          { type: "cached_prompt", unit: "token", cost_usd: opts.cachedPromptCostUsd ?? "0" },
           { type: "cache_write", unit: "token", ttl_seconds: 60, implicit: true, cost_usd: "0" },
         ],
         capacity: [
@@ -103,15 +106,12 @@ function buildOpenRouterModelSpec(opts: {
 
     // Operational fields
     is_ready: opts.isReady ?? true,
+    status: opts.status ?? "live",
     is_free: opts.isFree ?? false,
     discount_to_user: 0,
     openrouter: {
       slug,
     },
-    datacenters: [
-      { country_code: "PL", region: "eu-central-1" },
-      { country_code: "US", region: "us-east-1" },
-    ],
     deployment_region: "global",
     compliance: {
       zdr: true, // Zero Data Retention
@@ -128,73 +128,39 @@ function buildOpenRouterModelSpec(opts: {
     pricing_legacy: {
       prompt: opts.promptCostUsd,
       completion: opts.completionCostUsd,
-      cache_read: "0.0",
+      cache_read: opts.cachedPromptCostUsd ?? "0",
     },
   }
 }
 
-// Gemma 4 Flagship Model
-const GEMMA4_SPEC = buildOpenRouterModelSpec({
-  id: "google/gemma-4-26b-a4b-nvfp4",
-  name: "SeedInfer: Gemma 4 26B A4B NVFP4",
-  hugging_face_id: "nvidia/Gemma-4-26B-A4B-NVFP4",
-  quantization: "nvfp4",
-  tokenizer: "Gemma4",
-  description: "SeedInfer P2P Gemma 4 26B A4B MoE (NVFP4) optimized for low TTFT P99 (<50ms) & high throughput.",
-  promptCostUsd: "0.00003",
-  completionCostUsd: "0.00020",
-  contextLength: 262144,
-  maxOutput: 262144,
-  isReady: true,
-  isFree: false,
-})
+function specFromCatalog(m: CatalogModel, idOverride?: string) {
+  return buildOpenRouterModelSpec({
+    id: idOverride || m.id,
+    name: `SeedInfer: ${m.name}${idOverride ? " (alias)" : ""}`,
+    hugging_face_id: m.hfId,
+    quantization: m.quantization,
+    tokenizer: m.tokenizer,
+    description: idOverride ? `Alias for ${m.id}` : m.description,
+    promptCostUsd: perTokenUsd(m.pricePer1M.input),
+    completionCostUsd: perTokenUsd(m.pricePer1M.output),
+    cachedPromptCostUsd: perTokenUsd(m.pricePer1M.cachedInput),
+    contextLength: m.contextLength,
+    maxOutput: m.contextLength,
+    isReady: m.status === "live",
+    isFree: false,
+    slug: m.id,
+    status: m.status,
+  })
+}
 
-const GEMMA4_ALIAS_SPEC = buildOpenRouterModelSpec({
-  id: "seedinfer/gemma-4-26b-a4b",
-  name: "SeedInfer: Gemma 4 26B A4B Alias",
-  hugging_face_id: "nvidia/Gemma-4-26B-A4B-NVFP4",
-  quantization: "nvfp4",
-  tokenizer: "Gemma4",
-  description: "Alias for google/gemma-4-26b-a4b-nvfp4",
-  promptCostUsd: "0.00003",
-  completionCostUsd: "0.00020",
-  contextLength: 262144,
-  maxOutput: 262144,
-  isReady: true,
-  isFree: false,
-  slug: "google/gemma-4-26b-a4b-nvfp4",
-})
-
-const NEMOTRON_SPEC = buildOpenRouterModelSpec({
-  id: "seedinfer/nemotron-lightning-1m",
-  name: "SeedInfer: Nemotron 3.5 Lightning 30B 1M (NVFP4)",
-  hugging_face_id: "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4",
-  quantization: "nvfp4",
-  tokenizer: "Nemotron",
-  description: "Legacy Nemotron 3.5 Lightning 30B A3B NVFP4 model.",
-  promptCostUsd: "0.00002",
-  completionCostUsd: "0.00005",
-  contextLength: 1048576,
-  maxOutput: 1048576,
-  isReady: true,
-  isFree: false,
-})
-
-const ALIAS_SPEC = buildOpenRouterModelSpec({
-  id: "gpt-oss-20b",
-  name: "SeedInfer: gpt-oss-20b Alias",
-  hugging_face_id: "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4",
-  quantization: "nvfp4",
-  tokenizer: "Nemotron",
-  description: "Alias for seedinfer/nemotron-lightning-1m",
-  promptCostUsd: "0.00002",
-  completionCostUsd: "0.00005",
-  contextLength: 1048576,
-  maxOutput: 1048576,
-  isReady: true,
-  isFree: false,
-  slug: "seedinfer/nemotron-lightning-1m",
-})
+// Live models (+ their public aliases) are ready; coming-soon models are listed with is_ready=false.
+const CATALOG_SPECS = MODELS.flatMap((m) =>
+  m.status === "live" ? [specFromCatalog(m), ...m.aliases.map((a) => specFromCatalog(m, a))] : [specFromCatalog(m)],
+)
+const KNOWN_IDS = new Set<string>([
+  ...MODELS.flatMap((m) => [m.id, m.hfId, ...m.aliases].filter(Boolean)),
+  ...Object.keys(HIDDEN_ROUTING_ALIASES),
+])
 
 export async function GET() {
   // Collect dynamic models from connected verified providers
@@ -203,13 +169,7 @@ export async function GET() {
 
   for (const prov of activeProviders) {
     const modelName = prov.current_model || prov.vllm_model
-    if (
-      modelName &&
-      modelName !== GEMMA4_SPEC.id &&
-      modelName !== GEMMA4_ALIAS_SPEC.id &&
-      modelName !== NEMOTRON_SPEC.id &&
-      modelName !== ALIAS_SPEC.id
-    ) {
+    if (modelName && !KNOWN_IDS.has(modelName) && !modelName.startsWith("/")) {
       if (!dynamicModelsMap.has(modelName)) {
         dynamicModelsMap.set(
           modelName,
@@ -217,8 +177,8 @@ export async function GET() {
             id: modelName,
             name: `SeedInfer: ${modelName.split("/").pop() || modelName}`,
             description: `Dynamic provider-hosted model ${modelName} on SeedInfer P2P network.`,
-            promptCostUsd: "0.00002",
-            completionCostUsd: "0.00005",
+            promptCostUsd: perTokenUsd(LIVE_MODEL.pricePer1M.input),
+            completionCostUsd: perTokenUsd(LIVE_MODEL.pricePer1M.output),
             isReady: true,
             isFree: false,
           })
@@ -227,7 +187,7 @@ export async function GET() {
     }
   }
 
-  const allModels = [GEMMA4_SPEC, GEMMA4_ALIAS_SPEC, NEMOTRON_SPEC, ALIAS_SPEC, ...Array.from(dynamicModelsMap.values())]
+  const allModels = [...CATALOG_SPECS, ...Array.from(dynamicModelsMap.values())]
 
   const body = {
     object: "list",
@@ -236,7 +196,7 @@ export async function GET() {
 
   return NextResponse.json(body, {
     headers: {
-      "Cache-Control": "public, s-maxage=60, stale-while-revalidate=300",
+      "Cache-Control": "public, s-maxage=300, stale-while-revalidate=300",
       "Content-Type": "application/json",
       ...CORS_HEADERS,
     },

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server"
+import { sanitizePublic } from "@/lib/public-sanitize"
 import { listTelemetry, getTelemetryStats } from "@/lib/telemetry-store"
 
 export const dynamic = "force-dynamic"
@@ -20,8 +21,8 @@ export async function GET(req: Request) {
   const provider_id = url.searchParams.get("provider_id") || undefined
   const showAll = url.searchParams.get("all") === "1" || url.searchParams.get("all") === "true"
   const sinceParam = url.searchParams.get("since")
-  
-  // Default to last 1 hour unless ?all=1 or ?since=... is explicitly set
+
+  // Default to the last hour unless ?all=1 or ?since=... is explicitly set
   const defaultSince = new Date(Date.now() - 60 * 60 * 1000).toISOString()
   const since = sinceParam || (showAll ? undefined : defaultSince)
 
@@ -31,13 +32,13 @@ export async function GET(req: Request) {
   return NextResponse.json(
     {
       object: "list",
-      data,
+      data: sanitizePublic(data),
       count: data.length,
       window: sinceParam ? `since:${sinceParam}` : showAll ? "all-time" : "last-1-hour",
       total: stats.count,
       pending: stats.pending,
-      storage: { dir: stats.dir, jsonl: stats.jsonl, sqlite: stats.sqlite },
-      hint: "POST /api/v1/telemetry/ingest to append; pass ?all=1 for full historical log or ?since=ISO_TIMESTAMP",
+      storage: { jsonl: !!stats.jsonl, sqlite: !!stats.sqlite },
+      hint: "POST /api/v1/telemetry/ingest to append; pass ?all=1 for the full historical log or ?since=ISO_TIMESTAMP",
     },
     { headers: { "Cache-Control": "no-store, max-age=0", ...CORS_HEADERS } }
   )

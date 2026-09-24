@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { upsertProvider, getProvider } from "@/lib/providers-store"
+import { sanitizePublic } from "@/lib/public-sanitize"
 
 export const dynamic = "force-dynamic"
 
@@ -30,7 +31,7 @@ export async function POST(req: Request) {
   if (!payload?.id) return NextResponse.json({ error: { message: "Missing provider id" } }, { status: 400, headers: CORS_HEADERS })
   const ip = extractIp(req)
   const stored = upsertProvider(payload, { ip })
-  return NextResponse.json({ ok: true, provider_id: stored.id, status: stored.status, verification: stored.verification, note: "legacy alias /api/providers/heartbeat -> use /api/v1/providers/heartbeat" }, { headers: { "Cache-Control": "no-store, max-age=0", ...CORS_HEADERS } })
+  return NextResponse.json({ ok: true, provider_id: stored.id, status: stored.status, verification: sanitizePublic(stored.verification), note: "legacy alias /api/providers/heartbeat -> use /api/v1/providers/heartbeat" }, { headers: { "Cache-Control": "no-store, max-age=0", ...CORS_HEADERS } })
 }
 
 export async function GET() {

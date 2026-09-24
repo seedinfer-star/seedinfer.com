@@ -1,12 +1,16 @@
 "use client"
-import Sidebar from "@/components/sidebar"
+import Link from "next/link"
+import AppShell, { PageHeader, PageContainer } from "@/components/app-shell"
+import { LIVE_MODEL, PAYMENT_CHAINS, SOLANA_DEPOSIT_ADDRESS, MIN_INVOICE_CENTS, SUBSCRIPTION_PLANS, REVENUE_SHARE_PCT, centsToUsd, usd } from "@/lib/catalog"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { CreditCard, ExternalLink, Wallet, Plus, CheckCircle2, Shield } from "lucide-react"
+import { FileText, Wallet, Plus, CheckCircle2, Shield } from "lucide-react"
 import CryptoGateway from "@/components/billing/crypto-gateway"
 import { useEffect, useRef, useState, useCallback } from "react"
 import { useRouter } from "next/navigation"
+
+const pct = (f: number) => `${Number((f * 100).toFixed(1))}%`
 
 export default function BillingPage() {
   const [balanceCents, setBalanceCents] = useState<number>(0)
@@ -68,37 +72,33 @@ export default function BillingPage() {
   }
 
   return (
-    <div className="flex h-screen overflow-hidden bg-bg-primary">
-      <Sidebar />
-      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <header className="flex h-[48px] shrink-0 items-center justify-between border-b border-border-dim bg-bg-secondary px-4">
-          <div className="min-w-0">
-            <h1 className="truncate text-[13px] font-semibold tracking-tight text-text-primary">Billing</h1>
-            <p className="truncate font-mono text-[11px] text-text-tertiary">Credits · usage · Crypto live · Stripe soon</p>
-          </div>
-          <a
-            href="https://docs.seedinfer.com"
-            target="_blank"
-            rel="noopener noreferrer"
+    <AppShell>
+      <PageHeader
+        title="Billing"
+        description="Credits · usage · crypto deposits"
+        actions={
+          <Link
+            href="/docs"
             className="inline-flex items-center gap-1.5 rounded-lg border border-border-default bg-bg-tertiary px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-bg-hover hover:text-text-primary"
           >
-            docs.seedinfer.com <ExternalLink className="h-3 w-3" />
-          </a>
-        </header>
-
-        <main className="min-h-0 flex-1 overflow-y-auto bg-bg-primary">
-          <div className="mx-auto max-w-[1600px] space-y-6 p-4 sm:p-6">
+            <FileText className="h-3.5 w-3.5" /> Docs
+          </Link>
+        }
+      />
+      <PageContainer>
             <Card className="border border-accent-green/20 bg-accent-green/10">
               <CardContent className="p-3 flex items-start gap-2">
                 <CheckCircle2 className="h-4 w-4 mt-0.5 shrink-0 text-accent-green" />
                 <div className="min-w-0 flex-1">
-                  <div className="text-xs font-semibold text-text-primary">Crypto live — pay-as-you-go $0.03/$0.20 per 1M + Stripe coming soon.</div>
+                  <div className="text-xs font-semibold text-text-primary">
+                    Pay-as-you-go {usd(LIVE_MODEL.pricePer1M.input)} / {usd(LIVE_MODEL.pricePer1M.output)} per 1M tokens ({LIVE_MODEL.shortName}) — top up with crypto.
+                  </div>
                   <div className="mt-0.5 text-xs leading-4 text-text-secondary">
-                    7 chains: ETH/Arb/Polygon/Base/BNB/HyperEVM/Solana →{" "}
-                    <code className="rounded bg-bg-tertiary px-1">POST /api/v1/invoices</code> → QR (EIP-681/Solana Pay) → worker 15s
+                    USDC or native tokens on {PAYMENT_CHAINS.filter((c) => c.key !== "solana" || SOLANA_DEPOSIT_ADDRESS).map((c) => c.name).join(", ")}
+                    {SOLANA_DEPOSIT_ADDRESS ? "" : " · Solana deposits coming soon"}. Minimum invoice {MIN_INVOICE_CENTS}¢. Card payments are not available yet.
                   </div>
                 </div>
-                <Badge variant="outline" className="shrink-0 border-accent-green/20 bg-bg-secondary font-mono text-[10px]">Live · 7 chains</Badge>
+                <Badge variant="outline" className="shrink-0 border-accent-green/20 bg-bg-secondary font-mono text-[10px]">Live · {SOLANA_DEPOSIT_ADDRESS ? 7 : 6} chains</Badge>
               </CardContent>
             </Card>
 
@@ -126,18 +126,12 @@ export default function BillingPage() {
                           <a href="/register" className="font-semibold text-accent-brand underline hover:text-accent-brand-hover">
                             create account
                           </a>
-                          . Unauth fallback shows $0.00.
+                          .
                         </>
                       ) : (
-                        <>Live balance from <code className="rounded bg-bg-tertiary px-1">GET /api/v1/credits</code> · poll 15s · worker credits on confirmed</>
+                        <>Live balance · refreshed every 15s · deposits are credited after confirmation</>
                       )}
                     </div>
-                    {!loading && isAuthed !== null && (
-                      <div className="mt-1 font-mono text-[10px] text-text-tertiary">
-                        balance_usd_cents: <code className="rounded bg-bg-tertiary px-1">{balanceCents}</code> · balance_usd:{" "}
-                        <code className="rounded bg-bg-tertiary px-1">{balanceUsd.toFixed(2)}</code>
-                      </div>
-                    )}
                     <div className="mt-3 flex flex-wrap gap-2">
                       <Button onClick={scrollToGateway}>
                         <Plus className="mr-2 h-4 w-4" />
@@ -152,42 +146,22 @@ export default function BillingPage() {
                   <div>
                     <div className="mb-2 flex items-center justify-between">
                       <span className="font-mono text-xs font-semibold uppercase tracking-wide text-text-primary">
-                        Monthly Subscription Tiers
+                        Monthly subscription plans
                       </span>
                       <Badge variant="outline" className="font-mono text-[10px] border-accent-brand/30 text-accent-brand">
-                        Boosted API Usage
+                        Pay once, get more usage
                       </Badge>
                     </div>
                     <div className="grid gap-3 sm:grid-cols-3">
-                      {[
-                        {
-                          label: "GO",
-                          price: "$1 / mo",
-                          multiplier: "2x Value",
-                          quota: "$2.00 API usage",
-                          h5Limit: "max 40% per 5h ($0.80)",
-                          weekLimit: "max 70% per 7d ($1.40)",
-                          note: "For hobbyists and lightweight bots",
-                        },
-                        {
-                          label: "GOAT",
-                          price: "$5 / mo",
-                          multiplier: "3x Value",
-                          quota: "$15.00 API usage",
-                          h5Limit: "max 20% per 5h ($3.00)",
-                          weekLimit: "max 50% per 7d ($7.50)",
-                          note: "For developers and micro-SaaS apps",
-                        },
-                        {
-                          label: "PRO",
-                          price: "$10 / mo",
-                          multiplier: "4x Value",
-                          quota: "$40.00 API usage",
-                          h5Limit: "max 12.5% per 5h ($5.00)",
-                          weekLimit: "max 40% per 7d ($16.00)",
-                          note: "For professionals & high-volume scale",
-                        },
-                      ].map((p) => (
+                      {SUBSCRIPTION_PLANS.map((pl) => ({
+                        label: pl.key,
+                        price: `$${pl.priceCents / 100} / mo`,
+                        multiplier: `${pl.multiplier}x value`,
+                        quota: `${centsToUsd(pl.usageCents)} API usage`,
+                        h5Limit: `max ${pct(pl.limit5h)} per 5h (${centsToUsd(pl.usageCents * pl.limit5h)})`,
+                        weekLimit: `max ${pct(pl.limit7d)} per 7d (${centsToUsd(pl.usageCents * pl.limit7d)})`,
+                        note: pl.note,
+                      })).map((p) => (
                         <div key={p.label} className="rounded-xl border border-border-dim bg-bg-tertiary/60 p-3.5 space-y-1.5">
                           <div className="flex items-center justify-between">
                             <span className="text-sm font-bold text-text-primary">{p.label}</span>
@@ -206,20 +180,27 @@ export default function BillingPage() {
                       ))}
                     </div>
                   </div>
-                  
-                  <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 p-3 space-y-1 text-xs">
-                    <div className="flex items-center gap-2 font-semibold text-amber-500">
+                  <div className="space-y-1 rounded-xl border border-accent-amber/20 bg-accent-amber/10 p-3 text-xs">
+                    <div className="flex items-center gap-2 font-semibold text-accent-amber">
                       <Shield className="h-4 w-4 shrink-0" />
-                      Dedicated Subscription Keys & Router Priority
+                      Dedicated subscription keys &amp; routing priority
                     </div>
-                    <p className="text-text-secondary font-mono text-[11px] leading-4">
-                      • <strong>Dedicated API Keys:</strong> Subscriptions issue separate API keys starting with <code className="rounded bg-bg-tertiary px-1 text-text-primary">sk_sub_...</code>.<br />
-                      • <strong>Orange Pi Router Priority:</strong> Subscription queries run at <strong>lowest / background priority</strong> on the Orange Pi 4 Pro router node (<code className="rounded bg-bg-tertiary px-1 text-text-primary">X-SeedInfer-Priority: background</code>) to protect Pay-As-You-Go SLAs during peak network demand while providing 2x–4x volume discounts.
-                    </p>
+                    <ul className="space-y-0.5 font-mono text-[11px] leading-4 text-text-secondary">
+                      <li>
+                        • <strong className="text-text-primary">Dedicated API keys:</strong> subscriptions issue separate keys starting with{" "}
+                        <code className="rounded bg-bg-tertiary px-1 text-text-primary">sk_sub_...</code>; pay-as-you-go keys start with{" "}
+                        <code className="rounded bg-bg-tertiary px-1 text-text-primary">sk_live_...</code>.
+                      </li>
+                      <li>
+                        • <strong className="text-text-primary">Background priority:</strong> subscription requests are routed at the lowest priority (
+                        <code className="rounded bg-bg-tertiary px-1 text-text-primary">X-SeedInfer-Priority: background</code>) so pay-as-you-go
+                        latency is protected at peak demand, in exchange for {SUBSCRIPTION_PLANS[0].multiplier}x–
+                        {SUBSCRIPTION_PLANS[SUBSCRIPTION_PLANS.length - 1].multiplier}x more usage.
+                      </li>
+                    </ul>
                   </div>
-
                   <p className="font-mono text-[10px] text-text-tertiary">
-                    100% of subscription payments feed the Global Revenue Pool and are settled with GPU providers via the Monthly Waterfall Model.
+                    Plans are paid with the same crypto gateway. GPU providers receive {REVENUE_SHARE_PCT}% of the token revenue their nodes serve.
                   </p>
                 </CardContent>
               </Card>
@@ -227,18 +208,6 @@ export default function BillingPage() {
               <div className="space-y-3" ref={gatewayRef} id="crypto-gateway">
                 <CryptoGateway />
 
-                <Card className="border border-border-dim bg-bg-secondary">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="flex items-center gap-1.5 text-xs font-mono uppercase tracking-wide text-text-tertiary">
-                      <CreditCard className="h-3.5 w-3.5" />
-                      Stripe — Coming soon
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-2 text-xs leading-4 text-text-secondary">
-                    <p>card → credits → metered</p>
-                    <div className="rounded-lg border border-dashed border-border-default bg-bg-primary/60 p-2 font-mono text-[11px]">Stripe publishable key: pk_test_… (placeholder)</div>
-                  </CardContent>
-                </Card>
 
                 <Card className="border border-border-dim bg-bg-secondary">
                   <CardContent className="p-3 font-mono text-[11px] text-text-tertiary">
@@ -247,9 +216,7 @@ export default function BillingPage() {
                 </Card>
               </div>
             </div>
-          </div>
-        </main>
-      </div>
-    </div>
+      </PageContainer>
+    </AppShell>
   )
 }

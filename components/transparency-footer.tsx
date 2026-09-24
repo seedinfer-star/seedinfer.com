@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge"
 import { Copy, Wallet, Shield, ExternalLink } from "lucide-react"
 import { useState } from "react"
 import Link from "next/link"
+import { SOLANA_DEPOSIT_ADDRESS, PAYOUT_LABEL } from "@/lib/catalog"
 
 type WalletAddr = {
   chain: string
@@ -20,12 +21,10 @@ const EVM_ADDRESS =
   (process.env.NEXT_PUBLIC_BASE_ADDRESS as string) ||
   "0x2EB9104AEeF7270fe639Bf1965B94Bfb8Edcf786"
 
-const SOL_ADDRESS =
-  (process.env.NEXT_PUBLIC_SOL_ADDRESS as string) ||
-  (process.env.NEXT_PUBLIC_SOLANA_ADDRESS as string) ||
-  "So11111111111111111111111111111111111111112"
+// Solana address only from env (never a placeholder/mint address)
+const SOL_ADDRESS = SOLANA_DEPOSIT_ADDRESS
 
-// 7 chains: 6 EVM share same PAYMENT_ADDRESS + Solana separate
+// 6 EVM chains share the same deposit address; Solana is listed only when configured
 const WALLETS: WalletAddr[] = [
   {
     chain: "ETH",
@@ -72,18 +71,21 @@ const WALLETS: WalletAddr[] = [
     label: "HyperEVM (HYPE)",
     address: EVM_ADDRESS,
     note: "HyperEVM · 999",
-    // Element requires refinement: HyperEVM explorer base URL placeholder — confirm official Hyperliquid explorer path
     explorerUrl: `https://explorer.hyperliquid.xyz/address/${EVM_ADDRESS}`,
     chainId: 999,
   },
-  {
-    chain: "Solana",
-    label: "Solana (SOL)",
-    address: SOL_ADDRESS,
-    note: "Solana · SPL",
-    explorerUrl: `https://solscan.io/account/${SOL_ADDRESS}`,
-    chainId: "solana",
-  },
+  ...(SOL_ADDRESS
+    ? [
+        {
+          chain: "Solana",
+          label: "Solana (SOL)",
+          address: SOL_ADDRESS,
+          note: "Solana · SPL",
+          explorerUrl: `https://solscan.io/account/${SOL_ADDRESS}`,
+          chainId: "solana",
+        } as WalletAddr,
+      ]
+    : []),
 ]
 
 function CopyBtn({ text }: { text: string }) {
@@ -159,20 +161,24 @@ export default function TransparencyFooter() {
         <CardContent className="flex flex-wrap items-center justify-between gap-3 p-3">
           <div className="font-mono text-[11px] leading-4 text-text-secondary">
             SeedInfer.com · P2P inference on verified hardware ·{" "}
-            <span className="text-text-tertiary">All payouts & attestations verifiable on-chain.</span>
+            <span className="text-text-tertiary">Deposit addresses are verifiable on-chain. Provider payouts: {PAYOUT_LABEL}.</span>
           </div>
-          <div className="flex items-center gap-2 text-xs">
-            <a href="https://etherscan.io/address/0x2EB9104AEeF7270fe639Bf1965B94Bfb8Edcf786" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-accent-brand hover:underline">
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <a href={`https://etherscan.io/address/${EVM_ADDRESS}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-accent-brand hover:underline">
               Etherscan <ExternalLink className="h-3 w-3" />
             </a>
             <span className="text-border-default">·</span>
-            <a href="https://solscan.io/account/So11111111111111111111111111111111111111112" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-accent-brand hover:underline">
-              Solscan <ExternalLink className="h-3 w-3" />
+            <a href={`https://basescan.org/address/${EVM_ADDRESS}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-accent-brand hover:underline">
+              Basescan <ExternalLink className="h-3 w-3" />
             </a>
-            <span className="text-border-default">·</span>
-            <a href="#" className="inline-flex items-center gap-1 text-accent-brand hover:underline">
-              Attestation log <ExternalLink className="h-3 w-3" />
-            </a>
+            {SOL_ADDRESS && (
+              <>
+                <span className="text-border-default">·</span>
+                <a href={`https://solscan.io/account/${SOL_ADDRESS}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-accent-brand hover:underline">
+                  Solscan <ExternalLink className="h-3 w-3" />
+                </a>
+              </>
+            )}
             <span className="text-border-default">·</span>
             <Link href="/privacy" className="inline-flex items-center gap-1 text-accent-brand hover:underline">
               Privacy Policy
@@ -186,12 +192,8 @@ export default function TransparencyFooter() {
       </Card>
 
       <p className="font-mono text-[10px] leading-4 text-text-tertiary">
-        Wallet addresses verifiable on-chain — EVM 0x2EB9104AEeF7270fe639Bf1965B94Bfb8Edcf786 valid on 6 chains (ETH, Arbitrum, Polygon, Base, BNB,
-        HyperEVM) + Solana separate. Set via{" "}
-        <code className="rounded bg-bg-tertiary px-1 py-0.5">PAYMENT_ADDRESS</code>{" "}
-        <code className="rounded bg-bg-tertiary px-1 py-0.5">SOLANA_ADDRESS</code> /{" "}
-        <code className="rounded bg-bg-tertiary px-1 py-0.5">NEXT_PUBLIC_PAYMENT_ADDRESS</code>{" "}
-        <code className="rounded bg-bg-tertiary px-1 py-0.5">NEXT_PUBLIC_SOL_ADDRESS</code>. HyperEVM explorer link points to official Hyperliquid network explorer.
+        One EVM deposit address is valid on Ethereum, Arbitrum, Polygon, Base, BNB Chain and HyperEVM.{" "}
+        {SOL_ADDRESS ? "Solana uses a separate address." : "Solana deposits coming soon."}
       </p>
     </div>
   )

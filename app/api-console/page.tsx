@@ -1,28 +1,30 @@
 "use client"
 import { useState } from "react"
-import Sidebar from "@/components/sidebar"
+import AppShell from "@/components/app-shell"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { MODELS, LIVE_MODEL, LIVE_MODELS, API_BASE_URL, usd } from "@/lib/catalog"
 import { Code2, ExternalLink, Copy, Check, Play, Terminal, Zap, Shield, Server, ArrowRight, Layers, Activity } from "lucide-react"
 
-const OPENROUTER_SNIPPET = `// OpenRouter Custom Provider Configuration
+const KEY_PLACEHOLDER = "sk-seedinfer-...YOUR_KEY"
+const PUBLIC_MODEL_IDS = MODELS.filter((m) => m.status === "live").flatMap((m) => [m.id, ...m.aliases])
+
+const OPENROUTER_SNIPPET = `// OpenRouter custom provider configuration
 {
   "provider": "SeedInfer Network",
-  "base_url": "https://seedinfer.com/api/v1",
-  "api_key": "YOUR_SEEDINFER_API_KEY",
-  "models": ["seedinfer/nemotron-lightning-1m", "gpt-oss-20b"]
+  "base_url": "${API_BASE_URL}",
+  "api_key": "${KEY_PLACEHOLDER}",
+  "models": ${JSON.stringify(LIVE_MODELS.map((m) => m.id))}
 }`
 
-const CURL_EXAMPLE = `curl -X POST https://seedinfer.com/api/v1/chat/completions \\
+const CURL_EXAMPLE = `curl -X POST ${API_BASE_URL}/chat/completions \\
   -H "Authorization: Bearer $SEEDINFER_API_KEY" \\
   -H "Content-Type: application/json" \\
-  -H "HTTP-Referer: https://seedinfer.com" \\
-  -H "X-Title: SeedInfer OpenRouter Client" \\
   -d '{
-    "model": "seedinfer/nemotron-lightning-1m",
+    "model": "${LIVE_MODEL.id}",
     "messages": [
-      {"role": "user", "content": "Explain private decentralized inference on Apple Silicon and RTX 5090 in one sentence."}
+      {"role": "user", "content": "Explain decentralized GPU inference in one sentence."}
     ],
     "stream": false,
     "max_tokens": 256
@@ -31,12 +33,12 @@ const CURL_EXAMPLE = `curl -X POST https://seedinfer.com/api/v1/chat/completions
 const PYTHON_EXAMPLE = `from openai import OpenAI
 
 client = OpenAI(
-    base_url="https://seedinfer.com/api/v1",
-    api_key="your-seedinfer-key-or-any-token",
+    base_url="${API_BASE_URL}",
+    api_key="${KEY_PLACEHOLDER}",
 )
 
 response = client.chat.completions.create(
-    model="seedinfer/nemotron-lightning-1m",
+    model="${LIVE_MODEL.id}",
     messages=[{"role": "user", "content": "Hello SeedInfer network"}],
     stream=True,
 )
@@ -48,31 +50,23 @@ for chunk in response:
 const JS_EXAMPLE = `import OpenAI from "openai";
 
 const openai = new OpenAI({
-  baseURL: "https://seedinfer.com/api/v1",
-  apiKey: "your-seedinfer-key-or-any-token",
+  baseURL: "${API_BASE_URL}",
+  apiKey: "${KEY_PLACEHOLDER}",
 });
 
 const completion = await openai.chat.completions.create({
-  model: "seedinfer/nemotron-lightning-1m",
+  model: "${LIVE_MODEL.id}",
   messages: [{ role: "user", content: "Hello SeedInfer network" }],
 });
 
 console.log(completion.choices[0].message.content);`
 
-const TAILNET_EXAMPLE = `curl -X POST https://tailnet.seedinfer.com/v1/chat/completions \\
-  -H "Authorization: Bearer $SEEDINFER_API_KEY" \\
-  -H "Content-Type: application/json" \\
-  -d '{
-    "model": "seedinfer/nemotron-lightning-1m",
-    "messages": [{"role": "user", "content": "Hello via Direct Tailnet"}]
-  }'`
-
 export default function ApiConsolePage() {
   const [copied, setCopied] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState<"curl" | "openrouter" | "python" | "js" | "tailnet">("openrouter")
-  const [promptText, setPromptText] = useState("Explain private decentralized inference on RTX 5090 and Apple Silicon in one sentence.")
+  const [activeTab, setActiveTab] = useState<"curl" | "openrouter" | "python" | "js">("openrouter")
+  const [promptText, setPromptText] = useState("Explain decentralized GPU inference in one sentence.")
   const [isStream, setIsStream] = useState(false)
-  const [selectedModel, setSelectedModel] = useState("seedinfer/nemotron-lightning-1m")
+  const [selectedModel, setSelectedModel] = useState(LIVE_MODEL.id)
   
   const [responseOutput, setResponseOutput] = useState<string>("Click 'Send Live Request' to execute a real query against the SeedInfer network.")
   const [metaHeaders, setMetaHeaders] = useState<{
@@ -95,7 +89,7 @@ export default function ApiConsolePage() {
 
   const executeLiveRequest = async () => {
     setLoading(true)
-    setResponseOutput("Connecting to /api/v1/chat/completions ...")
+    setResponseOutput("Connecting to /v1/chat/completions ...")
     setMetaHeaders(null)
     const startTime = Date.now()
 
@@ -107,7 +101,7 @@ export default function ApiConsolePage() {
     }
 
     try {
-      const res = await fetch("/api/v1/chat/completions", {
+      const res = await fetch("/v1/chat/completions", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -167,36 +161,30 @@ export default function ApiConsolePage() {
         return PYTHON_EXAMPLE
       case "js":
         return JS_EXAMPLE
-      case "tailnet":
-        return TAILNET_EXAMPLE
     }
   }
 
   return (
-    <div className="flex h-screen overflow-hidden bg-bg-primary">
-      <Sidebar />
-      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <header className="flex h-[48px] shrink-0 items-center justify-between border-b border-border-dim bg-bg-secondary px-4">
+    <AppShell>
+        <header className="flex min-h-[56px] shrink-0 items-center justify-between gap-3 border-b border-border-dim bg-bg-secondary/60 px-4 py-2 md:px-6">
           <div className="flex items-center gap-3 min-w-0">
             <div className="flex items-center gap-2">
               <div className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-              <h1 className="truncate text-[13px] font-semibold tracking-tight text-text-primary">API Console &amp; OpenRouter Hub</h1>
+              <h1 className="truncate text-sm font-semibold tracking-tight text-text-primary">API Console &amp; OpenRouter Hub</h1>
             </div>
             <Badge variant="outline" className="hidden sm:inline-flex border-emerald-500/30 bg-emerald-500/10 font-mono text-[10px] text-emerald-400">
               Live Production
             </Badge>
           </div>
           <a
-            href="https://docs.seedinfer.com"
-            target="_blank"
-            rel="noopener noreferrer"
+            href="/docs"
             className="inline-flex items-center gap-1.5 rounded-lg border border-border-default bg-bg-tertiary px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors"
           >
-            docs.seedinfer.com <ExternalLink className="h-3 w-3" />
+            Docs <ExternalLink className="h-3 w-3" />
           </a>
         </header>
 
-        <main className="min-h-0 flex-1 overflow-y-auto bg-bg-primary">
+        <main id="main" className="min-h-0 flex-1 overflow-y-auto bg-bg-primary">
           <div className="mx-auto max-w-[1600px] space-y-6 p-4 sm:p-6">
             
             {/* OpenRouter Banner */}
@@ -217,10 +205,10 @@ export default function ApiConsolePage() {
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     <code className="rounded border border-border-dim bg-bg-tertiary px-2 py-1 font-mono text-xs text-emerald-400 select-all">
-                      https://seedinfer.com/api/v1
+                      {API_BASE_URL}
                     </code>
                     <button
-                      onClick={() => copy("https://seedinfer.com/api/v1", "baseurl")}
+                      onClick={() => copy(API_BASE_URL, "baseurl")}
                       className="inline-flex items-center gap-1 rounded-md border border-border-dim bg-bg-tertiary px-2.5 py-1 font-mono text-xs text-text-secondary hover:bg-bg-elevated hover:text-text-primary transition-colors"
                     >
                       {copied === "baseurl" ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
@@ -245,8 +233,11 @@ export default function ApiConsolePage() {
                       onChange={(e) => setSelectedModel(e.target.value)}
                       className="rounded-lg border border-border-dim bg-bg-tertiary px-2.5 py-1.5 font-mono text-xs text-text-primary focus:outline-none focus:ring-1 focus:ring-accent-brand"
                     >
-                      <option value="seedinfer/nemotron-lightning-1m">seedinfer/nemotron-lightning-1m</option>
-                      <option value="gpt-oss-20b">gpt-oss-20b</option>
+                      {PUBLIC_MODEL_IDS.map((id) => (
+                        <option key={id} value={id}>
+                          {id}
+                        </option>
+                      ))}
                     </select>
 
                     <label className="flex items-center gap-1.5 rounded-lg border border-border-dim bg-bg-tertiary px-2.5 py-1.5 text-xs text-text-secondary cursor-pointer hover:bg-bg-elevated select-none">
@@ -271,7 +262,7 @@ export default function ApiConsolePage() {
                   <div className="flex flex-col space-y-2">
                     <div className="flex items-center justify-between">
                       <span className="font-mono text-[10px] uppercase tracking-wider text-text-tertiary font-semibold">User Message Prompt</span>
-                      <Badge variant="outline" className="font-mono text-[10px]">POST /api/v1/chat/completions</Badge>
+                      <Badge variant="outline" className="font-mono text-[10px]">POST /v1/chat/completions</Badge>
                     </div>
                     <textarea
                       value={promptText}
@@ -376,14 +367,6 @@ export default function ApiConsolePage() {
                     >
                       Node.js OpenAI
                     </button>
-                    <button
-                      onClick={() => setActiveTab("tailnet")}
-                      className={`rounded-md px-2.5 py-1 font-mono text-xs transition-colors ${
-                        activeTab === "tailnet" ? "bg-emerald-500/20 text-emerald-400 font-semibold" : "text-text-tertiary hover:text-text-secondary"
-                      }`}
-                    >
-                      Tailnet Direct P2P
-                    </button>
                   </div>
                 </div>
               </CardHeader>
@@ -401,9 +384,9 @@ export default function ApiConsolePage() {
                   </pre>
                 </div>
                 <div className="mt-3 flex flex-wrap gap-2 text-xs font-mono text-text-tertiary">
-                  <Badge variant="success" className="font-mono text-[10px]">Model: google/gemma-4-26b-a4b-nvfp4</Badge>
-                  <Badge variant="outline" className="font-mono text-[10px]">Pricing: $0.03 / $0.20 per 1M</Badge>
-                  <Badge variant="outline" className="font-mono text-[10px]">Context: 1M tokens</Badge>
+                  <Badge variant="success" className="font-mono text-[10px]">Model: {LIVE_MODEL.id}</Badge>
+                  <Badge variant="outline" className="font-mono text-[10px]">Pricing: {usd(LIVE_MODEL.pricePer1M.input)} / {usd(LIVE_MODEL.pricePer1M.output)} per 1M</Badge>
+                  <Badge variant="outline" className="font-mono text-[10px]">Context: {LIVE_MODEL.contextLength.toLocaleString("en-US")} tokens</Badge>
                   <Badge variant="outline" className="font-mono text-[10px]">SSE Streaming: Supported</Badge>
                 </div>
               </CardContent>
@@ -411,16 +394,15 @@ export default function ApiConsolePage() {
 
             <div className="border-t border-border-dim pt-4 flex flex-col sm:flex-row items-center justify-between gap-2 font-mono text-[11px] text-text-tertiary">
               <div>
-                SeedInfer Network · Production API Console &amp; OpenRouter Endpoint Gateway
+                SeedInfer Network · API console
               </div>
-              <a href="https://docs.seedinfer.com" target="_blank" rel="noopener noreferrer" className="text-emerald-400 underline hover:text-emerald-300">
+              <a href="/docs" className="text-emerald-400 underline hover:text-emerald-300">
                 Documentation &amp; OpenRouter Guide
               </a>
             </div>
           </div>
         </main>
-      </div>
-    </div>
+    </AppShell>
   )
 }
 

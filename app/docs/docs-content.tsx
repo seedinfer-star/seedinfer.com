@@ -2,8 +2,24 @@
 
 import { useState } from "react"
 import Link from "next/link"
-import Sidebar from "@/components/sidebar"
+import AppShell, { PageHeader, PageContainer } from "@/components/app-shell"
 import ProviderContactForm from "@/components/provider-contact-form"
+import {
+  MODELS,
+  LIVE_MODEL,
+  API_BASE_URL,
+  GPU_SPECS,
+  REFERENCE_GPU,
+  MIN_VRAM_GB,
+  PROVIDER_ECONOMICS,
+  REVENUE_SHARE_PCT,
+  PROTOCOL_FEE_PCT,
+  STANDBY_LABEL,
+  PAYOUT_LABEL,
+  CACHE_POLICY,
+  SUBSCRIPTION_PLANS,
+  usd,
+} from "@/lib/catalog"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
@@ -34,33 +50,32 @@ import {
 } from "lucide-react"
 
 const ONE_LINER_RECOMMENDED = `curl -fsSL https://seedinfer.com/install.sh | bash`
-const ONE_LINER_SIMPLE = `curl -fsSL https://seedinfer.com/install.sh | bash -s -- --authkey YOUR_AUTHKEY`
-const ONE_LINER_AUTO = `curl -fsSL https://seedinfer.com/install.sh | bash -s -- --authkey $(curl -s https://seedinfer.com/api/v1/auth/request | jq -r .authkey)`
+const API_KEY_PLACEHOLDER = "sk-seedinfer-...YOUR_KEY"
 
 const PYTHON_EXAMPLE = `import openai
 
 client = openai.OpenAI(
-    base_url="https://seedinfer.com/v1",
-    api_key="sk-seedinfer-demo" # or your dedicated API key
+    base_url="${API_BASE_URL}",
+    api_key="${API_KEY_PLACEHOLDER}",
 )
 
 response = client.chat.completions.create(
-    model="google/gemma-4-26b-a4b-nvfp4",
+    model="${LIVE_MODEL.id}",
     messages=[
         {"role": "system", "content": "You are a helpful AI assistant."},
-        {"role": "user", "content": "Explain quantum computing in 2 sentences."}
+        {"role": "user", "content": "Explain quantum computing in two sentences."}
     ],
     temperature=0.7,
-    max_tokens=150
+    max_tokens=150,
 )
 
 print(response.choices[0].message.content)`
 
-const CURL_EXAMPLE = `curl -X POST https://seedinfer.com/v1/chat/completions \\
+const CURL_EXAMPLE = `curl -X POST ${API_BASE_URL}/chat/completions \\
   -H "Content-Type: application/json" \\
-  -H "Authorization: Bearer sk-seedinfer-demo" \\
+  -H "Authorization: Bearer ${API_KEY_PLACEHOLDER}" \\
   -d '{
-    "model": "google/gemma-4-26b-a4b-nvfp4",
+    "model": "${LIVE_MODEL.id}",
     "messages": [{"role": "user", "content": "Hello SeedInfer!"}],
     "stream": false
   }'`
@@ -68,14 +83,14 @@ const CURL_EXAMPLE = `curl -X POST https://seedinfer.com/v1/chat/completions \\
 const JS_EXAMPLE = `import OpenAI from 'openai';
 
 const openai = new OpenAI({
-  baseURL: 'https://seedinfer.com/v1',
-  apiKey: 'sk-seedinfer-demo',
+  baseURL: '${API_BASE_URL}',
+  apiKey: '${API_KEY_PLACEHOLDER}',
 });
 
 async function main() {
   const completion = await openai.chat.completions.create({
     messages: [{ role: 'user', content: 'Hello SeedInfer!' }],
-    model: 'google/gemma-4-26b-a4b-nvfp4',
+    model: '${LIVE_MODEL.id}',
   });
 
   console.log(completion.choices[0].message.content);
@@ -145,20 +160,18 @@ export default function DocsContent() {
   const [tab, setTab] = useState<"provider" | "client">("client")
 
   return (
-    <div className="flex h-screen overflow-hidden bg-bg-primary">
-      <Sidebar />
-      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        {/* Header */}
-        <header className="flex h-[48px] shrink-0 items-center justify-between border-b border-border-dim bg-bg-secondary px-4">
-          <div className="min-w-0 flex items-center gap-3">
-            <h1 className="truncate text-[13px] font-semibold tracking-tight text-text-primary">
-              SeedInfer Documentation Center
-            </h1>
+    <AppShell>
+      <PageHeader
+        title={
+          <span className="flex items-center gap-3">
+            SeedInfer Documentation
             <Badge variant="outline" className="hidden sm:inline-flex font-mono text-[10px] border-accent-brand/30 text-accent-brand">
-              v1.0 Decentralized Network
+              API v1 · OpenAI-compatible
             </Badge>
-          </div>
-          <div className="flex items-center gap-2">
+          </span>
+        }
+        actions={
+          <>
             <Link
               href="/provider"
               className="inline-flex items-center gap-1.5 rounded-lg bg-accent-brand px-3 py-1.5 text-xs font-semibold text-white hover:bg-accent-brand-hover transition-colors shadow-sm"
@@ -171,135 +184,110 @@ export default function DocsContent() {
             >
               <Coins className="h-3.5 w-3.5 text-accent-green" /> Calculator & Earnings
             </Link>
-          </div>
-        </header>
-
-        {/* Main Content */}
-        <main className="min-h-0 flex-1 overflow-y-auto bg-bg-primary">
-          <div className="mx-auto max-w-[1600px] space-y-6 p-4 sm:p-6">
-
-            {/* Top Centered Section Header */}
+          </>
+        }
+      />
+      <PageContainer>
             <div className="text-center max-w-2xl mx-auto space-y-2 pt-2">
               <Badge variant="outline" className="font-mono text-[10px] uppercase tracking-wider text-accent-brand border-accent-brand/30 bg-accent-brand/10">
-                Select Documentation Section
+                Choose a section
               </Badge>
-              <h2 className="text-2xl font-bold tracking-tight text-text-primary sm:text-3xl">
-                SeedInfer Technical Documentation
-              </h2>
+              <h2 className="text-2xl font-bold tracking-tight text-text-primary sm:text-3xl">SeedInfer technical documentation</h2>
               <p className="text-xs sm:text-sm text-text-secondary leading-5">
-                Comprehensive guides for hardware node operators (Providers) and software developers integrating the API (Clients).
+                Guides for GPU node operators (providers) and for developers integrating the API (clients).
               </p>
             </div>
 
-            {/* TWO LARGE CENTERED SELECTION BUTTONS / CARDS */}
             <div className="grid gap-4 sm:grid-cols-2 max-w-4xl mx-auto">
-              {/* Provider Card Button */}
-              <button
-                onClick={() => setTab("provider")}
-                className={`relative flex flex-col items-start p-5 rounded-2xl border text-left transition-all duration-200 shadow-md ${
-                  tab === "provider"
-                    ? "border-accent-brand bg-gradient-to-br from-accent-brand/15 via-bg-secondary to-bg-secondary ring-2 ring-accent-brand/40"
-                    : "border-border-dim bg-bg-secondary hover:border-border-default hover:bg-bg-tertiary/40"
-                }`}
-              >
-                <div className="flex items-center justify-between w-full">
-                  <div className={`flex h-11 w-11 items-center justify-center rounded-xl border ${
-                    tab === "provider"
-                      ? "bg-accent-brand text-white border-accent-brand"
-                      : "bg-bg-tertiary text-text-secondary border-border-default"
-                  }`}>
-                    <Server className="h-5 w-5" />
+              {(
+                [
+                  {
+                    key: "provider" as const,
+                    icon: <Server className="h-5 w-5" />,
+                    title: "Provider documentation",
+                    badge: "Nodes & hardware",
+                    desc: (
+                      <>
+                        For GPU owners and node operators: <code className="rounded bg-bg-tertiary px-1">install.sh</code>, hardware requirements
+                        (NVIDIA ≥{MIN_VRAM_GB}GB VRAM), Ed25519 identity, hardware fingerprint, payouts and FAQ.
+                      </>
+                    ),
+                  },
+                  {
+                    key: "client" as const,
+                    icon: <Code2 className="h-5 w-5" />,
+                    title: "Client documentation",
+                    badge: "API & integration",
+                    desc: (
+                      <>
+                        For developers: OpenAI SDK integration, Python / cURL / JS examples, the{" "}
+                        <code className="rounded bg-bg-tertiary px-1">/v1/chat/completions</code> endpoint, pricing and FAQ.
+                      </>
+                    ),
+                  },
+                ]
+              ).map((c) => (
+                <button
+                  key={c.key}
+                  onClick={() => setTab(c.key)}
+                  className={`relative flex flex-col items-start p-5 rounded-2xl border text-left transition-all duration-200 shadow-md ${
+                    tab === c.key
+                      ? "border-accent-brand bg-gradient-to-br from-accent-brand/15 via-bg-secondary to-bg-secondary ring-2 ring-accent-brand/40"
+                      : "border-border-dim bg-bg-secondary hover:border-border-default hover:bg-bg-tertiary/40"
+                  }`}
+                >
+                  <div className="flex items-center justify-between w-full">
+                    <div
+                      className={`flex h-11 w-11 items-center justify-center rounded-xl border ${
+                        tab === c.key ? "bg-accent-brand text-white border-accent-brand" : "bg-bg-tertiary text-text-secondary border-border-default"
+                      }`}
+                    >
+                      {c.icon}
+                    </div>
+                    <Badge variant={tab === c.key ? "success" : "outline"} className="font-mono text-[10px]">
+                      {tab === c.key ? "Active section" : c.badge}
+                    </Badge>
                   </div>
-                  <Badge
-                    variant={tab === "provider" ? "success" : "outline"}
-                    className="font-mono text-[10px]"
-                  >
-                    {tab === "provider" ? "Active Section" : "Nodes & Hardware"}
-                  </Badge>
-                </div>
-
-                <h3 className="mt-4 text-base font-bold text-text-primary flex items-center gap-2">
-                  Provider Documentation
-                  <ArrowRight className={`h-4 w-4 transition-transform ${tab === "provider" ? "translate-x-1 text-accent-brand" : "text-text-tertiary"}`} />
-                </h3>
-                <p className="mt-1 font-mono text-xs text-text-secondary leading-5">
-                  For Hardware Providers and Node Operators. Setup instructions for <code className="rounded bg-bg-tertiary px-1">install.sh</code>, RTX 5090 32GB baseline requirements, Ed25519 authorization keypair, hardware fingerprinting, and provider FAQ.
-                </p>
-              </button>
-
-              {/* Client Card Button */}
-              <button
-                onClick={() => setTab("client")}
-                className={`relative flex flex-col items-start p-5 rounded-2xl border text-left transition-all duration-200 shadow-md ${
-                  tab === "client"
-                    ? "border-accent-brand bg-gradient-to-br from-accent-brand/15 via-bg-secondary to-bg-secondary ring-2 ring-accent-brand/40"
-                    : "border-border-dim bg-bg-secondary hover:border-border-default hover:bg-bg-tertiary/40"
-                }`}
-              >
-                <div className="flex items-center justify-between w-full">
-                  <div className={`flex h-11 w-11 items-center justify-center rounded-xl border ${
-                    tab === "client"
-                      ? "bg-accent-brand text-white border-accent-brand"
-                      : "bg-bg-tertiary text-text-secondary border-border-default"
-                  }`}>
-                    <Code2 className="h-5 w-5" />
-                  </div>
-                  <Badge
-                    variant={tab === "client" ? "success" : "outline"}
-                    className="font-mono text-[10px]"
-                  >
-                    {tab === "client" ? "Active Section" : "API & Integration"}
-                  </Badge>
-                </div>
-
-                <h3 className="mt-4 text-base font-bold text-text-primary flex items-center gap-2">
-                  Client Documentation
-                  <ArrowRight className={`h-4 w-4 transition-transform ${tab === "client" ? "translate-x-1 text-accent-brand" : "text-text-tertiary"}`} />
-                </h3>
-                <p className="mt-1 font-mono text-xs text-text-secondary leading-5">
-                  For Developers and API Consumers. OpenAI SDK integration, code examples in Python, cURL, and JS, endpoint specification for <code className="rounded bg-bg-tertiary px-1">/v1/chat/completions</code>, pricing schedules, and client FAQ.
-                </p>
-              </button>
+                  <h3 className="mt-4 text-base font-bold text-text-primary flex items-center gap-2">
+                    {c.title}
+                    <ArrowRight className={`h-4 w-4 transition-transform ${tab === c.key ? "translate-x-1 text-accent-brand" : "text-text-tertiary"}`} />
+                  </h3>
+                  <p className="mt-1 font-mono text-xs text-text-secondary leading-5">{c.desc}</p>
+                </button>
+              ))}
             </div>
 
             <div className="border-t border-border-dim/60 pt-4" />
 
-            {/* ========================================================================= */}
-            {/* TAB 1: PROVIDER DOCUMENTATION                                             */}
-            {/* ========================================================================= */}
             {tab === "provider" && (
               <div className="space-y-6">
-                {/* Provider Hero Card */}
                 <Card className="overflow-hidden border border-accent-brand/20 bg-gradient-to-br from-accent-brand/10 via-bg-secondary to-bg-secondary">
                   <CardContent className="p-6">
                     <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-2">
                           <Badge variant="success" className="gap-1">
-                            <ShieldCheck className="h-3 w-3" /> Zero-Account Architecture
+                            <ShieldCheck className="h-3 w-3" /> No account needed
                           </Badge>
-                          <Badge variant="outline" className="font-mono text-[10px]">
-                            Ed25519 Keypair Auth
-                          </Badge>
-                          <Badge variant="outline" className="font-mono text-[10px]">
-                            Hardware Fingerprint Lock
-                          </Badge>
+                          <Badge variant="outline" className="font-mono text-[10px]">Ed25519 key pair</Badge>
+                          <Badge variant="outline" className="font-mono text-[10px]">Hardware fingerprint</Badge>
                           <Badge variant="outline" className="font-mono text-[10px] border-accent-brand/30 text-accent-brand">
-                            CUDA 13.3 · Blackwell GB202
+                            CUDA 13.3 · driver 580+
                           </Badge>
                         </div>
-                        <h2 className="mt-3 text-2xl font-bold tracking-tight text-text-primary">
-                          Provider Node Setup & Hardware Guide
-                        </h2>
+                        <h2 className="mt-3 text-2xl font-bold tracking-tight text-text-primary">Provider node setup & hardware guide</h2>
                         <p className="mt-2 max-w-3xl text-sm leading-6 text-text-secondary">
-                          Host AI models on decentralized P2P inference infrastructure. No email registration required. Your identity is cryptographically bound to your <strong className="text-text-primary">Ed25519 Keypair</strong> and hardware locked via <strong className="text-text-primary">SHA-256 System Fingerprint</strong>.
+                          Serve {LIVE_MODEL.name} on your NVIDIA GPU. No email registration: your identity is an{" "}
+                          <strong className="text-text-primary">Ed25519 key pair</strong> bound to your machine by a{" "}
+                          <strong className="text-text-primary">SHA-256 hardware fingerprint</strong>. You earn {REVENUE_SHARE_PCT}% of the token
+                          revenue your node serves plus a standby retainer of {STANDBY_LABEL}.
                         </p>
                         <div className="mt-4 flex flex-wrap gap-2">
                           <a href="#prov-hardware" className="inline-flex items-center gap-1 rounded-lg border border-border-default bg-bg-tertiary px-3 py-1.5 text-xs font-medium text-text-primary hover:bg-bg-hover">
-                            Hardware Specs ↓
+                            Hardware ↓
                           </a>
                           <a href="#prov-install" className="inline-flex items-center gap-1 rounded-lg bg-accent-brand px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-brand-hover">
-                            <Terminal className="h-3.5 w-3.5" /> Quick Install ↓
+                            <Terminal className="h-3.5 w-3.5" /> Quick install ↓
                           </a>
                           <a href="#prov-faq" className="inline-flex items-center gap-1 rounded-lg border border-border-default bg-bg-tertiary px-3 py-1.5 text-xs font-medium text-text-primary hover:bg-bg-hover">
                             <HelpCircle className="h-3.5 w-3.5 text-accent-brand" /> Provider FAQ ↓
@@ -310,210 +298,157 @@ export default function DocsContent() {
                       <Card className="w-full shrink-0 border border-border-dim bg-bg-primary/60 lg:w-[380px]">
                         <CardHeader className="pb-2">
                           <CardTitle className="flex items-center gap-2 text-xs font-mono uppercase tracking-wide text-text-tertiary">
-                            <ShieldCheck className="h-3.5 w-3.5 text-accent-brand" /> Minimum Node Requirements
+                            <ShieldCheck className="h-3.5 w-3.5 text-accent-brand" /> Node requirements
                           </CardTitle>
                         </CardHeader>
-                        <CardContent className="space-y-2 pt-0 font-mono text-xs">
-                          <div className="grid grid-cols-2 gap-1.5 font-mono text-[11px]">
-                            <div className="flex items-center justify-between rounded-lg bg-bg-tertiary px-2 py-1.5">
-                              <span className="text-text-tertiary">OS</span>
-                              <span className="font-semibold text-text-primary">Ubuntu 24.04+</span>
+                        <CardContent className="space-y-1.5 pt-0 font-mono text-xs">
+                          {[
+                            ["Minimum GPU", `NVIDIA, ≥${MIN_VRAM_GB}GB VRAM`],
+                            ["Reference node", REFERENCE_GPU.name],
+                            ["Identity", "Ed25519 key pair"],
+                            ["OS & driver", "Ubuntu 24.04+ / driver 580+"],
+                            ["Payouts", `${PROVIDER_ECONOMICS.payoutAsset} on ${PROVIDER_ECONOMICS.payoutChain}, ${PROVIDER_ECONOMICS.payoutCadence}`],
+                          ].map(([k, v]) => (
+                            <div key={k} className="flex items-center justify-between gap-2 rounded-lg bg-bg-tertiary px-2.5 py-2">
+                              <span className="text-text-tertiary">{k}</span>
+                              <span className="font-semibold text-text-primary text-right">{v}</span>
                             </div>
-                            <div className="flex items-center justify-between rounded-lg bg-bg-tertiary px-2 py-1.5">
-                              <span className="text-text-tertiary">Driver</span>
-                              <span className="font-semibold text-text-primary">580+ (cu13.3)</span>
-                            </div>
-                            <div className="flex items-center justify-between rounded-lg bg-bg-tertiary px-2 py-1.5">
-                              <span className="text-text-tertiary">GPU</span>
-                              <span className="font-semibold text-text-primary">RTX 5090</span>
-                            </div>
-                            <div className="flex items-center justify-between rounded-lg bg-bg-tertiary px-2 py-1.5">
-                              <span className="text-text-tertiary">VRAM</span>
-                              <span className="font-semibold text-text-primary">32GB (16 min)</span>
-                            </div>
-                            <div className="flex items-center justify-between rounded-lg bg-bg-tertiary px-2 py-1.5">
-                              <span className="text-text-tertiary">Docker</span>
-                              <span className="font-semibold text-text-primary">24+ + nvidia-ctk</span>
-                            </div>
-                            <div className="flex items-center justify-between rounded-lg bg-bg-tertiary px-2 py-1.5">
-                              <span className="text-text-tertiary">Disk</span>
-                              <span className="font-semibold text-text-primary">60GB+ free</span>
-                            </div>
-                          </div>
-                          <div className="rounded-lg border border-dashed border-border-default bg-bg-primary p-2 font-mono text-[10px] leading-3.5 text-text-secondary">
-                            Ports: 47900 (vLLM) + 47901 (Agent). Tailscale container runs isolated (no conflict with personal host tailnet). Autostart via Plug & Play systemd.
-                          </div>
+                          ))}
                         </CardContent>
                       </Card>
-                    </div>
-
-                    <div className="mt-4">
-                      <ProviderContactForm />
                     </div>
                   </CardContent>
                 </Card>
 
-                {/* Zero-Account Security Details */}
                 <Card className="border border-border-dim bg-bg-secondary">
                   <CardHeader className="pb-3">
                     <CardTitle className="flex items-center gap-2 text-[13px]">
-                      <Lock className="h-4 w-4 text-accent-brand" /> Zero-Account Security Architecture (Ed25519 & Fingerprinting)
+                      <Lock className="h-4 w-4 text-accent-brand" /> Identity & hardware lock
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-4">
                     <div className="grid gap-4 md:grid-cols-2">
                       <div className="rounded-xl border border-border-dim bg-bg-primary p-4 space-y-2">
                         <div className="flex items-center gap-2 text-xs font-bold text-text-primary">
-                          <KeyRound className="h-4 w-4 text-accent-brand" /> 1. Ed25519 Cryptographic Keys
+                          <KeyRound className="h-4 w-4 text-accent-brand" /> 1. Ed25519 keys
                         </div>
-                        <p className="font-mono text-xs leading-5 text-text-secondary">
-                          On initial launch, the installation script generates an Ed25519 keypair in <code className="rounded bg-bg-tertiary px-1">/etc/seedinfer/identity.key</code>:
-                        </p>
+                        <p className="font-mono text-xs leading-5 text-text-secondary">On first start the installer generates a key pair:</p>
                         <ul className="list-disc pl-5 font-mono text-[11px] leading-4 text-text-tertiary space-y-1">
-                          <li><strong>Private Key:</strong> Stored locally with 0600 permissions. Never leaves your server. Used to sign node heartbeats.</li>
-                          <li><strong>Public Key:</strong> Your sole network identifier (Zero-Account ID). Monthly USDC payouts on Base are routed to this address.</li>
+                          <li><strong>Private key:</strong> stored locally with 0600 permissions. It never leaves your server and signs heartbeats.</li>
+                          <li><strong>Public key:</strong> your node&apos;s only identifier on the network. Earnings are tracked against it.</li>
                         </ul>
                       </div>
-
                       <div className="rounded-xl border border-border-dim bg-bg-primary p-4 space-y-2">
                         <div className="flex items-center gap-2 text-xs font-bold text-text-primary">
-                          <ShieldCheck className="h-4 w-4 text-accent-green" /> 2. Hardware Fingerprint Lock
+                          <ShieldCheck className="h-4 w-4 text-accent-green" /> 2. Hardware fingerprint
                         </div>
-                        <p className="font-mono text-xs leading-5 text-text-secondary">
-                          The agent constructs a unique digital hardware fingerprint based on GPU UUID, motherboard serial, and CPU ID:
-                        </p>
+                        <p className="font-mono text-xs leading-5 text-text-secondary">The agent derives a fingerprint from the GPU UUID, PCIe bus and machine id:</p>
                         <ul className="list-disc pl-5 font-mono text-[11px] leading-4 text-text-tertiary space-y-1">
-                          <li>The SHA-256 fingerprint is cryptographically linked to your public key during initial registration.</li>
-                          <li>This prevents container cloning or executing unauthorized virtual node copies on different hardware.</li>
+                          <li>The SHA-256 fingerprint is bound to your public key on first registration.</li>
+                          <li>This prevents cloning the container or key onto another machine.</li>
                         </ul>
                       </div>
                     </div>
                   </CardContent>
                 </Card>
 
-                {/* VRAM Math & Hardware Specs */}
                 <Card id="prov-hardware" className="border border-border-dim bg-bg-secondary">
                   <CardHeader className="pb-3">
                     <CardTitle className="flex items-center gap-2 text-[13px]">
-                      <HardDrive className="h-4 w-4 text-accent-brand" /> VRAM Requirement & GPU Matrix
+                      <HardDrive className="h-4 w-4 text-accent-brand" /> VRAM requirement & supported GPUs
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-4">
-                    <div className="grid gap-3 sm:grid-cols-3">
-                      <div className="rounded-xl border border-border-dim bg-bg-primary p-4">
-                        <div className="font-mono text-[10px] uppercase tracking-wide text-text-tertiary">NVFP4 Model Weights</div>
-                        <div className="mt-1 font-mono text-lg font-semibold text-text-primary">16 - 22 GB</div>
-                        <div className="mt-1 font-mono text-xs text-text-secondary">W4A16 + FP8 via ModelOpt. ~20-30GB downloaded from HuggingFace cache.</div>
-                      </div>
-                      <div className="rounded-xl border border-border-dim bg-bg-primary p-4">
-                        <div className="font-mono text-[10px] uppercase tracking-wide text-text-tertiary">KV Cache (1M Context)</div>
-                        <div className="mt-1 font-mono text-lg font-semibold text-text-primary">~6 - 10 GB</div>
-                        <div className="mt-1 font-mono text-xs text-text-secondary">FP8 KV cache with <code className="rounded bg-bg-tertiary px-1">--kv-cache-dtype fp8</code> flags.</div>
-                      </div>
-                      <div className="rounded-xl border border-accent-brand/20 bg-accent-brand/10 p-4">
-                        <div className="font-mono text-[10px] uppercase tracking-wide text-accent-brand">Total Required Headroom</div>
-                        <div className="mt-1 font-mono text-lg font-semibold text-text-primary">22 - 28 GB</div>
-                        <div className="mt-1 font-mono text-xs text-text-secondary">Recommended 32GB VRAM (RTX 5090) provides 4-10GB headroom for concurrent batching.</div>
-                      </div>
-                    </div>
-
+                    <p className="font-mono text-xs leading-5 text-text-secondary">
+                      {LIVE_MODEL.name} (NVFP4 weights, FP8 KV cache, {LIVE_MODEL.contextLabel} context) needs at least{" "}
+                      <strong className="text-text-primary">{MIN_VRAM_GB}GB VRAM</strong>. 24GB cards are not supported yet (roadmap).
+                    </p>
                     <div className="overflow-x-auto rounded-xl border border-border-dim">
                       <table className="w-full text-left font-mono text-xs">
                         <thead className="bg-bg-tertiary text-[10px] uppercase tracking-wide text-text-tertiary">
                           <tr>
-                            <th className="px-3 py-2">GPU Hardware</th>
-                            <th className="px-3 py-2">Architecture</th>
+                            <th className="px-3 py-2">GPU</th>
                             <th className="px-3 py-2">VRAM</th>
-                            <th className="px-3 py-2">Token Speed</th>
-                            <th className="px-3 py-2">Node Tier</th>
+                            <th className="px-3 py-2">TDP</th>
+                            <th className="px-3 py-2">Status</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-border-dim text-text-secondary">
-                          <tr className="bg-accent-brand/10 font-medium text-text-primary">
-                            <td className="px-3 py-2">NVIDIA RTX 5090</td>
-                            <td className="px-3 py-2">Blackwell GB202</td>
-                            <td className="px-3 py-2">32GB GDDR7 (~1.8 TB/s)</td>
-                            <td className="px-3 py-2">~120-180 tok/s</td>
-                            <td className="px-3 py-2"><Badge variant="success" className="text-[10px]">Official Baseline</Badge></td>
-                          </tr>
-                          <tr>
-                            <td className="px-3 py-2">NVIDIA A100 80GB / H100 80GB</td>
-                            <td className="px-3 py-2">Hopper / Ampere</td>
-                            <td className="px-3 py-2">80GB HBM3</td>
-                            <td className="px-3 py-2">~150-220 tok/s</td>
-                            <td className="px-3 py-2"><Badge variant="outline" className="text-[10px]">Enterprise Tier Supported</Badge></td>
-                          </tr>
-                          <tr className="opacity-70">
-                            <td className="px-3 py-2">NVIDIA RTX 4090 / 3090 (24GB)</td>
-                            <td className="px-3 py-2">Ada / Ampere</td>
-                            <td className="px-3 py-2">24GB GDDR6X</td>
-                            <td className="px-3 py-2">~70-100 tok/s</td>
-                            <td className="px-3 py-2"><Badge variant="outline" className="text-[10px]">Community Tier (Limited Ctx)</Badge></td>
-                          </tr>
+                          {GPU_SPECS.map((g) => (
+                            <tr key={g.key} className={g.key === REFERENCE_GPU.key ? "bg-accent-brand/10 font-medium text-text-primary" : g.supported ? "" : "opacity-70"}>
+                              <td className="px-3 py-2">{g.name}</td>
+                              <td className="px-3 py-2">{g.vramGb}GB</td>
+                              <td className="px-3 py-2">{g.tdpW} W</td>
+                              <td className="px-3 py-2">
+                                <Badge variant={g.key === REFERENCE_GPU.key ? "success" : "outline"} className="text-[10px]">
+                                  {g.note || (g.supported ? "Supported" : "Roadmap")}
+                                </Badge>
+                              </td>
+                            </tr>
+                          ))}
                         </tbody>
                       </table>
                     </div>
                   </CardContent>
                 </Card>
 
-                {/* Installation Section */}
+                <section id="custom-application-form" className="scroll-mt-4">
+                  <ProviderContactForm />
+                </section>
+
                 <Card id="prov-install" className="border border-border-dim bg-bg-secondary">
                   <CardHeader className="pb-3">
                     <CardTitle className="flex items-center gap-2 text-[13px]">
-                      <Terminal className="h-4 w-4 text-accent-brand" /> One-Liner Installation Guide
+                      <Terminal className="h-4 w-4 text-accent-brand" /> Installation (one command)
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-4">
-                    <CodeBlock label="Recommended execution command (Ubuntu 24.04+)" code={ONE_LINER_RECOMMENDED} />
+                    <CodeBlock label="Recommended command (Ubuntu 24.04+)" code={ONE_LINER_RECOMMENDED} />
                     <div className="rounded-lg border border-border-dim bg-bg-primary p-4 space-y-2">
-                      <div className="font-mono text-xs font-bold text-text-primary">What does install.sh execute?</div>
+                      <div className="font-mono text-xs font-bold text-text-primary">What does install.sh do?</div>
                       <ol className="list-decimal pl-5 font-mono text-xs leading-5 text-text-secondary space-y-1">
-                        <li>Verifies NVIDIA driver (Driver ≥580.65, CUDA 13.3) and available VRAM headroom (&gt;22GB).</li>
-                        <li>Automatically pulls and configures isolated <code className="rounded bg-bg-tertiary px-1">tailscale-seedinfer</code> container (preserving home network state).</li>
-                        <li>Generates Ed25519 keypair and calculates unique SHA-256 Hardware Fingerprint.</li>
-                        <li>Launches vLLM engine with NVFP4 support for Gemma 4 26B and registers active heartbeats with gateway.</li>
+                        <li>Checks the NVIDIA driver (≥580, CUDA 13.3) and that the GPU has at least {MIN_VRAM_GB}GB VRAM.</li>
+                        <li>Sets up an isolated mesh VPN container (<code className="rounded bg-bg-tertiary px-1">tailscale-seedinfer</code>); an existing VPN on the host keeps working.</li>
+                        <li>Generates the Ed25519 key pair and the SHA-256 hardware fingerprint.</li>
+                        <li>Starts vLLM with {LIVE_MODEL.name} and begins sending heartbeats to the gateway.</li>
                       </ol>
                     </div>
                   </CardContent>
                 </Card>
 
-                {/* Provider FAQ */}
                 <Card id="prov-faq" className="border border-border-dim bg-bg-secondary">
                   <CardHeader className="pb-3">
                     <CardTitle className="flex items-center gap-2 text-[13px]">
-                      <HelpCircle className="h-4 w-4 text-accent-brand" /> Provider FAQ — Frequently Asked Questions
+                      <HelpCircle className="h-4 w-4 text-accent-brand" /> Provider FAQ
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-3">
                     <FaqItem
-                      question="How are provider earnings paid out?"
-                      answer={
-                        <div className="space-y-1.5">
-                          <p>
-                            Payouts are distributed in <strong>USDC / ETH on the Base network (Base Chain)</strong>.
-                          </p>
-                          <p className="text-accent-amber font-semibold">
-                            ⚠️ Mandatory Payout Requirement: To receive your automated monthly retainer ($0.40/day) and 99% net token execution earnings, you MUST enter a valid EVM crypto wallet address on the Base Chain in your <a href="/provider/portal" className="underline text-accent-brand">Provider Portal</a>.
-                          </p>
-                          <p>
-                            Retainers and profit shares accrue continuously and are settled automatically to your registered Base Chain address.
-                          </p>
-                        </div>
-                      }
-                    />
-                    <FaqItem
-                      question="Do I need to open router ports (Port Forwarding / Public IP)?"
+                      question="How and when am I paid?"
                       answer={
                         <p>
-                          <strong>No.</strong> Connectivity between the SeedInfer gateway and your node operates through an outbound encrypted WireGuard tunnel (Tailscale Headscale). Nodes do not require public IP addresses or inbound port forwarding.
+                          You receive <strong>{REVENUE_SHARE_PCT}% of the token revenue</strong> your node serves ({PROTOCOL_FEE_PCT}% protocol fee) plus a
+                          standby retainer of {STANDBY_LABEL}. Payouts are made in <strong>{PROVIDER_ECONOMICS.payoutAsset} on {PROVIDER_ECONOMICS.payoutChain}</strong>,{" "}
+                          {PROVIDER_ECONOMICS.payoutCadence}, with a minimum of ${PROVIDER_ECONOMICS.minPayoutUsd.toFixed(2)} (smaller balances carry over). Fiat payouts are not available.
+                          To receive payouts you must register an EVM wallet address on {PROVIDER_ECONOMICS.payoutChain} in the{" "}
+                          <Link href="/provider/portal" className="text-accent-brand underline">Provider Portal</Link>.
                         </p>
                       }
                     />
                     <FaqItem
-                      question="How does the Hardware Fingerprint Lock work?"
+                      question="Do I need to open ports or have a public IP?"
                       answer={
                         <p>
-                          On initial startup, the agent registers a unique hardware hash bound to your GPU and CPU UUIDs. This prevents unauthorized cloning of your private key or container onto another machine.
+                          <strong>No.</strong> The gateway reaches your node over an outbound, encrypted WireGuard mesh. No public IP or inbound port forwarding is required.
+                        </p>
+                      }
+                    />
+                    <FaqItem
+                      question="How does the hardware lock work?"
+                      answer={
+                        <p>
+                          On first start the agent registers a hash of your GPU and machine identifiers. This stops anyone from cloning your private key or
+                          container and running a second node under the same identity.
                         </p>
                       }
                     />
@@ -521,15 +456,16 @@ export default function DocsContent() {
                       question="Can I run a node on an RTX 4090 or 3090 (24GB VRAM)?"
                       answer={
                         <p>
-                          Yes, but 24GB cards operate under the <i>Community Tier</i>. It requires setting context limit in config to <code className="rounded bg-bg-tertiary px-1">VLLM_MAX_MODEL_LEN=131072</code> and <code className="rounded bg-bg-tertiary px-1">VLLM_GPU_MEMORY_UTILIZATION=0.80</code> to prevent Out Of Memory (OOM) exceptions.
+                          Not yet. {LIVE_MODEL.name} requires at least {MIN_VRAM_GB}GB VRAM. Support for 24GB cards is on the roadmap.
                         </p>
                       }
                     />
                     <FaqItem
-                      question="What happens if my node goes offline or loses internet?"
+                      question="What happens if I turn off my machine or lose connectivity?"
                       answer={
                         <p>
-                          The SeedInfer gateway simply stops routing traffic to your node. There are no financial slashing penalties. Standby retainers accrue for each complete hour of availability with uptime &ge;50%.
+                          The gateway simply stops routing traffic to your node; there is no slashing. A node with no heartbeat for 5 minutes is shown as
+                          offline. The standby retainer is paid for each day with ≥{Math.round(PROVIDER_ECONOMICS.standbyMinUptime * 100)}% uptime.
                         </p>
                       }
                     />
@@ -538,42 +474,32 @@ export default function DocsContent() {
               </div>
             )}
 
-            {/* ========================================================================= */}
-            {/* TAB 2: CLIENT DOCUMENTATION                                                */}
-            {/* ========================================================================= */}
             {tab === "client" && (
               <div className="space-y-6">
-                {/* Client Hero Card */}
                 <Card className="overflow-hidden border border-accent-brand/20 bg-gradient-to-br from-accent-brand/10 via-bg-secondary to-bg-secondary">
                   <CardContent className="p-6">
                     <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-2">
                           <Badge variant="success" className="gap-1">
-                            <Zap className="h-3 w-3" /> OpenAI API Compatible
+                            <Zap className="h-3 w-3" /> OpenAI API compatible
                           </Badge>
-                          <Badge variant="outline" className="font-mono text-[10px]">
-                            Base URL: https://seedinfer.com/v1
-                          </Badge>
-                          <Badge variant="outline" className="font-mono text-[10px]">
-                            Zero-Data Logging
-                          </Badge>
+                          <Badge variant="outline" className="font-mono text-[10px]">Base URL: {API_BASE_URL}</Badge>
                           <Badge variant="outline" className="font-mono text-[10px] border-accent-brand/30 text-accent-brand">
-                            EWMA Low Latency Routing
+                            Latency-aware routing
                           </Badge>
                         </div>
-                        <h2 className="mt-3 text-2xl font-bold tracking-tight text-text-primary">
-                          Client API Integration & Developer SDKs
-                        </h2>
+                        <h2 className="mt-3 text-2xl font-bold tracking-tight text-text-primary">Client API integration</h2>
                         <p className="mt-2 max-w-3xl text-sm leading-6 text-text-secondary">
-                          Integrate with the SeedInfer network in seconds. The API is 100% compliant with OpenAI and OpenRouter v2.4 specifications. Simply substitute the <code className="rounded bg-bg-tertiary px-1">base_url</code> in your standard <code className="rounded bg-bg-tertiary px-1">openai</code> SDK.
+                          The SeedInfer API follows the OpenAI Chat Completions format. Point the standard <code className="rounded bg-bg-tertiary px-1">openai</code>{" "}
+                          SDK at <code className="rounded bg-bg-tertiary px-1">base_url={API_BASE_URL}</code> and use your API key.
                         </p>
                         <div className="mt-4 flex flex-wrap gap-2">
                           <a href="#cli-quickstart" className="inline-flex items-center gap-1 rounded-lg bg-accent-brand px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-brand-hover">
-                            <Code2 className="h-3.5 w-3.5" /> API Quickstart ↓
+                            <Code2 className="h-3.5 w-3.5" /> API quickstart ↓
                           </a>
                           <a href="#cli-models" className="inline-flex items-center gap-1 rounded-lg border border-border-default bg-bg-tertiary px-3 py-1.5 text-xs font-medium text-text-primary hover:bg-bg-hover">
-                            Models & Rates ↓
+                            Models & pricing ↓
                           </a>
                           <a href="#cli-faq" className="inline-flex items-center gap-1 rounded-lg border border-border-default bg-bg-tertiary px-3 py-1.5 text-xs font-medium text-text-primary hover:bg-bg-hover">
                             <HelpCircle className="h-3.5 w-3.5 text-accent-brand" /> Client FAQ ↓
@@ -584,37 +510,31 @@ export default function DocsContent() {
                       <Card className="w-full shrink-0 border border-border-dim bg-bg-primary/60 lg:w-[380px]">
                         <CardHeader className="pb-2">
                           <CardTitle className="flex items-center gap-2 text-xs font-mono uppercase tracking-wide text-text-tertiary">
-                            <Globe className="h-3.5 w-3.5 text-accent-brand" /> API Connection Details
+                            <Globe className="h-3.5 w-3.5 text-accent-brand" /> Connection details
                           </CardTitle>
                         </CardHeader>
                         <CardContent className="space-y-1.5 pt-0 font-mono text-xs">
-                          <div className="flex items-center justify-between rounded-lg bg-bg-tertiary px-2.5 py-2">
-                            <span className="text-text-tertiary">API Endpoint</span>
-                            <span className="font-semibold text-accent-brand">https://seedinfer.com/v1</span>
-                          </div>
-                          <div className="flex items-center justify-between rounded-lg bg-bg-tertiary px-2.5 py-2">
-                            <span className="text-text-tertiary">Request Format</span>
-                            <span className="font-semibold text-text-primary">OpenAI / OpenRouter JSON</span>
-                          </div>
-                          <div className="flex items-center justify-between rounded-lg bg-bg-tertiary px-2.5 py-2">
-                            <span className="text-text-tertiary">Streaming (SSE)</span>
-                            <span className="font-semibold text-accent-green">Supported (stream: true)</span>
-                          </div>
-                          <div className="flex items-center justify-between rounded-lg bg-bg-tertiary px-2.5 py-2">
-                            <span className="text-text-tertiary">Data Privacy</span>
-                            <span className="font-semibold text-text-primary">Zero Logging (RAM Only)</span>
-                          </div>
+                          {[
+                            ["Base URL", API_BASE_URL],
+                            ["Format", "OpenAI Chat Completions"],
+                            ["Streaming (SSE)", "Supported (stream: true)"],
+                            ["Live model", LIVE_MODEL.id],
+                          ].map(([k, v]) => (
+                            <div key={k} className="flex items-center justify-between gap-2 rounded-lg bg-bg-tertiary px-2.5 py-2">
+                              <span className="text-text-tertiary">{k}</span>
+                              <span className="font-semibold text-text-primary text-right break-all">{v}</span>
+                            </div>
+                          ))}
                         </CardContent>
                       </Card>
                     </div>
                   </CardContent>
                 </Card>
 
-                {/* API Code Examples */}
                 <Card id="cli-quickstart" className="border border-border-dim bg-bg-secondary">
                   <CardHeader className="pb-3">
                     <CardTitle className="flex items-center gap-2 text-[13px]">
-                      <Code2 className="h-4 w-4 text-accent-brand" /> Code Examples (Python, Node.js, cURL)
+                      <Code2 className="h-4 w-4 text-accent-brand" /> Code examples (Python, Node.js, cURL)
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-4">
@@ -637,102 +557,112 @@ export default function DocsContent() {
                   </CardContent>
                 </Card>
 
-                {/* Models Catalog */}
                 <Card id="cli-models" className="border border-border-dim bg-bg-secondary">
                   <CardHeader className="pb-3">
                     <CardTitle className="flex items-center gap-2 text-[13px]">
-                      <Cpu className="h-4 w-4 text-accent-brand" /> Available Models & API Rates
+                      <Cpu className="h-4 w-4 text-accent-brand" /> Models & API pricing
                     </CardTitle>
                   </CardHeader>
-                  <CardContent className="space-y-4">
+                  <CardContent className="space-y-3">
                     <div className="overflow-x-auto rounded-xl border border-border-dim">
                       <table className="w-full text-left font-mono text-xs">
                         <thead className="bg-bg-tertiary text-[10px] uppercase tracking-wide text-text-tertiary">
                           <tr>
-                            <th className="px-3 py-2">Model ID</th>
-                            <th className="px-3 py-2">Context Window</th>
-                            <th className="px-3 py-2">Input Price / 1M</th>
-                            <th className="px-3 py-2">Output Price / 1M</th>
-                            <th className="px-3 py-2">Specialization</th>
+                            <th className="px-3 py-2">Model id</th>
+                            <th className="px-3 py-2">Context</th>
+                            <th className="px-3 py-2">Input / 1M</th>
+                            <th className="px-3 py-2">Output / 1M</th>
+                            <th className="px-3 py-2">Status</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-border-dim text-text-secondary">
-                          <tr className="bg-accent-brand/5 font-medium text-text-primary">
-                            <td className="px-3 py-2 flex items-center gap-1.5">
-                              <Badge variant="outline" className="text-[10px] bg-accent-brand/10 text-accent-brand">Recommended Phase 0</Badge>
-                              google/gemma-4-26b-a4b-nvfp4
-                            </td>
-                            <td className="px-3 py-2">256,000 tokens</td>
-                            <td className="px-3 py-2 text-accent-green font-semibold">$0.03</td>
-                            <td className="px-3 py-2 text-accent-green font-semibold">$0.20</td>
-                            <td className="px-3 py-2">Fast reasoning, multilingual agentic tasks</td>
-                          </tr>
-                          <tr>
-                            <td className="px-3 py-2 font-medium">nvidia/nemotron-lightning-1m</td>
-                            <td className="px-3 py-2">1,000,000 tokens</td>
-                            <td className="px-3 py-2 text-accent-green font-semibold">$0.02</td>
-                            <td className="px-3 py-2 text-accent-green font-semibold">$0.05</td>
-                            <td className="px-3 py-2">Ultra-long context, document analysis, coding</td>
-                          </tr>
+                          {MODELS.map((m) => (
+                            <tr key={m.id} className={m.status === "live" ? "bg-accent-brand/5 font-medium text-text-primary" : ""}>
+                              <td className="px-3 py-2">
+                                <div>{m.id}</div>
+                                {m.status === "live" && m.aliases.length > 0 && (
+                                  <div className="text-[10px] text-text-tertiary">aliases: {m.aliases.join(", ")}</div>
+                                )}
+                              </td>
+                              <td className="px-3 py-2">{m.contextLength.toLocaleString("en-US")} tokens</td>
+                              <td className="px-3 py-2 text-accent-green font-semibold">{usd(m.pricePer1M.input)}</td>
+                              <td className="px-3 py-2 text-accent-green font-semibold">{usd(m.pricePer1M.output)}</td>
+                              <td className="px-3 py-2">
+                                <Badge variant={m.status === "live" ? "success" : "outline"} className="text-[10px]">
+                                  {m.status === "live" ? "live" : "coming soon"}
+                                </Badge>
+                              </td>
+                            </tr>
+                          ))}
                         </tbody>
                       </table>
                     </div>
+                    <p className="font-mono text-[11px] text-text-tertiary">{CACHE_POLICY.label}. Minimum invoice for credit top-ups is $0.10.</p>
                   </CardContent>
                 </Card>
 
-                {/* Client FAQ */}
                 <Card id="cli-faq" className="border border-border-dim bg-bg-secondary">
                   <CardHeader className="pb-3">
                     <CardTitle className="flex items-center gap-2 text-[13px]">
-                      <HelpCircle className="h-4 w-4 text-accent-brand" /> Client FAQ — Frequently Asked Questions
+                      <HelpCircle className="h-4 w-4 text-accent-brand" /> Client FAQ
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-3">
                     <FaqItem
-                      question="Are my prompts and completions logged or stored on node disks?"
+                      question="Are my prompts and completions stored on provider nodes?"
                       answer={
                         <p>
-                          <strong>No.</strong> SeedInfer operates on strict <i>Zero-Data Logging</i> principles. Prompts are processed strictly in volatile GPU RAM/VRAM. No node has permission or capability to write request payloads to persistent disk.
+                          Nodes process requests in GPU/host memory to serve them; the provider agent does not write prompt or completion content to disk.
+                          The KV cache (used for cached-input pricing) lives in memory for up to {CACHE_POLICY.maxSeconds / 60} minutes.
                         </p>
                       }
                     />
                     <FaqItem
-                      question="Does SeedInfer work with frameworks like LangChain, AutoGen, or OpenCode?"
+                      question="Does SeedInfer work with LangChain, AutoGen, OpenCode and similar tools?"
                       answer={
                         <p>
-                          Yes! Since the API uses standard OpenAI Chat Completions protocol, simply set <code className="rounded bg-bg-tertiary px-1">OPENAI_BASE_URL=https://seedinfer.com/v1</code> and supply your API key in your configuration.
+                          Yes. Because the API uses the OpenAI Chat Completions format, set{" "}
+                          <code className="rounded bg-bg-tertiary px-1">OPENAI_BASE_URL={API_BASE_URL}</code> and your SeedInfer API key.
                         </p>
                       }
                     />
                     <FaqItem
-                      question="How does network routing evaluate provider latency?"
+                      question="How does routing pick a provider?"
                       answer={
                         <p>
-                          The SeedInfer gateway uses an <strong>EWMA (Exponentially Weighted Moving Average)</strong> algorithm to continuously monitor Time to First Token (TTFT) and active throughput. Requests are dynamically routed to the nearest, most performant node.
+                          The gateway tracks each node&apos;s time to first token (TTFT) with an exponentially weighted moving average (EWMA) and its current
+                          load, and routes each request to the best available verified node.
                         </p>
                       }
                     />
                     <FaqItem
-                      question="How do Subscription API keys differ from Pay-As-You-Go API keys?"
+                      question="How do subscription keys differ from pay-as-you-go keys?"
                       answer={
                         <p>
-                          Subscriptions (GO, GOAT, PRO) issue dedicated API keys starting with <code className="rounded bg-bg-tertiary px-1">sk_sub_...</code>. Pay-As-You-Go credit balances use standard keys (<code className="rounded bg-bg-tertiary px-1">sk_live_...</code>). Subscription keys are strictly tied to monthly package quotas and billing.
+                          Subscriptions (GO, GOAT, PRO) use dedicated keys starting with <code className="rounded bg-bg-tertiary px-1">sk_sub_...</code> that draw
+                          from the monthly plan quota. Pay-as-you-go keys (<code className="rounded bg-bg-tertiary px-1">sk_live_...</code>) draw from your credit
+                          balance. See <Link href="/billing" className="text-accent-brand underline">Billing</Link> for plan details.
                         </p>
                       }
                     />
                     <FaqItem
-                      question="How does the Orange Pi 4 Pro router prioritize Subscription vs Pay-As-You-Go requests?"
+                      question="How are subscription and pay-as-you-go requests prioritized?"
                       answer={
                         <p>
-                          On the Orange Pi 4 Pro routing layer, requests authenticated with subscription keys (<code className="rounded bg-bg-tertiary px-1">sk_sub_...</code>) are assigned <strong>lowest / background priority</strong> (<code className="rounded bg-bg-tertiary px-1">X-SeedInfer-Priority: background</code>). Pay-As-You-Go traffic receives top priority, guaranteeing low latency for pay-per-token clients while giving subscribers discounted 2x–4x volume multipliers at background queue priority.
+                          Requests made with subscription keys are routed at background priority (
+                          <code className="rounded bg-bg-tertiary px-1">X-SeedInfer-Priority: background</code>). Pay-as-you-go traffic gets standard (highest)
+                          priority, which keeps its latency low at peak demand; subscribers get {SUBSCRIPTION_PLANS[0].multiplier}x–
+                          {SUBSCRIPTION_PLANS[SUBSCRIPTION_PLANS.length - 1].multiplier}x more usage per dollar in exchange.
                         </p>
                       }
                     />
                     <FaqItem
-                      question="How do I obtain an API Key?"
+                      question="Where do I get an API key?"
                       answer={
                         <p>
-                          During the beta rollout, a public demo key <code className="rounded bg-bg-tertiary px-1">sk-seedinfer-demo</code> is enabled. You can also manage Pay-As-You-Go and Subscription keys in the <Link href="/settings" className="text-accent-brand underline">Settings</Link> and <Link href="/api-console" className="text-accent-brand underline">API Console</Link>.
+                          Create an account via <Link href="/register" className="text-accent-brand underline">Register</Link>. Self-service key management in{" "}
+                          <Link href="/settings" className="text-accent-brand underline">Settings</Link> is coming soon; you can test requests in the{" "}
+                          <Link href="/api-console" className="text-accent-brand underline">API Console</Link>.
                         </p>
                       }
                     />
@@ -741,13 +671,10 @@ export default function DocsContent() {
               </div>
             )}
 
-            {/* Footer */}
             <div className="border-t border-border-dim pt-4 font-mono text-[10px] leading-4 text-text-tertiary">
-              SeedInfer.com · Documentation Center (Provider & Client) · Built for Decentralized AI Privacy & Economics
+              SeedInfer.com · Documentation · Payouts: {PAYOUT_LABEL}
             </div>
-          </div>
-        </main>
-      </div>
-    </div>
+      </PageContainer>
+    </AppShell>
   )
 }

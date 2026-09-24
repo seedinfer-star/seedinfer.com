@@ -317,13 +317,18 @@ export function getPaymentAddress(): string {
   );
 }
 
+/** Solana deposit address from env only. Returns "" when not configured (never a mint/placeholder address). */
 export function getSolanaAddress(): string {
-  return (
+  const v = (
     process.env.SOLANA_ADDRESS ||
-    process.env.NEXT_PUBLIC_SOL_ADDRESS ||
     process.env.NEXT_PUBLIC_SOLANA_ADDRESS ||
-    "So11111111111111111111111111111111111111112"
-  );
+    ""
+  ).trim();
+  return v === "So11111111111111111111111111111111111111112" ? "" : v;
+}
+
+export function isSolanaEnabled(): boolean {
+  return getSolanaAddress() !== "";
 }
 
 /**

@@ -1,53 +1,74 @@
 "use client"
 import { useState, useRef } from "react"
-import Sidebar from "@/components/sidebar"
+import Link from "next/link"
+import AppShell, { PageHeader, PageContainer } from "@/components/app-shell"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { MessageSquare, ExternalLink, Send, Copy, Check, Sparkles, Cpu } from "lucide-react"
+import { MessageSquare, Send, Copy, Check, Sparkles, Cpu, KeyRound } from "lucide-react"
+import { LIVE_MODEL, API_BASE_URL, CACHE_POLICY, usd } from "@/lib/catalog"
 
-import ThemeToggle from "@/components/theme-toggle"
+type Msg = { role: "user" | "assistant"; content: string; error?: boolean }
 
-type Msg = { role: "user" | "assistant"; content: string }
+const PRICE = `${usd(LIVE_MODEL.pricePer1M.input)} / ${usd(LIVE_MODEL.pricePer1M.output)} per 1M`
 
-const CURL = `curl https://api.seedinfer.com/v1/chat/completions \\
+const CURL = `curl ${API_BASE_URL}/chat/completions \\
   -H "Authorization: Bearer $SEEDINFER_API_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{
-    "model": "google/gemma-4-26b-a4b-nvfp4",
+    "model": "${LIVE_MODEL.id}",
     "messages": [{"role": "user", "content": "Hello"}],
     "stream": true
   }'`
 
 export default function ChatPage() {
   const [messages, setMessages] = useState<Msg[]>([
-    { role: "assistant", content: "Welcome to SeedInfer Chat — P2P inference on verified GPUs. Ask anything. Model: google/gemma-4-26b-a4b-nvfp4 (1M context, 2M KV)." },
+    {
+      role: "assistant",
+      content: `Welcome to the SeedInfer playground. Requests go to ${API_BASE_URL}/chat/completions with model ${LIVE_MODEL.id} (${LIVE_MODEL.contextLabel} context). Enter your API key and ask anything.`,
+    },
   ])
   const [input, setInput] = useState("")
+  const [apiKey, setApiKey] = useState("")
   const [sending, setSending] = useState(false)
   const [copied, setCopied] = useState(false)
   const listRef = useRef<HTMLDivElement>(null)
 
+  const scrollDown = () => setTimeout(() => listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: "smooth" }), 50)
+
   const send = async () => {
     const text = input.trim()
     if (!text || sending) return
-    const user: Msg = { role: "user", content: text }
-    setMessages((m) => [...m, user])
+    const history = [...messages.filter((m, i) => i > 0 && !m.error), { role: "user" as const, content: text }]
+    setMessages((m) => [...m, { role: "user", content: text }])
     setInput("")
+    if (!apiKey.trim()) {
+      setMessages((m) => [...m, { role: "assistant", content: "Please enter your SeedInfer API key above to send requests.", error: true }])
+      scrollDown()
+      return
+    }
     setSending(true)
-    // mock streamed assistant
-    setTimeout(() => {
-      setMessages((m) => [
-        ...m,
-        {
-          role: "assistant",
-          content:
-            `Mock reply for: "${text}"\n\nThis is a stub — connect live via POST /v1/chat/completions on docs.seedinfer.com. SeedInfer routes to the dedicated edge at api.seedinfer.com. Model: google/gemma-4-26b-a4b-nvfp4 · $0.03/$0.20 per 1M · 1M ctx · cache 60s free.`,
-        },
-      ])
+    try {
+      const r = await fetch("/v1/chat/completions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey.trim()}` },
+        body: JSON.stringify({
+          model: LIVE_MODEL.id,
+          messages: history.map((m) => ({ role: m.role, content: m.content })),
+          max_tokens: 512,
+          stream: false,
+        }),
+      })
+      const j = await r.json().catch(() => null)
+      if (!r.ok) throw new Error(j?.error?.message || `Request failed (HTTP ${r.status})`)
+      const reply = j?.choices?.[0]?.message?.content ?? ""
+      setMessages((m) => [...m, { role: "assistant", content: reply || "(empty response)" }])
+    } catch (e: any) {
+      setMessages((m) => [...m, { role: "assistant", content: e?.message || "Request failed. Please try again.", error: true }])
+    } finally {
       setSending(false)
-      setTimeout(() => listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: "smooth" }), 50)
-    }, 700)
+      scrollDown()
+    }
   }
 
   const copy = async () => {
@@ -59,41 +80,45 @@ export default function ChatPage() {
   }
 
   return (
-    <div className="flex h-screen overflow-hidden bg-bg-primary">
-      <Sidebar />
-      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <header className="flex h-[48px] shrink-0 items-center justify-between border-b border-border-dim bg-bg-secondary px-4">
-          <div className="min-w-0">
-            <h1 className="truncate text-[13px] font-semibold tracking-tight text-text-primary">Chat</h1>
-            <p className="truncate font-mono text-[11px] text-text-tertiary">
-              P2P inference playground · google/gemma-4-26b-a4b-nvfp4 · OpenAI-compatible · docs.seedinfer.com
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <Badge variant="success" className="hidden sm:inline-flex font-mono text-[10px]">1M ctx · 2M KV</Badge>
-            <a
-              href="https://docs.seedinfer.com"
-              target="_blank"
-              rel="noopener noreferrer"
+    <AppShell>
+      <PageHeader
+        title="Chat"
+        description={<>Inference playground · {LIVE_MODEL.id} · OpenAI-compatible</>}
+        actions={
+          <>
+            <Badge variant="success" className="hidden sm:inline-flex font-mono text-[10px]">
+              {LIVE_MODEL.contextLabel} context
+            </Badge>
+            <Link
+              href="/docs"
               className="inline-flex items-center gap-1.5 rounded-lg border border-border-default bg-bg-tertiary px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-bg-hover hover:text-text-primary"
             >
-              docs.seedinfer.com <ExternalLink className="h-3 w-3" />
-            </a>
-            <ThemeToggle variant="icon" />
-          </div>
-        </header>
-
-        <main className="min-h-0 flex-1 overflow-y-auto bg-bg-primary">
-          <div className="mx-auto flex max-w-[1600px] flex-col gap-4 p-4 sm:p-6 lg:flex-row">
-            <div className="flex min-h-[540px] flex-1 flex-col rounded-xl border border-border-dim bg-bg-secondary shadow-sm">
-              <div className="flex items-center justify-between border-b border-border-dim px-3 py-2">
+              Docs
+            </Link>
+          </>
+        }
+      />
+      <PageContainer className="flex flex-col gap-4 space-y-0 lg:flex-row lg:items-start">
+            <div className="flex h-[70dvh] min-h-[420px] min-w-0 flex-1 flex-col rounded-xl lg:sticky lg:top-0 lg:h-[calc(100dvh-8rem)] border border-border-dim bg-bg-secondary shadow-sm">
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border-dim px-3 py-2">
                 <div className="flex items-center gap-2">
                   <Sparkles className="h-4 w-4 text-accent-brand" />
                   <span className="text-xs font-semibold text-text-primary">Playground</span>
-                  <Badge variant="outline" className="font-mono text-[10px]">google/gemma-4-26b-a4b-nvfp4</Badge>
-                  <Badge variant="outline" className="hidden sm:inline-flex font-mono text-[10px]">$0.03 / $0.20 · 1M</Badge>
+                  <Badge variant="outline" className="font-mono text-[10px]">{LIVE_MODEL.id}</Badge>
+                  <Badge variant="outline" className="hidden sm:inline-flex font-mono text-[10px]">{PRICE}</Badge>
                 </div>
-                <span className="hidden font-mono text-[10px] text-text-tertiary sm:inline">{messages.length} messages</span>
+                <label className="flex items-center gap-1.5">
+                  <KeyRound className="h-3.5 w-3.5 text-text-tertiary" />
+                  <input
+                    type="password"
+                    value={apiKey}
+                    onChange={(e) => setApiKey(e.target.value)}
+                    placeholder="sk-seedinfer-…"
+                    aria-label="API key"
+                    autoComplete="off"
+                    className="h-7 w-[200px] rounded-md border border-border-default bg-bg-primary px-2 font-mono text-[11px] text-text-primary placeholder:text-text-tertiary focus:outline-none focus:ring-1 focus:ring-accent-brand"
+                  />
+                </label>
               </div>
 
               <div ref={listRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
@@ -103,15 +128,19 @@ export default function ChatPage() {
                       className={`max-w-[80%] rounded-2xl px-3 py-2 text-sm leading-5 ${
                         m.role === "user"
                           ? "bg-accent-brand text-white"
-                          : "border border-border-dim bg-bg-primary text-text-primary"
+                          : m.error
+                            ? "border border-accent-red/30 bg-accent-red/10 text-text-primary"
+                            : "border border-border-dim bg-bg-primary text-text-primary"
                       }`}
                     >
                       <div className="whitespace-pre-wrap">{m.content}</div>
-                      <div className={`mt-1 font-mono text-[10px] ${m.role === "user" ? "text-white/70" : "text-text-tertiary"}`}>{m.role === "user" ? "you" : "seedinfer · Gemma 4"}</div>
+                      <div className={`mt-1 font-mono text-[10px] ${m.role === "user" ? "text-white/70" : "text-text-tertiary"}`}>
+                        {m.role === "user" ? "you" : `seedinfer · ${LIVE_MODEL.shortName}`}
+                      </div>
                     </div>
                   </div>
                 ))}
-                {sending && <div className="font-mono text-xs text-text-tertiary">Seedinfer is thinking…</div>}
+                {sending && <div className="font-mono text-xs text-text-tertiary">Generating…</div>}
               </div>
 
               <div className="border-t border-border-dim p-3">
@@ -135,25 +164,20 @@ export default function ChatPage() {
                   </Button>
                 </div>
                 <p className="mt-1.5 font-mono text-[10px] text-text-tertiary">
-                  Stub — mock replies only. Live via <code className="rounded bg-bg-tertiary px-1">POST /v1/chat/completions</code> ·{" "}
-                  <a href="https://docs.seedinfer.com" target="_blank" rel="noopener noreferrer" className="text-accent-brand underline">
-                    docs.seedinfer.com
-                  </a>{" "}
-                  · Note: <code className="rounded bg-bg-tertiary px-1">/</code> currently shows Network stats; this Chat playground lives at{" "}
-                  <code className="rounded bg-bg-tertiary px-1">/chat</code>.
+                  Requests use <code className="rounded bg-bg-tertiary px-1">POST {API_BASE_URL}/chat/completions</code> and are billed at{" "}
+                  {PRICE}. Your key stays in this browser tab.
                 </p>
               </div>
             </div>
 
             <div className="flex w-full shrink-0 flex-col gap-3 lg:w-[380px]">
-              <Card className="border border-amber-500/20 bg-amber-500/10">
+              <Card className="border border-accent-brand/20 bg-accent-brand/10">
                 <CardContent className="p-3 flex items-start gap-2">
-                  <MessageSquare className="h-4 w-4 mt-0.5 shrink-0 text-amber-600" />
+                  <MessageSquare className="h-4 w-4 mt-0.5 shrink-0 text-accent-brand" />
                   <div className="min-w-0 flex-1">
-                    <div className="text-xs font-semibold text-text-primary">Coming soon — proxy to docs.seedinfer.com</div>
+                    <div className="text-xs font-semibold text-text-primary">OpenAI-compatible API</div>
                     <div className="mt-0.5 text-xs leading-4 text-text-secondary">
-                      Chat will proxy OpenAI-compatible{" "}
-                      <code className="rounded bg-bg-tertiary px-1">POST /v1/chat/completions</code> to SeedInfer then SeedInfer edge. Auth via{" "}
+                      Use any OpenAI SDK with <code className="rounded bg-bg-tertiary px-1">base_url={API_BASE_URL}</code> and{" "}
                       <code className="rounded bg-bg-tertiary px-1">Bearer $SEEDINFER_API_KEY</code>.
                     </div>
                   </div>
@@ -174,9 +198,9 @@ export default function ChatPage() {
                   </div>
                   <pre className="overflow-x-auto rounded-xl border border-border-dim bg-bg-primary p-3 font-mono text-[11px] leading-4 text-text-secondary">{CURL}</pre>
                   <div className="mt-2 flex flex-wrap gap-1.5">
-                    <Badge variant="success" className="font-mono text-[10px]">OpenAI compat</Badge>
+                    <Badge variant="success" className="font-mono text-[10px]">OpenAI compatible</Badge>
                     <Badge variant="outline" className="font-mono text-[10px]">stream</Badge>
-                    <Badge variant="outline" className="font-mono text-[10px]">cache 60s free</Badge>
+                    <Badge variant="outline" className="font-mono text-[10px]">cached input free</Badge>
                   </div>
                 </CardContent>
               </Card>
@@ -188,17 +212,16 @@ export default function ChatPage() {
                     Model
                   </div>
                   <div className="rounded-lg border border-border-dim bg-bg-primary p-2 font-mono text-xs">
-                    <div className="font-semibold text-text-primary">google/gemma-4-26b-a4b-nvfp4</div>
-                    <div className="text-text-secondary">Gemma 4 26B A4B NVFP4 · 1M context · 2M KV · $0.03 / $0.20 per 1M</div>
-                    <div className="mt-1 text-[11px] text-text-tertiary">Phase 0 active · Phase 1 (Qwen/Nemotron) — soon</div>
+                    <div className="font-semibold text-text-primary">{LIVE_MODEL.id}</div>
+                    <div className="text-text-secondary">
+                      {LIVE_MODEL.name} · {LIVE_MODEL.contextLabel} context · {PRICE}
+                    </div>
+                    <div className="mt-1 text-[11px] text-text-tertiary">{CACHE_POLICY.label}. More models coming soon — see /models.</div>
                   </div>
-                  <p className="font-mono text-[10px] text-text-tertiary"> Docs: <a href="https://docs.seedinfer.com" target="_blank" rel="noopener noreferrer" className="text-accent-brand underline">docs.seedinfer.com</a> · root <code className="rounded bg-bg-tertiary px-1">/</code> serves Network stats; Chat also at <code className="rounded bg-bg-tertiary px-1">/chat</code>.</p>
                 </CardContent>
               </Card>
             </div>
-          </div>
-        </main>
-      </div>
-    </div>
+      </PageContainer>
+    </AppShell>
   )
 }

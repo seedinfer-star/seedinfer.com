@@ -1,67 +1,78 @@
 "use client"
 
-import React, { createContext, useContext, useEffect, useState } from "react"
+import React, { createContext, useCallback, useContext, useEffect, useState } from "react"
 
 export type Theme = "dark" | "light"
 
 interface ThemeContextType {
   theme: Theme
+  mounted: boolean
   toggleTheme: () => void
   setTheme: (theme: Theme) => void
 }
 
+const STORAGE_KEY = "seedinfer_theme"
+
 const ThemeContext = createContext<ThemeContextType>({
   theme: "dark",
+  mounted: false,
   toggleTheme: () => {},
   setTheme: () => {},
 })
 
+function applyTheme(t: Theme) {
+  const root = document.documentElement
+  root.classList.toggle("dark", t === "dark")
+  root.classList.toggle("light", t === "light")
+}
+
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
+  // Dark-first. The inline script in app/layout.tsx has already applied the
+  // stored preference before hydration; we just sync React state with it.
   const [theme, setThemeState] = useState<Theme>("dark")
   const [mounted, setMounted] = useState(false)
 
   useEffect(() => {
+    let initial: Theme = "dark"
+    try {
+      if (localStorage.getItem(STORAGE_KEY) === "light") initial = "light"
+    } catch {}
+    setThemeState(initial)
+    applyTheme(initial)
     setMounted(true)
-    const stored = localStorage.getItem("seedinfer_theme") as Theme | null
-    if (stored === "light" || stored === "dark") {
-      setThemeState(stored)
-      applyTheme(stored)
-    } else {
-      const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches
-      const initial: Theme = prefersDark ? "dark" : "dark" // default to dark
-      setThemeState(initial)
-      applyTheme(initial)
+
+    // keep multiple tabs in sync
+    const onStorage = (e: StorageEvent) => {
+      if (e.key !== STORAGE_KEY) return
+      const next: Theme = e.newValue === "light" ? "light" : "dark"
+      setThemeState(next)
+      applyTheme(next)
     }
+    window.addEventListener("storage", onStorage)
+    return () => window.removeEventListener("storage", onStorage)
   }, [])
 
-  const applyTheme = (t: Theme) => {
-    const root = document.documentElement
-    if (t === "light") {
-      root.classList.remove("dark")
-      root.classList.add("light")
-    } else {
-      root.classList.add("dark")
-      root.classList.remove("light")
-    }
-  }
-
-  const setTheme = (t: Theme) => {
+  const setTheme = useCallback((t: Theme) => {
     setThemeState(t)
     try {
-      localStorage.setItem("seedinfer_theme", t)
+      localStorage.setItem(STORAGE_KEY, t)
     } catch {}
     applyTheme(t)
-  }
+  }, [])
 
-  const toggleTheme = () => {
-    const next = theme === "dark" ? "light" : "dark"
-    setTheme(next)
-  }
+  const toggleTheme = useCallback(() => {
+    setThemeState((prev) => {
+      const next: Theme = prev === "dark" ? "light" : "dark"
+      try {
+        localStorage.setItem(STORAGE_KEY, next)
+      } catch {}
+      applyTheme(next)
+      return next
+    })
+  }, [])
 
   return (
-    <ThemeContext.Provider value={{ theme, toggleTheme, setTheme }}>
-      {children}
-    </ThemeContext.Provider>
+    <ThemeContext.Provider value={{ theme, mounted, toggleTheme, setTheme }}>{children}</ThemeContext.Provider>
   )
 }
 

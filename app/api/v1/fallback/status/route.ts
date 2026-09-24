@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server"
+import { sanitizePublic, publicStatus, isStale } from "@/lib/public-sanitize"
 import { getUpstreamConfigs, getUpstreamForStatus, getModalWarmupStatus } from "@/lib/fallback-clients"
 import { getAllStatuses, getStats, resetCircuit } from "@/lib/fallback-state"
 import { listProviders } from "@/lib/providers-store"
@@ -34,7 +35,7 @@ export async function GET(req: Request) {
   } catch {}
 
   const providers = listProviders()
-  const verified = providers.filter((p) => p.verification.status === "verified")
+  const verified = providers.filter((p) => p.verification.status === "verified" && !isStale(p))
   const pending = providers.filter((p) => p.verification.status === "pending")
   const failed = providers.filter((p) => p.verification.status === "failed")
 
@@ -49,20 +50,25 @@ export async function GET(req: Request) {
     ? {
         id: localProvider.id,
         verification: localProvider.verification.status,
-        tailscale_ip: localProvider.tailscale_ip,
-        agent_url: localProvider.agent_url,
+        status: publicStatus(localProvider),
         last_heartbeat: localProvider.last_heartbeat,
-        vllm_model: (localProvider as any).vllm_model,
+        model: localProvider.current_model,
         vllm_health: (localProvider as any).vllm_health,
       }
     : null
 
   // Enrich upstreams with circuit
-  const enriched = upstreams.map((u) => ({
-    ...u,
-    circuit: circuits[u.id as keyof typeof circuits],
-    healthy: !circuits[u.id as keyof typeof circuits]?.open && (u.hasKey || u.id === "local"),
-  }))
+  const enriched = upstreams.map((u) => {
+    const c = circuits[u.id as keyof typeof circuits]
+    const configured = u.id === "local" ? verified.length > 0 || !!u.baseUrl : u.hasKey && !!u.baseUrl
+    // Unhealthy if circuit open, not configured, or it has only ever failed (no successes yet).
+    const onlyFailures = !!c && (c.successes ?? 0) === 0 && (c.fails ?? 0) + (c.consecutiveFails ?? 0) > 0
+    return {
+      ...u,
+      circuit: c,
+      healthy: !c?.open && configured && !onlyFailures,
+    }
+  })
 
   const body = {
     ok: true,
@@ -80,7 +86,7 @@ export async function GET(req: Request) {
     upstreams: enriched,
     circuits,
     stats,
-    // Modal warmup parallel: triggered gdy local fail (brak verified lub timeout/5xx/429) → fire-and-forget GET {MODAL_BASE_URL}/health lub /v1/models
+    // Modal warmup: triggered in parallel when local fails (no verified node, timeout, 5xx or 429)
     modal_warmup: modalWarmup.state, // "triggered" | "idle"
     modal_warmup_detail: modalWarmup, // { state, lastWarmupAt }
     config: {
@@ -94,19 +100,11 @@ export async function GET(req: Request) {
         modal: upstreams.find((u) => u.id === "modal")?.timeoutMs,
       },
       models: Object.fromEntries(upstreams.map((u) => [u.id, u.model])),
-      env_hint: {
-        nim: "NIM_API_KEY or NVAPI_KEY (alias NVIDIA_API_KEY), NIM_BASE_URL, NIM_MODEL",
-        opencode: "OPENCODE_API_KEY (alias OPENCODE_ZEN_KEY), OPENCODE_BASE_URL (default https://opencode.ai/zen/v1 gdy OPENCODE_ZEN_KEY lub https://opencode.ai/api/v1), OPENCODE_MODEL (default deepseek-v4-flash dla Zen, override nvidia/nemotron-3-nano-30b-a3b)",
-        openrouter: "OPENROUTER_API_KEY, OPENROUTER_MODEL (default nvidia/nemotron-3-nano-30b-a3b:free)",
-        modal: "MODAL_BASE_URL (required), MODAL_API_KEY, MODAL_MODEL, MODAL_TIMEOUT_MS, MODAL_WARMUP=true (default true, fire-and-forget GET /health lub /v1/models gdy local fail)",
-        local: "VLLM_URL or verified provider tailscale_ip:3001",
-        thresholds: "FALLBACK_LATENCY_THRESHOLD_MS, FALLBACK_FAIL_THRESHOLD, FALLBACK_COOLDOWN_MS",
-      },
     },
     hint: "X-SeedInfer-Upstream + X-SeedInfer-Fallback-Reason headers on /api/v1/chat/completions indicate which fallback served the request; modal_warmup shows parallel warmup state",
   }
 
-  return NextResponse.json(body, {
+  return NextResponse.json(sanitizePublic(body), {
     headers: {
       "Cache-Control": "no-store, max-age=0",
       "Content-Type": "application/json",

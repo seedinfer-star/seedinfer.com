@@ -2,7 +2,10 @@
 
 > **We optimize decentralized P2P AI inference to electricity cost for builders, sharing profits with engineers and edge enthusiasts monetizing idle GPUs.**
 
-> Sectia gotowa do wklejenia na `/stats` jako `Roadmap & Economics`. Ostatnia aktualizacja: 2026-08-26. Wszystkie kwoty w USD, wypłaty w USDC (Base).
+> Internal planning doc (Polish). Last updated: 2026-09-24. **Canonical public numbers live in `lib/catalog.ts`** and override anything below:
+> live model Gemma 4 26B A4B NVFP4 ($0.03 / $0.20 per 1M, 256K ctx); coming soon Nemotron 3.5 Lightning 1M ($0.02 / $0.05) and Qwen 3.6 35B A3B ($0.06 / $0.50);
+> 99% revenue share (1% protocol fee); standby $0.40/day per node for each day with ≥50% uptime; payouts USDC on Base, **monthly**, min $1.00.
+> Public roadmap: Phase 0 = now (Q3 2026) · Phase 1 = Q4 2026 (Nemotron + Qwen, 100 nodes) · Phase 2 = H1 2027 (marketplace 300–1000 nodes) · Phase 3 = 2027+ (electricity-price parity).
 
 ---
 
@@ -10,10 +13,10 @@
 
 | Faza | Nazwa | Czas | Nody | Cel główny | KPI #1 | Koszt utrzymania sieci (retainer) | Wypłata providera |
 |---|---|---|---|---|---|---|---|
-| **0** | **Stealth / Winter Whitelist** | M0-M2 | 20 | Udowodnić: P2P nie gorsze niż Vast.ai, uptime >99% | 20/20 nodów online, p95 TTFT <250ms | **$240 / mies.** ($8/dzień) | **$0.40 / dzień gwarantowane + 99% rev share** |
-| **1** | **100 Nodes - Liquidity** | M3-M5 | 100 | Pierwsze $1k MRR, 5-min onboarding Docker | 100 nodów, 30+ aktywnych builderów | ~$1,200 / mies. (100×$0.40×30, stopniowo wygaszany) | Retainer + 99% do $1/day, potem czysty 99% |
-| **2** | **Marketplace Scale** | M6-M12 | 300-1000 | Samonapędzający się marketplace, 1% take rate wystarcza | $10k MRR, >50% ruchu z OpenRouter | $0 — retainer off, tylko rev share | 99% API revenue |
-| **3** | **Electricity Parity** | M12+ | 1000+ | Tańsi niż hyperscalery o koszt prądu. `price = electricity + 10%` | Cena $0.08 / 1M vs $0.15 OpenAI-proxied, uptime SLA 99.9% | $0 — sieć zarabia 1% na wolumenie | 99% ale przy 10x wolumenie = $3-8 / dzień / GPU |
+| **0** | **Stealth / Winter Whitelist** | Q3 2026 (now) | 20 | Udowodnić: P2P nie gorsze niż Vast.ai, uptime >99% | 20/20 nodów online, p95 TTFT <250ms | **$240 / mies.** ($8/dzień) | **$0.40 / dzień gwarantowane + 99% rev share** |
+| **1** | **100 Nodes - Liquidity** | Q4 2026 | 100 | Pierwsze $1k MRR, 5-min onboarding Docker | 100 nodów, 30+ aktywnych builderów | ~$1,200 / mies. (100×$0.40×30, stopniowo wygaszany) | Retainer + 99% do $1/day, potem czysty 99% |
+| **2** | **Marketplace Scale** | H1 2027 | 300-1000 | Samonapędzający się marketplace, 1% take rate wystarcza | $10k MRR, >50% ruchu z OpenRouter | $0 — retainer off, tylko rev share | 99% API revenue |
+| **3** | **Electricity Parity** | 2027+ | 1000+ | Tańsi niż hyperscalery o koszt prądu. `price = electricity + 10%` | Cena $0.08 / 1M vs $0.15 OpenAI-proxied, uptime SLA 99.9% | $0 — sieć zarabia 1% na wolumenie | 99% ale przy 10x wolumenie = $3-8 / dzień / GPU |
 
 **Zasada zimnego startu:** dopóki ruch < breakeven, płacimy za gotowość. Gdy ruch > breakeven, płacisz tylko za zużycie. Nigdy nie prosimy o trzymanie prądożernej karty za darmo.
 
@@ -25,7 +28,7 @@
 
 **SeedInfer fix — 3 mechanizmy:**
 
-1.  **Base Retainer (Zimowy Zasiłek):** $0.40 / dzień / nod w USDC za gotowość/standby ($0.01667/h naliczane po pełnej godzinie). Wypłacane **raz w miesiącu** (min. wypłata $1.00 USD). Warunek: nod musi być online przez **minimum 50% czasu** od momentu dołączenia do sieci w danym miesiącu (np. dołączenie 15 września = wymagane co najmniej 7.5 dnia online do 1 października).
+1.  **Base Retainer (Zimowy Zasiłek):** $0.40 / dzień / nod w USDC za gotowość/standby — naliczane za każdy dzień, w którym nod miał **≥50% uptime**. Wypłacane **raz w miesiącu** (min. wypłata $1.00 USD).
 2.  **Waterfall Profit Distribution (Rozliczenie Miesięczne Zysku):** Wszystkie przychody ze sprzedaży tokenów spływają do Globalnej Puli Przychodów. W pierwszej kolejności z puli pokrywane są należne stawki gwarantowane ($0.40/dzień) dla zakwalifikowanych nodów. Pozostały zysk (nadwyżka) jest dzielony proporcjonalnie między nody według wartości ruchu, który realnie obsłużyły (zgodnie ze stawką hostowanego modelu).
 3.  **Compute Swapping 1:1.5:** Nie masz ruchu? Zamień swój wypracowany retainer/zarobek na kredyty do użycia sieci. Oddajesz $10 zarobku → dostajesz $15 kredytów na inference. Idealne dla Vast.ai hosterów którzy sami budują AI wrappery.
 4.  **Bartery & Internal Traffic:** Przepinamy ruch z OpenRouter + naszych wewnętrznych jobów (eval, synthetic data) na Wasze nody, żeby kręcił się licznik nawet gdy zewnętrzni builderzy jeszcze testują.
@@ -55,7 +58,7 @@ Globalna Pula Przychodów (100%)
 
 **Dla Buildera (Ty z appką):**
 *   **5$ free credits** bez karty. OpenAI-compatible API: zmień `base_url` i działa.
-*   Ceny **electricity-cost optimized**: NP. `Llama 4 Scout $0.02 / $0.05 per 1M` vs $0.15 na OpenRouter.
+*   Ceny **electricity-cost optimized**: NP. `Gemma 4 26B A4B NVFP4 $0.03 / $0.20 per 1M` vs $0.15 na OpenRouter.
 *   **Dostęp do 20 zweryfikowanych nodów** z NVFP4, 1M ctx, p95 <300ms. Nie loteria jak u konkurencji.
 *   Discord #builders — bezpośredni kontakt do providerów, debug w 15 min.
 
@@ -71,7 +74,7 @@ Globalna Pula Przychodów (100%)
 | Kanał | Taktyka | Cost | Cel |
 |---|---|---|---|
 | **Vast.ai / RunPod scraping** | Scrape ofert 5090/6000Ada/L40S → DM na Vast Discord + mail: "Zarób $12/mies gwarantowane + 99% vs $0 u nas na standby. 1 komenda Docker." | $0 (1 dzień skryptu) + $80 Tailscale | 8 nodów |
-| **r/LocalLLaMA** | Posty "We pay $0.40/day to host 5090 for P2P inference — 99% rev share, USDC daily" + komentowanie wątków "how to monetize 5090" | $0 | 5 nodów |
+| **r/LocalLLaMA** | Posty "We pay $0.40/day to host 5090 for P2P inference — 99% rev share, USDC monthly" + komentowanie wątków "how to monetize 5090" | $0 | 5 nodów |
 | **Górnicy GPU / Mining Discords** | Mining po ETH jest martwy — pivot na inference. Target: discords `GPU Mining`, `Ethermine`, Telegram `Mining Club` | $0 | 4 nodów |
 | **Discord / Twitter DM** | White-glove outreach: 50 ręcznych DM z audytem `nvidia-smi` gratis | $0 (czas) | 3 nodów |
 | **Własna sieć** | 5$ kredyt = viral loop — każdy provider dostaje reflink | $100 (20×$5) | — |
@@ -81,7 +84,7 @@ Globalna Pula Przychodów (100%)
 ### Messaging Fazy 0
 > **Persona: Vast.ai Hoster / Edge Enthusiast z 5090 w szafie**
 > *Nagłówek:* **"Twój 5090 zarabia $0 na Vast.ai gdy nikt nie wynajmie. U nas zarabia $0.40 dziennie za samo bycie online — plus 99% gdy przyjdzie ruch."**
-> *Pod-nagłówek:* White-list 20. Nie tokeny. USDC codziennie. Setup przez nas na Tailscale w 15 min.
+> *Pod-nagłówek:* White-list 20. Nie tokeny. USDC co miesiąc. Setup przez nas na Tailscale w 15 min.
 > *CTA:* `Dołącz do whitelist → /provider` + `docker run --gpus all -e NODE_KEY=xyz ...`
 
 ---
@@ -349,7 +352,7 @@ function netProfitPerDay({ watts, tokensPerDay, pricePer1M = 0.25, elecPerKwh = 
 | Persona | Ból | Hasło F0 (whitelist) | Hasło F1 (100) | Hasło F2/F3 (scale) | Kanał | CTA |
 |---|---|---|---|---|---|---|
 | **Vast.ai Hoster** | Karta stoi pusta 40% czasu, Vast bierze 20% | "Dostajesz $0.40/dzień za samo trzymanie karty online. 99% gdy przyjdzie ruch. 1 komenda Docker." | "70% nodów to ex-Vast — zarabiają więcej bo fee 1% nie 20%" | "Vast 20% vs my 1%. Przelicz sobie." | DM na Vast Discord, scraping mail | `/provider` + Docker |
-| **r/LocalLLaMA power user** | Chce monetizować 5090 ale nie ufa tokenom | "Nie tokeny. USDC codziennie na Base. Min $1. Audyt CUDA gratis." | "20 nodów ma 99.2% uptime — zobacz /stats live" | "Hostujesz model 1M ctx? My płacimy za prąd + 10%" | Post techniczny + komentarze | `Tailscale + NODE_KEY` |
+| **r/LocalLLaMA power user** | Chce monetizować 5090 ale nie ufa tokenom | "Nie tokeny. USDC co miesiąc na Base. Min $1. Audyt CUDA gratis." | "20 nodów ma 99.2% uptime — zobacz /stats live" | "Hostujesz model 1M ctx? My płacimy za prąd + 10%" | Post techniczny + komentarze | `Tailscale + NODE_KEY` |
 | **Górnik GPU (ex-miner)** | Po ETH nie ma co kopać, karty się kurzą | "Mining is dead. Inference is the new mining. Kalkulator net-profit: 6000 Ada na + już przy 5M tok/dzień" | "Pierwsi górnicy już na +$80/mies na 5090 przy 20M tok" | "Twój rig kopał ETH za $2/dzień. Teraz robi inference za $5/dzień." | YouTube, Telegram Mining Club | Kalkulator → /provider |
 | **Indie Builder / Hacker** | OpenRouter drogo, Together.ai drogo | "5$ free credits. Zmień base_url, płać o 40% mniej. 1M ctx." | "30 builderów już przepięło — zobacz porównanie cen na /models" | "Inference at electricity cost. $0.08/1M vs $0.15 u nich." | Twitter, HN, Discord #builders | `/api-console` |
 | **CTO / Scale-up** | Potrzebuje SLA i ceny na wolumen | — (nie target w F0) | "100 nodów, SLA 99%, failover <2s. 1% fee — reszta do GPU." | "Najtańszy inference na rynku bo nie mamy datacenter. Umowa + SLA." | Cold mail + OpenRouter listing | Kontakt / enterprise |
@@ -363,6 +366,45 @@ function netProfitPerDay({ watts, tokensPerDay, pricePer1M = 0.25, elecPerKwh = 
 
 ### One-linery gotowe do kopiowania
 
-*   **Twitter bio:** "We optimize P2P AI inference to electricity cost. 99% to GPU owners. 1% to us. USDC daily."
+*   **Twitter bio:** "We optimize P2P AI inference to electricity cost. 99% to GPU owners. 1% to us. USDC monthly."
 *   **r/LocalLLaMA tytuł:** "[P] We pay $0.40/day (USDC) to host your 5090 for P2P inference — 99% rev share, white-glove setup, 20 whitelist spots"
-*   **Vast.ai DM:*                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             
+*   **Vast.ai DM:** "Hej, widzę masz 5090 32GB za $0.45/h na Vast. U nas dostajesz $0.40/d za standby + 99% gdy leci ruch (fee 1% vs 20% u Vast). Setup 5 min: docker run --gpus all -e NODE_KEY=... Chcesz audyt CUDA gratis?"
+*   **Górnik TG:** "Kopanie ETH = $1.5/dzień na 5090 po prądzie. Inference u nas = $2.6/dzień net przy 20M tok (30% load). Kalkulator: seedinfer.com/stats#calculator"
+*   **Builder HN:** "We built a P2P inference network that charges electricity cost +10%. Show HN: live stats, 1% take rate, OpenAI-compatible"
+
+---
+
+## Checklist wdrożenia — co wkleić na /stats
+
+- [ ] Sekcja `Roadmap & Economics` jako anchor `#roadmap` na `/stats` (ten markdown)
+- [ ] Kalkulator net-profit (JS wyżej) — 3 suwaki: GPU (W), tok/dzień, $/kWh → net/mies
+- [ ] Tabela cen live `/models` + link do `/api-console` z $5 free
+- [ ] Licznik `Whitelist: 12/20` (dynamiczny z API)
+- [ ] Przycisk `Become a Provider → /provider` + `docker run` copy button
+- [ ] Footer: "Payouts in USDC on Base. Min $1.00. Monthly. Verifiable on BaseScan."
+
+---
+
+## FAQ — zimny start (dla sceptyków)
+
+**"Co jeśli nikt nie wyśle ruchu przez miesiąc?"**
+Płacimy $240/mies retainer za 20 nodów. To mniej niż Twój miesięczny rachunek za serwer. Nody zostają, bo dostają cash, nie obietnice. W tym czasie przepinamy własny ruch (eval + OpenRouter).
+
+**"Dlaczego $0.40 a nie $2?"**
+$0.40 to nie pokrycie całego prądu — to sygnał "jesteś potrzebny". Pełny prąd pokrywa się dopiero przy ~12M tok/dzień (1 req/5s). Do tego dopłacamy tylko w zimie. Gdy ruch rośnie, retainer znika.
+
+**"Czemu 99% a nie 80% jak inni?"**
+Bo nie budujemy datacenter. Naszym kosztem jest router + discovery (~$200/mies). Przy $10k MRR, 1% = $100 — starcza. Reszta należy się temu kto płaci za prąd.
+
+**"Co z oszustami? Nod online ale nie liczy?"**
+Challenge jobs: co 5 min wysyłamy syntetyczny request z znanym outputem. Brak odpowiedzi <2s = -reputacja, 3× fail = kick + brak retainera.
+
+**"Mam 2× 3090 24GB — mogę?"**
+Na start wymagamy ≥32GB VRAM (5090/L40S/6000 Ada) bo hostujemy 1M ctx NVFP4. 24GB wróci w Fazie 1 gdy dodamy mniejsze modele (8B).
+
+---
+
+*SeedInfer — electricity-cost inference. 99% to you. 1% to keep the lights on.*
+
+*Kontakt whitelist: [Discord] · [Twitter] · founders@seedinfer.com — odpisujemy w 2h, setup w 24h.*
+

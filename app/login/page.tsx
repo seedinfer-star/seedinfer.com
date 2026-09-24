@@ -3,7 +3,7 @@
 import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import Sidebar from "@/components/sidebar";
+import AppShell from "@/components/app-shell"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -59,12 +59,10 @@ function LoginInner() {
   }
 
   return (
-    <div className="flex h-screen overflow-hidden bg-bg-primary">
-      <Sidebar />
-      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <header className="flex h-[48px] shrink-0 items-center justify-between border-b border-border-dim bg-bg-secondary px-4">
+    <AppShell>
+        <header className="flex min-h-[56px] shrink-0 items-center justify-between gap-3 border-b border-border-dim bg-bg-secondary/60 px-4 py-2 md:px-6">
           <div className="min-w-0">
-            <h1 className="truncate text-[13px] font-semibold tracking-tight text-text-primary">Sign in</h1>
+            <h1 className="truncate text-sm font-semibold tracking-tight text-text-primary">Sign in</h1>
             <p className="truncate font-mono text-[11px] text-text-tertiary">SeedInfer — P2P inference · billing requires JWT</p>
           </div>
           <Link
@@ -75,7 +73,7 @@ function LoginInner() {
           </Link>
         </header>
 
-        <main className="min-h-0 flex-1 overflow-y-auto bg-bg-primary">
+        <main id="main" className="min-h-0 flex-1 overflow-y-auto bg-bg-primary">
           <div className="mx-auto flex max-w-[520px] flex-col gap-4 p-4 sm:p-6">
             {(err || oauthError) && (
               <div className="flex items-start gap-2 rounded-xl border border-accent-red/20 bg-accent-red/10 px-3 py-2.5 text-xs leading-4 text-accent-red">
@@ -90,10 +88,10 @@ function LoginInner() {
                   <LogIn className="h-4 w-4 text-accent-brand" />
                   Welcome back
                 </CardTitle>
-                <CardDescription>Sign in with email + password or continue with Google / GitHub. Session is stored as httpOnly cookie <code className="rounded bg-bg-tertiary px-1">seedinfer_session</code> (JWT HS256) for <code className="rounded bg-bg-tertiary px-1">GET /api/v1/credits</code>.</CardDescription>
+                <CardDescription>Sign in with email and password, or continue with Google or GitHub.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                {/* OAuth buttons — href to 302 authorize routes, keep light for RK3588 */}
+                {/* OAuth buttons */}
                 <div className="grid gap-2">
                   <a
                     href="/api/auth/login/google"
@@ -109,9 +107,6 @@ function LoginInner() {
                     <Github className="h-4 w-4" />
                     Continue with GitHub
                   </a>
-                  <p className="font-mono text-[10px] leading-3 text-text-tertiary">
-                    Element requires refinement — set GOOGLE_CLIENT_ID etc. If IDs not configured, OAuth will return 503 with setup hint.
-                  </p>
                 </div>
 
                 <div className="flex items-center gap-2">
@@ -169,18 +164,25 @@ function LoginInner() {
             </Card>
 
             <p className="px-2 font-mono text-[10px] leading-4 text-text-tertiary">
-              Billing payments require JWT — <code className="rounded bg-bg-tertiary px-1">GET /api/v1/credits 401 unauth</code>. After login, session cookie <code className="rounded bg-bg-tertiary px-1">seedinfer_session</code> enables credits + invoices. <a href="/api/auth/logout" className="underline">Logout</a> clears cookie via <code className="rounded bg-bg-tertiary px-1">POST /api/auth/logout</code>.
+              Signing in lets you add credits and create invoices on the Billing page. <a href="/api/auth/logout" className="underline">Log out</a>
             </p>
           </div>
         </main>
-      </div>
-    </div>
+    </AppShell>
   );
 }
 
 export default function LoginPage() {
   return (
-    <Suspense fallback={<div className="flex h-screen items-center justify-center bg-bg-primary font-mono text-xs text-text-tertiary">loading…</div>}>
+    <Suspense
+      fallback={
+        <AppShell>
+          <main id="main" className="flex min-h-0 flex-1 items-center justify-center bg-bg-primary font-mono text-xs text-text-tertiary">
+            Loading…
+          </main>
+        </AppShell>
+      }
+    >
       <LoginInner />
     </Suspense>
   );

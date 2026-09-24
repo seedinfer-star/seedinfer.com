@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { listProviders } from "@/lib/providers-store"
+import { sanitizeProvider } from "@/lib/public-sanitize"
 
 export const dynamic = "force-dynamic"
 
@@ -44,7 +45,7 @@ export async function GET(req: Request) {
   return NextResponse.json(
     {
       object: "list",
-      data: providers,
+      data: providers.map((p) => sanitizeProvider(p)),
       count: providers.length,
       verified: verifiedCount,
       pending: pendingCount,

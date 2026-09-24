@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import Sidebar from "@/components/sidebar";
+import AppShell from "@/components/app-shell"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -59,12 +59,10 @@ export default function RegisterPage() {
   }
 
   return (
-    <div className="flex h-screen overflow-hidden bg-bg-primary">
-      <Sidebar />
-      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <header className="flex h-[48px] shrink-0 items-center justify-between border-b border-border-dim bg-bg-secondary px-4">
+    <AppShell>
+        <header className="flex min-h-[56px] shrink-0 items-center justify-between gap-3 border-b border-border-dim bg-bg-secondary/60 px-4 py-2 md:px-6">
           <div className="min-w-0">
-            <h1 className="truncate text-[13px] font-semibold tracking-tight text-text-primary">Create account</h1>
+            <h1 className="truncate text-sm font-semibold tracking-tight text-text-primary">Create account</h1>
             <p className="truncate font-mono text-[11px] text-text-tertiary">SeedInfer — choose email/password or OAuth</p>
           </div>
           <Link
@@ -75,7 +73,7 @@ export default function RegisterPage() {
           </Link>
         </header>
 
-        <main className="min-h-0 flex-1 overflow-y-auto bg-bg-primary">
+        <main id="main" className="min-h-0 flex-1 overflow-y-auto bg-bg-primary">
           <div className="mx-auto flex max-w-[520px] flex-col gap-4 p-4 sm:p-6">
             {err && (
               <div className="flex items-start gap-2 rounded-xl border border-accent-red/20 bg-accent-red/10 px-3 py-2.5 text-xs leading-4 text-accent-red">
@@ -90,7 +88,7 @@ export default function RegisterPage() {
                   <UserPlus className="h-4 w-4 text-accent-brand" />
                   Create your account
                 </CardTitle>
-                <CardDescription>Registers via <code className="rounded bg-bg-tertiary px-1">POST /api/v1/auth/register</code> (jose HS256 + bcrypt). OAuth accounts are linked by email and stored in <code className="rounded bg-bg-tertiary px-1">oauth_accounts</code>.</CardDescription>
+                <CardDescription>Create a SeedInfer account with email and password, or continue with Google or GitHub.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid gap-2">
@@ -108,9 +106,6 @@ export default function RegisterPage() {
                     <Github className="h-4 w-4" />
                     Continue with GitHub
                   </a>
-                  <p className="font-mono text-[10px] leading-3 text-text-tertiary">
-                    Element requires refinement — set GOOGLE_CLIENT_ID etc. OAuth callback upserts <code className="rounded bg-bg-tertiary px-1">users</code> + <code className="rounded bg-bg-tertiary px-1">oauth_accounts</code> + <code className="rounded bg-bg-tertiary px-1">credits</code> then signs <code className="rounded bg-bg-tertiary px-1">seedinfer_session</code>.
-                  </p>
                 </div>
 
                 <div className="flex items-center gap-2">
@@ -181,11 +176,10 @@ export default function RegisterPage() {
             </Card>
 
             <p className="px-2 font-mono text-[10px] leading-4 text-text-tertiary">
-              After registration you are signed in automatically (Set-Cookie <code className="rounded bg-bg-tertiary px-1">seedinfer_session</code>). Billing <code className="rounded bg-bg-tertiary px-1">GET /api/v1/credits</code> will then return your balance instead of 401. For RK3588 keep it light — no next-auth, direct jose + bcrypt.
+              After registration you are signed in automatically and can add credits on the Billing page.
             </p>
           </div>
         </main>
-      </div>
-    </div>
+    </AppShell>
   );
 }

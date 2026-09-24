@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { extractJwtFromRequest, verifySession } from "@/lib/auth";
 import { createInvoice, listInvoicesForUser } from "@/lib/payments/invoice";
-import { isValidChain } from "@/lib/payments/chains";
+import { isValidChain, isSolanaEnabled } from "@/lib/payments/chains";
 import { isTokenAllowed } from "@/lib/payments/tokens";
 import { CHAIN_CONFIG } from "@/lib/payments/chains";
 import { getTokenAddress, TOKEN_DECIMALS, isNative } from "@/lib/payments/tokens";
@@ -78,6 +78,9 @@ export async function POST(req: Request) {
       { error: `invalid chain (allowed: eth, arbitrum, polygon, base, bnb, hyperevm, solana)` },
       { status: 400, headers: CORS_HEADERS }
     );
+  }
+  if (chain === "solana" && !isSolanaEnabled()) {
+    return NextResponse.json({ error: "Solana deposits coming soon" }, { status: 400, headers: CORS_HEADERS });
   }
   if (!token) {
     return NextResponse.json({ error: "token required (e.g., USDC, USDT, native)" }, { status: 400, headers: CORS_HEADERS });

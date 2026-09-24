@@ -22,21 +22,25 @@ import {
   Timer,
   Send,
 } from "lucide-react";
+import { SUBSCRIPTION_PLANS, SOLANA_DEPOSIT_ADDRESS, LIVE_MODEL, MIN_INVOICE_CENTS, centsToUsd, usd } from "@/lib/catalog";
 import { QRCodeSVG } from "qrcode.react";
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
-const PRESETS = [
-  { cents: 100, label: "$1", tier: "GO (2x)", note: "$2.00 API usage" },
-  { cents: 500, label: "$5", tier: "GOAT (3x)", note: "$15.00 API usage" },
-  { cents: 1000, label: "$10", tier: "PRO (4x)", note: "$40.00 API usage" },
-] as const;
+const PRESETS = SUBSCRIPTION_PLANS.map((p) => ({
+  cents: p.priceCents,
+  label: `$${p.priceCents / 100}`,
+  tier: `${p.key} (${p.multiplier}x)`,
+  note: `${centsToUsd(p.usageCents)} API usage`,
+}));
 
 const CHAIN_KEYS: ChainKey[] = ["eth", "arbitrum", "polygon", "base", "bnb", "hyperevm", "solana"];
 
 const PAYMENT_ADDRESS_EVM = "0x2EB9104AEeF7270fe639Bf1965B94Bfb8Edcf786";
-const SOLANA_ADDRESS = "So11111111111111111111111111111111111111112";
+// Solana deposit address only from NEXT_PUBLIC_SOLANA_ADDRESS; empty → Solana disabled ("coming soon")
+const SOLANA_ADDRESS = SOLANA_DEPOSIT_ADDRESS ?? "";
+const SOLANA_ENABLED = SOLANA_ADDRESS !== "";
 
 // helper: extract JWT from document.cookie (seedinfer_session)
 function getJwtFromCookie(): string | null {
@@ -406,9 +410,9 @@ export default function CryptoGateway() {
       setVerifyError(null);
       setVerifySuccess(null);
     } catch (e: any) {
-      const msg = e?.message || "Failed to create invoice. Try unauth fallback or check JWT.";
+      const msg = e?.message || "Failed to create invoice. Please try again.";
       if (/401|unauthorized/i.test(msg)) {
-        setError("Please sign in at /login to create invoices — unauth users see $0.00");
+        setError("Please sign in to create invoices.");
       } else {
         setError(msg);
       }
@@ -531,20 +535,14 @@ export default function CryptoGateway() {
               Crypto payments
             </CardTitle>
             <Badge variant="success" className="font-mono text-[10px] tracking-wide">
-              live · 7 chains
+              live · {SOLANA_ENABLED ? 7 : 6} chains
             </Badge>
           </div>
           <p className="font-mono text-[10px] leading-4 text-text-tertiary">
-            Pay-as-you-go <span className="font-semibold text-text-secondary">$0.03</span>/1M input ·{" "}
-            <span className="font-semibold text-text-secondary">$0.20</span>/1M output · EVM + Solana · single
-            watch-only wallet per chain
+            Pay-as-you-go <span className="font-semibold text-text-secondary">{usd(LIVE_MODEL.pricePer1M.input)}</span>/1M input ·{" "}
+            <span className="font-semibold text-text-secondary">{usd(LIVE_MODEL.pricePer1M.output)}</span>/1M output ({LIVE_MODEL.shortName}) · USDC or native
+            on EVM chains{SOLANA_ENABLED ? " and Solana" : " · Solana coming soon"}
           </p>
-          <div className="mt-2 rounded-lg border border-dashed border-border-default bg-bg-primary/50 p-2 font-mono text-[10px] leading-3 text-text-tertiary">
-            Element requires refinement — live credits balance requires authenticated fetch to{" "}
-            <code className="rounded bg-bg-tertiary px-1">GET /api/v1/billing</code> or{" "}
-            <code className="rounded bg-bg-tertiary px-1">/api/v1/credits</code>. Worker updates credits atomically on
-            confirmation.
-          </div>
         </CardHeader>
 
         <CardContent className="space-y-4">
@@ -603,8 +601,7 @@ export default function CryptoGateway() {
               </div>
             </div>
             <p className="mt-1 font-mono text-[10px] text-text-tertiary">
-              amount_usd_cents: <code className="rounded bg-bg-tertiary px-1">{amountCents}</code> (default 1000 = $10) ·
-              credits credited after confirmations.
+              Credits are added after on-chain confirmation. Minimum invoice {MIN_INVOICE_CENTS}¢.
             </p>
           </div>
 
@@ -620,22 +617,25 @@ export default function CryptoGateway() {
               {CHAIN_KEYS.map((k) => {
                 const cfg: any = (CHAIN_CONFIG as any)[k];
                 const isSelected = selectedChain === k;
+                const disabled = k === "solana" && !SOLANA_ENABLED;
                 const addr = k === "solana" ? SOLANA_ADDRESS : PAYMENT_ADDRESS_EVM;
-                let explorerUrl = "#";
+                let explorerUrl = "";
                 try {
-                  explorerUrl = getExplorerAddressUrl(k as ChainKey, addr);
+                  if (addr) explorerUrl = getExplorerAddressUrl(k as ChainKey, addr);
                 } catch {}
                 return (
                   <div
                     key={k}
-                    onClick={() => setSelectedChain(k)}
+                    onClick={() => !disabled && setSelectedChain(k)}
                     role="button"
-                    tabIndex={0}
+                    tabIndex={disabled ? -1 : 0}
+                    aria-disabled={disabled}
                     onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") setSelectedChain(k);
+                      if (!disabled && (e.key === "Enter" || e.key === " ")) setSelectedChain(k);
                     }}
                     className={cn(
                       "group relative flex flex-col rounded-xl border p-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-brand",
+                      disabled && "cursor-not-allowed opacity-50",
                       isSelected
                         ? "border-accent-brand bg-accent-brand/10"
                         : "border-border-dim bg-bg-tertiary/40 hover:bg-bg-hover"
@@ -645,16 +645,19 @@ export default function CryptoGateway() {
                     <div className="mt-1 font-mono text-[10px] leading-none text-text-tertiary">
                       {cfg?.nativeSymbol} · {String(cfg?.chainId)}
                     </div>
-                    <div className="mt-1 font-mono text-[9px] text-text-tertiary">id {String(cfg?.chainId)}</div>
-                    <a
-                      href={explorerUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      onClick={(e) => e.stopPropagation()}
-                      className="mt-1 inline-flex items-center gap-1 font-mono text-[9px] text-accent-brand hover:underline"
-                    >
-                      explorer <ExternalLink className="h-3 w-3" />
-                    </a>
+                    {disabled ? (
+                      <div className="mt-1 font-mono text-[9px] text-text-tertiary">Solana deposits coming soon</div>
+                    ) : explorerUrl ? (
+                      <a
+                        href={explorerUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        className="mt-1 inline-flex items-center gap-1 font-mono text-[9px] text-accent-brand hover:underline"
+                      >
+                        explorer <ExternalLink className="h-3 w-3" />
+                      </a>
+                    ) : null}
                     {isSelected && (
                       <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-accent-green" aria-hidden />
                     )}
@@ -704,16 +707,12 @@ export default function CryptoGateway() {
               })}
               {tokenOptions.length === 0 && (
                 <div className="rounded-lg border border-dashed border-border-default bg-bg-primary/40 px-3 py-2 font-mono text-[11px] text-text-tertiary">
-                  Element requires refinement — no tokens allowlisted for this chain. Check{" "}
-                  <code className="rounded bg-bg-tertiary px-1">ALLOWED_TOKENS_{selectedChain.toUpperCase()}</code>
+                  No tokens are currently accepted on this chain. Please choose another chain.
                 </div>
               )}
             </div>
             <p className="mt-1.5 font-mono text-[10px] leading-3 text-text-tertiary">
-              Dynamic via <code className="rounded bg-bg-tertiary px-1">listAllowedSymbols</code> /{" "}
-              <code className="rounded bg-bg-tertiary px-1">isTokenAllowed</code> from{" "}
-              <code className="rounded bg-bg-tertiary px-1">lib/payments/tokens.ts</code> · Default{" "}
-              {tokenOptions.includes("USDC") ? "USDC where available" : "native"} → currently{" "}
+              Default {tokenOptions.includes("USDC") ? "USDC where available" : "native token"} · selected{" "}
               <span className="font-semibold text-text-secondary">{selectedToken}</span>
             </p>
           </div>
@@ -746,14 +745,6 @@ export default function CryptoGateway() {
                 {error}
               </div>
             )}
-            <p className="font-mono text-[10px] leading-3 text-text-tertiary">
-              POST <code className="rounded bg-bg-tertiary px-1">/api/v1/invoices</code>{" "}
-              {"{chain, token, amount_usd_cents}"} with JWT from cookie (
-              <code className="rounded bg-bg-tertiary px-1">seedinfer_session</code> via{" "}
-              <code className="rounded bg-bg-tertiary px-1">document.cookie</code> +{" "}
-              <code className="rounded bg-bg-tertiary px-1">Authorization: Bearer</code>) — unauth fallback tries without
-              JWT.
-            </p>
           </div>
 
           {/* Invoice result — QR, status, countdown, manual verify */}
@@ -835,7 +826,7 @@ export default function CryptoGateway() {
                 </div>
               </div>
 
-              {/* QR: text code + placeholder for missing lib */}
+              {/* QR */}
               <div className="space-y-2">
                 <div className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-wide text-text-tertiary">
                   <QrCode className="h-3.5 w-3.5" /> QR ·{" "}
@@ -910,7 +901,7 @@ export default function CryptoGateway() {
                       {invoice.status === "pending" && (
                         <div className="mt-1 text-accent-amber">
                           Awaiting on-chain tx to <code className="rounded bg-bg-tertiary px-1">{invoice.address_to}</code> ·
-                          worker polls every 15s via <code className="rounded bg-bg-tertiary px-1">RPC_URL_{selectedChain.toUpperCase()}</code>
+                          checked every 15s
                         </div>
                       )}
                       {invoice.status === "confirming" && (
@@ -1025,50 +1016,21 @@ export default function CryptoGateway() {
             </div>
           )}
 
-          {/* Element requires refinement — credits live fetch would be */}
-          <div className="rounded-xl border border-dashed border-border-default bg-bg-primary/30 p-2.5">
-            <div className="flex items-start gap-2">
-              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent-amber" />
-              <div className="min-w-0 flex-1">
-                <div className="font-mono text-[10px] font-semibold text-text-secondary">
-                  Element requires refinement — live credits
-                </div>
-                <div className="mt-0.5 font-mono text-[10px] leading-3 text-text-tertiary">
-                  Credits balance (<code className="rounded bg-bg-tertiary px-1">$0.00</code> mock) requires live fetch from{" "}
-                  <code className="rounded bg-bg-tertiary px-1">GET /api/v1/credits</code> or{" "}
-                  <code className="rounded bg-bg-tertiary px-1">/api/v1/billing</code> with valid JWT. After invoice
-                  confirmed, worker atomically credits <code className="rounded bg-bg-tertiary px-1">balance_usd_cents</code>.
-                  Until wired, shows placeholder.
-                </div>
-              </div>
-            </div>
-          </div>
-
           <p className="font-mono text-[10px] leading-3 text-text-tertiary">
-            7 chains via <code className="rounded bg-bg-tertiary px-1">lib/payments/chains.ts</code> CHAIN_CONFIG · tokens via{" "}
-            <code className="rounded bg-bg-tertiary px-1">lib/payments/tokens.ts</code> · QR via{" "}
-            <code className="rounded bg-bg-tertiary px-1">lib/payments/qr.ts</code> (EIP-681 + Solana Pay) · Worker verifies every
-            15s with <code className="rounded bg-bg-tertiary px-1">tolerance 50 BPS</code> · TTL 30min.
+            Deposits accepted on Ethereum, Arbitrum, Polygon, Base, BNB Chain and HyperEVM{SOLANA_ENABLED ? " and Solana" : ""}. Invoices expire after 30
+            minutes; credits are added once the transaction is confirmed.
           </p>
         </CardContent>
       </Card>
 
-      {/* Secondary note card like original Stripe placeholder */}
       <Card className="border border-border-dim bg-bg-secondary">
         <CardContent className="p-3 font-mono text-[11px] leading-4 text-text-tertiary">
           <div className="flex items-start gap-2">
             <Coins className="h-3.5 w-3.5 shrink-0 text-accent-green" />
             <div>
-              Pricing: google/gemma-4-26b-a4b-nvfp4 — $0.03 / 1M input · $0.20 / 1M output · 1M ctx ·{" "}
-              <span className="text-text-secondary">Pay with USDC/USDT or native on any of 7 chains.</span>
+              Pricing: {LIVE_MODEL.id} — {usd(LIVE_MODEL.pricePer1M.input)} / 1M input · {usd(LIVE_MODEL.pricePer1M.output)} / 1M output ·{" "}
+              {LIVE_MODEL.contextLabel} context · cached input free. Card payments are not available yet.
             </div>
-          </div>
-          <div className="mt-2 rounded-lg border border-dashed border-border-default bg-bg-primary/60 p-2 font-mono text-[10px]">
-            Element requires refinement — Stripe path remains proxied to{" "}
-            <a href="https://docs.seedinfer.com" target="_blank" rel="noopener noreferrer" className="text-accent-brand underline">
-              docs.seedinfer.com
-            </a>{" "}
-            · Crypto invoices via <code className="rounded bg-bg-tertiary px-1">POST /v1/billing</code> → credits.
           </div>
         </CardContent>
       </Card>
