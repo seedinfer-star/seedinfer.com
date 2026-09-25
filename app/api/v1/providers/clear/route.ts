@@ -2,41 +2,16 @@ import { NextResponse } from "next/server"
 import { clearAll, listProviders, setForceZero } from "@/lib/providers-store"
 import { clearAllFallback, resetStats as resetFallbackStats } from "@/lib/fallback-state"
 import { resetModalWarmup } from "@/lib/fallback-clients"
+import { checkAdmin } from "@/lib/admin-auth"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
 
-const CORS_HEADERS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Admin-Token",
-}
-
-export async function OPTIONS() {
-  return new NextResponse(null, { status: 204, headers: CORS_HEADERS })
-}
-
-function isAuthorized(req: Request): boolean {
-  const token = req.headers.get("x-admin-token") || req.headers.get("authorization")?.replace(/^Bearer\s+/i, "") || ""
-  const expected = process.env.ADMIN_TOKEN || process.env.SEEDINFER_ADMIN_TOKEN || process.env.SEEDINFER_ADMIN_TOKEN_ALT || ""
-  // if no env set → allow in dev, deny in production unless explicit
-  if (!expected) {
-    // allow when not production or when token empty and env not set (dev lean)
-    if (process.env.NODE_ENV !== "production") return true
-    // in production without env, require at least header empty? For safety allow if no token configured but warn
-    console.warn("[clear] no ADMIN_TOKEN set, allowing clear in production (set ADMIN_TOKEN to lock)")
-    return true
-  }
-  return token === expected
-}
+const NO_STORE = { "Cache-Control": "no-store, max-age=0" }
 
 export async function POST(req: Request) {
-  if (!isAuthorized(req)) {
-    return NextResponse.json(
-      { error: { message: "Unauthorized — missing or invalid X-Admin-Token", type: "auth_error", code: "unauthorized" } },
-      { status: 401, headers: CORS_HEADERS }
-    )
-  }
+  const admin = checkAdmin(req)
+  if (!admin.ok) return admin.response
 
   const before = listProviders().length
   let telemetryCleared = false
@@ -67,12 +42,6 @@ export async function POST(req: Request) {
     console.warn(`[clear] telemetry clear skip: ${e?.message || e}`)
   }
 
-  // also try to flush empty
-  try {
-    const fs = await import("fs")
-    // truncate possible JSONL already done in telemetry-store; also ensure stats zero flag file not needed
-  } catch {}
-
   const after = listProviders().length
 
   console.log(`[clear] providers ${before} -> ${after}, telemetryCleared=${telemetryCleared}, fallback reset`)
@@ -94,29 +63,25 @@ export async function POST(req: Request) {
       },
       hint: "Dashboard KPI will show zeros after next poll (15s). Use ?forceZero=1 or header X-Admin-Token to force zeros on /api/stats",
     },
-    {
-      headers: {
-        "Cache-Control": "no-store, max-age=0",
-        ...CORS_HEADERS,
-      },
-    }
+    { headers: NO_STORE }
   )
 }
 
 export async function GET(req: Request) {
-  // allow GET for convenience + verify counts
+  const admin = checkAdmin(req)
+  if (!admin.ok) return admin.response
+  // allow GET for convenience + verify counts (admin-gated: counts leak capacity info)
   const providers = listProviders()
   return NextResponse.json(
     {
       message: "Use POST /api/v1/providers/clear with header X-Admin-Token",
-      auth: "X-Admin-Token: $ADMIN_TOKEN (or SEEDINFER_ADMIN_TOKEN); if no env set, allowed in dev",
+      auth: "X-Admin-Token: $ADMIN_TOKEN (or SEEDINFER_ADMIN_TOKEN)",
       current: {
         count: providers.length,
         verified: providers.filter((p) => p.verification.status === "verified").length,
         pending: providers.filter((p) => p.verification.status === "pending").length,
       },
-      curl: `curl -X POST ${new URL(req.url).origin}/api/v1/providers/clear -H "X-Admin-Token: $ADMIN_TOKEN"`,
     },
-    { headers: CORS_HEADERS }
+    { headers: NO_STORE }
   )
 }

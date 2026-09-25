@@ -5,7 +5,6 @@ import Link from "next/link"
 import AppShell, { PageHeader, PageContainer } from "@/components/app-shell"
 import ProviderContactForm from "@/components/provider-contact-form"
 import Calculator from "@/components/calculator"
-import NodeLoginDashboard from "@/components/node-login-dashboard"
 import {
   MODELS,
   LIVE_MODEL,
@@ -21,7 +20,6 @@ import {
 } from "@/lib/catalog"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
 import {
   Server,
   Coins,
@@ -33,8 +31,6 @@ import {
   ExternalLink,
   Download,
   KeyRound,
-  RefreshCw,
-  Activity,
   HardDrive,
   Clock,
   BadgeCheck,
@@ -51,10 +47,9 @@ import {
   Calculator as CalculatorIcon,
 } from "lucide-react"
 
-const ONE_LINER_RECOMMENDED = `curl -fsSL https://seedinfer.com/install.sh | bash`
-const ONE_LINER_SIMPLE = `curl -fsSL https://seedinfer.com/install.sh | bash -s -- --authkey YOUR_AUTHKEY`
-const ONE_LINER_AUTO = `curl -fsSL https://seedinfer.com/install.sh | bash -s -- --authkey $(curl -s https://seedinfer.com/api/v1/auth/request | jq -r .authkey)`
-const ONE_LINER_CUSTOM = `curl -fsSL https://seedinfer.com/install.sh | bash -s -- --authkey YOUR_AUTHKEY --model ${LIVE_MODEL.id} --gateway https://seedinfer.com --hostname my-gpu-node`
+const ONE_LINER_RECOMMENDED = `curl -fsSL https://seedinfer.com/install.sh | SEEDINFER_NODE_TOKEN=sipn_YOUR_TOKEN bash`
+const ONE_LINER_SIMPLE = `curl -fsSL https://seedinfer.com/install.sh | bash -s -- --token sipn_YOUR_TOKEN`
+const ONE_LINER_CUSTOM = `curl -fsSL https://seedinfer.com/install.sh | bash -s -- --token sipn_YOUR_TOKEN --model ${LIVE_MODEL.id} --gateway https://seedinfer.com --hostname my-gpu-node`
 
 function CopyButton({ text, label }: { text: string; label?: string }) {
   const [copied, setCopied] = useState(false)
@@ -78,31 +73,6 @@ function CopyButton({ text, label }: { text: string; label?: string }) {
 }
 
 export default function ProviderContent() {
-  const [authKey, setAuthKey] = useState<string | null>(null)
-  const [authLoading, setAuthLoading] = useState(false)
-  const [authMeta, setAuthMeta] = useState<any>(null)
-  const [error, setError] = useState<string | null>(null)
-
-  const generateKey = async () => {
-    setAuthLoading(true)
-    setError(null)
-    try {
-      const r = await fetch(`/api/v1/auth/request`, { cache: "no-store" })
-      const j = await r.json()
-      if (!r.ok) throw new Error(j?.error || j?.hint || "Failed to generate key")
-      setAuthKey(j.authkey)
-      setAuthMeta(j)
-    } catch (e: any) {
-      setError(e?.message || "Failed to generate key")
-    } finally {
-      setAuthLoading(false)
-    }
-  }
-
-  const oneLinerWithKey = authKey
-    ? `curl -fsSL https://seedinfer.com/install.sh | bash -s -- --authkey ${authKey}`
-    : ONE_LINER_SIMPLE
-
   return (
     <AppShell>
       <PageHeader
@@ -264,8 +234,24 @@ export default function ProviderContent() {
               <ProviderContactForm />
             </section>
 
-            {/* Zero-Account Node Access Dashboard (Inspect node stats with pubkey) */}
-            <NodeLoginDashboard />
+            {/* Your nodes (signed in) */}
+            <Card className="border border-accent-brand/20 bg-gradient-to-r from-accent-brand/10 via-bg-secondary to-bg-secondary">
+              <CardContent className="flex flex-wrap items-center justify-between gap-3 p-4">
+                <div className="flex min-w-0 items-start gap-2.5">
+                  <KeyRound className="mt-0.5 h-4 w-4 shrink-0 text-accent-brand" />
+                  <p className="min-w-0 font-mono text-xs leading-5 text-text-secondary">
+                    <strong className="text-text-primary">Create a node token in the Provider portal (sign-in required)</strong>
+                    <span className="block text-text-tertiary">Then run the installer below with your token.</span>
+                  </p>
+                </div>
+                <Link
+                  href="/provider/portal"
+                  className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-accent-brand px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-accent-brand-hover"
+                >
+                  <KeyRound className="h-3.5 w-3.5" /> Open portal
+                </Link>
+              </CardContent>
+            </Card>
 
 
 
@@ -379,57 +365,24 @@ export default function ProviderContent() {
                   </div>
                 </CardTitle>
                 <p className="font-mono text-xs text-text-tertiary">
-                  One command on Linux (Ubuntu 24.04+): <code className="rounded bg-bg-tertiary px-1 text-text-primary">curl -fsSL https://seedinfer.com/install.sh | bash</code> — fetches an auth key, checks the GPU with nvidia-smi and ports 47900/47901, installs Docker + NVIDIA Container Toolkit + the mesh VPN container and starts the inference engine.
+                  One command on Linux (Ubuntu 24.04+): create a node token in the{" "}
+                  <Link href="/provider/portal" className="text-accent-brand underline">Provider portal (sign-in required)</Link>,
+                  then run the command with your token — it checks the GPU with nvidia-smi and ports 47900/47901, installs Docker + NVIDIA Container Toolkit + the mesh VPN container and starts the inference engine.
                 </p>
               </CardHeader>
               <CardContent className="space-y-4">
-                
-                {/* Authkey invite generator box */}
-                <div className="rounded-xl border border-border-dim bg-bg-primary p-4">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div className="flex items-center gap-2">
-                      <KeyRound className="h-4 w-4 text-accent-brand" />
-                      <span className="text-sm font-medium text-text-primary">Invite Authkey</span>
-                      <span className="font-mono text-xs text-text-tertiary">valid 24h · single use</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => generateKey()}
-                        disabled={authLoading}
-                        className="gap-1.5 font-mono text-xs"
-                      >
-                        {authLoading ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <KeyRound className="h-3.5 w-3.5" />}
-                        Generate invite key
-                      </Button>
-                    </div>
+                {/* Node token step */}
+                <div className="rounded-xl border border-accent-brand/30 bg-accent-brand/5 p-4">
+                  <div className="flex items-center gap-2">
+                    <KeyRound className="h-4 w-4 text-accent-brand" />
+                    <span className="text-sm font-medium text-text-primary">Node token</span>
                   </div>
-
-                  {authKey && (
-                    <div className="mt-3 rounded-lg border border-accent-green/20 bg-accent-green/10 p-3">
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0 flex-1">
-                          <div className="font-mono text-xs font-semibold text-accent-green">Authkey ready</div>
-                          <div className="mt-1 break-all rounded bg-bg-secondary p-2 font-mono text-xs text-text-primary">
-                            {authKey}
-                          </div>
-                          {authMeta && (
-                            <div className="mt-1 font-mono text-[11px] text-text-tertiary">
-                              {authMeta.expires} · {authMeta.login_server} · Key valid for 24h, one-time use
-                            </div>
-                          )}
-                        </div>
-                        <CopyButton text={authKey} label="Copy key" />
-                      </div>
-                    </div>
-                  )}
-                  {!authKey && (
-                    <div className="mt-3 rounded-lg border border-dashed border-border-default bg-bg-secondary p-2.5 font-mono text-xs text-text-secondary">
-                      Click <strong className="text-text-primary">Generate invite key</strong> to create an install key (valid 24h, single use). When run without parameters, <code className="rounded bg-bg-tertiary px-1 text-text-primary">install.sh</code> fetches a key automatically.
-                    </div>
-                  )}
-                  {error && <div className="mt-2 font-mono text-xs text-accent-red">{error}</div>}
+                  <p className="mt-1 font-mono text-xs leading-5 text-text-secondary">
+                    Create a node token in the{" "}
+                    <Link href="/provider/portal" className="text-accent-brand underline">Provider portal (sign-in required)</Link>{" "}
+                    and pass it as <code className="rounded bg-bg-tertiary px-1 text-text-primary">SEEDINFER_NODE_TOKEN=sipn_…</code> or{" "}
+                    <code className="rounded bg-bg-tertiary px-1 text-text-primary">--token sipn_…</code>.
+                  </p>
                 </div>
 
                 {/* Main recommended installation command */}
@@ -437,7 +390,7 @@ export default function ProviderContent() {
                   <div className="rounded-xl border border-accent-brand/30 bg-accent-brand/5 p-3.5">
                     <div className="mb-2 flex items-center justify-between">
                       <span className="font-mono text-[11px] uppercase tracking-wide text-accent-brand flex items-center gap-1 font-bold">
-                        <Zap className="h-3.5 w-3.5" /> Recommended — one command (auto key + prebuilt image)
+                        <Zap className="h-3.5 w-3.5" /> Recommended — one command (with your node token)
                       </span>
                       <CopyButton text={ONE_LINER_RECOMMENDED} />
                     </div>
@@ -445,8 +398,9 @@ export default function ProviderContent() {
                       {ONE_LINER_RECOMMENDED}
                     </pre>
                     <p className="mt-2 font-mono text-[11px] leading-4 text-text-secondary">
-                      Without parameters, <code className="rounded bg-bg-tertiary px-1 text-text-primary">install.sh</code> requests an auth key from{" "}
-                      <code className="rounded bg-bg-tertiary px-1 text-text-primary">https://seedinfer.com/api/v1/auth/request</code> (valid 24h) and pulls the prebuilt image{" "}
+                      Create a node token in the{" "}
+                      <Link href="/provider/portal" className="text-accent-brand underline">Provider portal (sign-in required)</Link>{" "}
+                      and pass it to install.sh. The installer pulls the prebuilt image{" "}
                       <code className="rounded bg-bg-tertiary px-1 text-text-primary">ghcr.io/seedinfer/provider:cuda13.3-nvfp4</code> (falls back to a local build).
                     </p>
                     <div className="mt-2 flex flex-wrap gap-2 font-mono text-[11px]">
@@ -465,12 +419,12 @@ export default function ProviderContent() {
                       <div>
                         <div className="mb-1.5 flex items-center justify-between">
                           <span className="font-mono text-[11px] uppercase tracking-wide text-text-tertiary font-medium">
-                            1 · With a manually generated key (--authkey)
+                            1 · With your node token (--token)
                           </span>
-                          <CopyButton text={oneLinerWithKey} />
+                          <CopyButton text={ONE_LINER_SIMPLE} />
                         </div>
                         <pre className="overflow-x-auto rounded-xl border border-border-dim bg-bg-secondary p-3 font-mono text-xs leading-4 text-text-primary">
-                          {oneLinerWithKey}
+                          {ONE_LINER_SIMPLE}
                         </pre>
                       </div>
                       <div>
@@ -754,7 +708,7 @@ curl -fsS https://seedinfer.com/api/stats | jq '.active_providers'`}
                 <span>·</span>
                 <a href="/provider.tar.gz" className="text-accent-brand hover:underline">/provider.tar.gz</a>
                 <span>·</span>
-                <a href="/api/v1/auth/request" className="text-accent-brand hover:underline">/api/v1/auth/request</a>
+                <a href="/provider/portal" className="text-accent-brand hover:underline">/provider/portal</a>
                 <span>·</span>
                 <a href="/api/v1/providers" className="text-accent-brand hover:underline">/api/v1/providers</a>
                 <span>·</span>

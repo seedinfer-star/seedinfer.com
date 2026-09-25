@@ -34,6 +34,17 @@ const DROP_KEYS = new Set(
     "apiKeyEnv",
     "apiKeyPreview",
     "env_hint",
+    "public_key",
+    "publickey",
+    "payout_wallet",
+    "payoutwallet",
+    "payout_wallet_updated_at",
+    "owner_user_id",
+    "user_id",
+    "token_id",
+    "node_token",
+    "authorization",
+    "awaiting_heartbeat",
   ].map((k) => k.toLowerCase()),
 )
 

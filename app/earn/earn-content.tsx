@@ -48,8 +48,13 @@ export default function EarnContent() {
                   <div className="min-w-0">
                     <div className="text-sm font-semibold text-text-primary">Become a provider — NVIDIA ≥{MIN_VRAM_GB}GB VRAM · {LIVE_MODEL.name} · CUDA 13.3</div>
                     <div className="mt-0.5 font-mono text-xs leading-4 text-text-secondary">
-                      One-liner: <code className="break-all rounded bg-bg-tertiary px-1">curl -fsSL https://seedinfer.com/install.sh | bash</code> — Ubuntu 24.04+ ·
-                      driver 580+ (CUDA 13.3) · Docker + nvidia-container-toolkit ·{" "}
+                      Create a node token in the{" "}
+                      <a href="/provider/portal" className="font-medium text-accent-brand underline">
+                        Provider portal (sign-in required)
+                      </a>
+                      , then run:{" "}
+                      <code className="break-all rounded bg-bg-tertiary px-1">curl -fsSL https://seedinfer.com/install.sh | SEEDINFER_NODE_TOKEN=sipn_… bash</code>{" "}
+                      — Ubuntu 24.04+ · driver 580+ (CUDA 13.3) · Docker + nvidia-container-toolkit ·{" "}
                       <a href="/provider" className="font-medium text-accent-brand underline">
                         /provider
                       </a>{" "}
@@ -120,7 +125,11 @@ export default function EarnContent() {
                   </CardHeader>
                   <CardContent className="space-y-3">
                     <div className="rounded-lg border border-dashed border-border-default bg-bg-primary/60 p-3 font-mono text-xs text-text-secondary">
-                      Payouts are tracked by your node&apos;s public key (Ed25519) — no account needed. {PROVIDER_ECONOMICS.payoutAsset} is sent on {PROVIDER_ECONOMICS.payoutChain} once per month.
+                      Payouts in {PROVIDER_ECONOMICS.payoutAsset} on {PROVIDER_ECONOMICS.payoutChain} go to the wallet registered in the{" "}
+                      <a href="/provider/portal" className="font-medium text-accent-brand underline">
+                        Provider portal (sign-in required)
+                      </a>
+                      . Paid once per month.
                     </div>
                     <Button disabled className="w-full opacity-60">
                       <CreditCard className="mr-2 h-4 w-4" />

@@ -7,10 +7,13 @@
  * Commands
  *   storage                      where the data lives, backups, row counts
  *   list [--limit N]             users with sign-in methods, balance, last login
- *   show <email|id>              one account (profile, links, sessions metadata, balance)
+ *   show <email|id>              one account (profile, links, sessions metadata, balance, payout wallet)
  *   export <email|id> [--out F]  full JSON export (GDPR access request)
  *   signout <email|id>           revoke all sessions of the user
  *   delete <email|id> --yes      delete the account (links, sessions, credits, invoices; usage anonymized)
+ *   nodes [email|userId]         bound provider nodes (+ their tokens)
+ *   unbind-node <nodeId>         remove a node binding (re-binds on next valid heartbeat)
+ *   revoke-token <tokenId>       revoke a node token by id
  *   backup                       write a consistent backup now (VACUUM INTO)
  *
  * Refuses to run as root: SQLite would create root-owned -wal/-shm files and lock the service out.
@@ -19,6 +22,7 @@ import fs from "fs";
 import path from "path";
 import { closeDb, describeStorage, getDb, snapshotNow } from "../lib/db";
 import { deleteAccount, exportUserData, getAccountSnapshot, isOAuthOnlyAccount } from "../lib/accounts";
+import { adminRevokeTokenById, listUserNodes, unbindNode } from "../lib/provider-tokens";
 import { revokeUserSessions } from "../lib/auth";
 
 function loadDotEnv(file: string): void {
@@ -59,6 +63,7 @@ function main(): void {
         "usage: sudo -u orangepi npx tsx scripts/users-admin.ts <command>",
         "  storage | list [--limit N] | show <email|id> | export <email|id> [--out F]",
         "  signout <email|id> | delete <email|id> --yes | backup",
+        "  nodes [email|id] | unbind-node <nodeId> | revoke-token <tokenId>",
       ].join("\n")
     );
     return;
@@ -105,7 +110,15 @@ function main(): void {
     }
     case "show": {
       const u = resolveUser(args[1]);
-      console.log(JSON.stringify(getAccountSnapshot(u.id, ""), null, 2));
+      const snap = getAccountSnapshot(u.id, "") as any;
+      try {
+        const row = db.prepare("SELECT payout_wallet, payout_wallet_updated_at FROM users WHERE id = ?").get(u.id) as any;
+        snap.payout_wallet = row?.payout_wallet ?? null;
+        snap.payout_wallet_updated_at = row?.payout_wallet_updated_at ?? null;
+        const t = row?.payout_wallet_updated_at ? new Date(row.payout_wallet_updated_at).getTime() : NaN;
+        snap.payout_wallet_hold = Number.isFinite(t) && Date.now() - t < 72 * 3600_000 ? "CHANGED <72h - hold payout & verify" : null;
+      } catch {}
+      console.log(JSON.stringify(snap, null, 2));
       break;
     }
     case "export": {
@@ -127,6 +140,31 @@ function main(): void {
       const u = resolveUser(args[1]);
       if (!flag("--yes")) die(`this permanently deletes ${u.email} — re-run with --yes`);
       console.log(deleteAccount(u.id) ? `deleted ${u.email}` : `delete failed for ${u.email}`);
+      break;
+    }
+    case "nodes": {
+      if (args[1]) {
+        const u = resolveUser(args[1]);
+        const nodes = listUserNodes(u.id);
+        const tokens = db.prepare("SELECT id, name, prefix, created_at, last_used_at, revoked_at FROM provider_tokens WHERE user_id = ? ORDER BY created_at DESC").all(u.id);
+        console.log(JSON.stringify({ user: u.email, nodes, tokens }, null, 2));
+      } else {
+        const nodes = db.prepare("SELECT node_id, user_id, token_id, bound_at, last_seen_at FROM provider_nodes ORDER BY bound_at DESC LIMIT 200").all();
+        console.log(JSON.stringify({ nodes }, null, 2));
+      }
+      break;
+    }
+    case "unbind-node": {
+      const nodeId = args[1];
+      if (!nodeId) die("missing <nodeId>");
+      console.log(unbindNode(nodeId) ? `unbound ${nodeId}` : `no binding for ${nodeId}`);
+      break;
+    }
+    case "revoke-token": {
+      const tokenId = args[1];
+      if (!tokenId) die("missing <tokenId>");
+      const r = adminRevokeTokenById(tokenId);
+      console.log(r.ok ? `revoked ${tokenId} (user ${r.userId})` : `no token ${tokenId}`);
       break;
     }
     case "backup": {

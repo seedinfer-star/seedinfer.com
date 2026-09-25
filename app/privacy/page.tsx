@@ -1,6 +1,6 @@
 import Link from "next/link"
 import AppShell, { PageContainer } from "@/components/app-shell"
-import { CACHE_POLICY, LAST_UPDATED, MIN_VRAM_GB, pageMetadata } from "@/lib/catalog"
+import { CACHE_POLICY, LAST_UPDATED, MIN_VRAM_GB, PROVIDER_ECONOMICS, pageMetadata } from "@/lib/catalog"
 
 export const metadata = pageMetadata(
   "Privacy Policy",
@@ -297,6 +297,7 @@ export default function PrivacyPolicyPage() {
               <li><strong>Sign-in methods:</strong> a bcrypt hash of your password (never the password itself) and, if you use Google or GitHub, the provider&apos;s account ID, email and username. We request only basic profile and email scopes and do not keep provider access tokens.</li>
               <li><strong>Sessions:</strong> creation/expiry time, sign-in method and browser user-agent of each active session, so you can review and revoke them.</li>
               <li><strong>Billing:</strong> credit balance, invoices (chain, token, amount, transaction hash, status) and per-request usage (model, token counts, cost). Prompts and completions are never stored.</li>
+              <li><strong>Provider data (only if you run nodes):</strong> node tokens (stored only as SHA-256 hashes, plus name, prefix and creation/last-use/revocation timestamps — never the token itself), node-to-account bindings (node id, bound token, binding and last-seen times), your payout wallet address ({PROVIDER_ECONOMICS.payoutAsset} on {PROVIDER_ECONOMICS.payoutChain}) and the security log of payout-wallet and token changes.</li>
             </ul>
             <p>
               Data is kept in a SQLite database on our own server, readable only by the service account, with rotating backups kept for up to 7 days. It is not sold or
@@ -312,9 +313,9 @@ export default function PrivacyPolicyPage() {
           </h2>
           <div className="rounded-xl border border-border-dim bg-bg-secondary p-5 space-y-3">
             <ul className="list-disc pl-5 text-sm text-text-secondary space-y-2">
-              <li><strong>Access &amp; portability:</strong> download everything stored about your account as JSON in <Link href="/settings" className="text-accent-brand underline">Settings → Your data</Link>.</li>
+              <li><strong>Access &amp; portability:</strong> download everything stored about your account as JSON in <Link href="/settings" className="text-accent-brand underline">Settings → Your data</Link> — including node tokens (metadata only), node bindings, your payout wallet and the security log.</li>
               <li><strong>Rectification:</strong> change your display name, password and linked Google/GitHub accounts in Settings.</li>
-              <li><strong>Deletion:</strong> delete your account in Settings — your profile, sign-in methods, sessions, credits and invoices are removed immediately; usage records are kept only in anonymized form. Copies in backups expire within 7 days.</li>
+              <li><strong>Deletion:</strong> delete your account in Settings — your profile, sign-in methods, sessions, credits and invoices are removed immediately, together with your node tokens, node bindings, payout wallet and security log; usage records are kept only in anonymized form. Copies in backups expire within 7 days.</li>
               <li><strong>Session control:</strong> review active sessions and sign out of all other devices in Settings.</li>
               <li><strong>Objection:</strong> you may opt out of aggregated metrics collection by contacting us (may degrade routing quality).</li>
             </ul>

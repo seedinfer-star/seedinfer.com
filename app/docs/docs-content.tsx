@@ -49,7 +49,7 @@ import {
   ArrowRight
 } from "lucide-react"
 
-const ONE_LINER_RECOMMENDED = `curl -fsSL https://seedinfer.com/install.sh | bash`
+const ONE_LINER_RECOMMENDED = `curl -fsSL https://seedinfer.com/install.sh | SEEDINFER_NODE_TOKEN=sipn_YOUR_TOKEN bash`
 const API_KEY_PLACEHOLDER = "sk-seedinfer-...YOUR_KEY"
 
 const PYTHON_EXAMPLE = `import openai
@@ -403,6 +403,11 @@ export default function DocsContent() {
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-4">
+                    <p className="font-mono text-xs leading-5 text-text-secondary">
+                      Create a node token in the{" "}
+                      <Link href="/provider/portal" className="text-accent-brand underline">Provider portal (sign-in required)</Link>{" "}
+                      and pass it to the installer.
+                    </p>
                     <CodeBlock label="Recommended command (Ubuntu 24.04+)" code={ONE_LINER_RECOMMENDED} />
                     <div className="rounded-lg border border-border-dim bg-bg-primary p-4 space-y-2">
                       <div className="font-mono text-xs font-bold text-text-primary">What does install.sh do?</div>

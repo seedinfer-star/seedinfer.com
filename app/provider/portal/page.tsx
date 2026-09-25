@@ -6,7 +6,7 @@ import PortalContent from "./portal-content"
 
 export const metadata = pageMetadata(
   "Provider Portal",
-  "Check your SeedInfer node's status by public key, register your USDC payout wallet on Base and see how provider earnings are calculated.",
+  "Manage your SeedInfer provider account: create node tokens, monitor your nodes and register your USDC payout wallet on Base.",
   "/provider/portal",
 )
 

@@ -119,7 +119,8 @@ function getLocalChatUrl(): string | null {
     return `${base}/v1/chat/completions`
   }
   // Use WRR selector instead of find verified-first
-  const verified = listProviders().filter((p) => p.verification.status === "verified")
+  // (awaiting_heartbeat nodes are boot-hydrated without a live connection — never routable)
+  const verified = listProviders().filter((p) => p.verification.status === "verified" && !p.awaiting_heartbeat)
   if (verified.length === 0) return null
   const selected = selectProvider(verified)
   if (!selected) return null
@@ -254,7 +255,8 @@ export async function POST(req: Request) {
   const attempts: Attempt[] = []
 
   // 1) local — Token-Aware P2C + Session Affinity (>=8192 tokens) + 90% Hard Guard
-  const verifiedProviders = listProviders().filter((p) => p.verification.status === "verified")
+  // (awaiting_heartbeat nodes are boot-hydrated without a live connection — never routable)
+  const verifiedProviders = listProviders().filter((p) => p.verification.status === "verified" && !p.awaiting_heartbeat)
   if (verifiedProviders.length > 0) {
     let chosenProvider: StoredProvider | null = null
 

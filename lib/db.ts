@@ -320,6 +320,35 @@ CREATE INDEX IF NOT EXISTS idx_usage_created_at ON usage(created_at);
 CREATE INDEX IF NOT EXISTS idx_providers_mirror_updated_at ON providers_mirror(updated_at);
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 CREATE INDEX IF NOT EXISTS idx_users_wallet ON users(wallet_address);
+CREATE TABLE IF NOT EXISTS provider_tokens (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  token_hash TEXT NOT NULL UNIQUE,
+  prefix TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  last_used_at TEXT,
+  revoked_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_provider_tokens_user ON provider_tokens(user_id);
+CREATE TABLE IF NOT EXISTS provider_nodes (
+  node_id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token_id TEXT REFERENCES provider_tokens(id) ON DELETE SET NULL,
+  bound_at TEXT NOT NULL,
+  last_seen_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_provider_nodes_user ON provider_nodes(user_id);
+CREATE TABLE IF NOT EXISTS account_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  type TEXT NOT NULL,
+  detail TEXT,
+  ip TEXT,
+  user_agent TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_account_events_user ON account_events(user_id, created_at);
 `;
 
 /** Additive migrations for databases created with an older schema (idempotent). */
@@ -334,6 +363,8 @@ const ADDED_COLUMNS: Array<[table: string, column: string, decl: string]> = [
   ["oauth_accounts", "username", "TEXT"],
   ["oauth_accounts", "avatar_url", "TEXT"],
   ["oauth_accounts", "last_login_at", "TEXT"],
+  ["users", "payout_wallet", "TEXT"],
+  ["users", "payout_wallet_updated_at", "TEXT"],
 ];
 
 function ensureColumn(db: any, table: string, column: string, decl: string): void {

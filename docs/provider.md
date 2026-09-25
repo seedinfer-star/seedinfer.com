@@ -146,7 +146,7 @@ docker run --gpus all --runtime nvidia -p 47900:8000 -p 47901:3001 \
 Heartbeat:
 ```
 POST https://seedinfer.com/api/v1/providers/heartbeat (fallback /api/providers/heartbeat)
-Headers: Authorization: Bearer $PROVIDER_API_KEY (jeśli ustawiony)
+Headers: Authorization: Bearer $SEEDINFER_NODE_TOKEN (SEEDINFER_NODE_TOKEN z seedinfer.env, wymagany)
 Body: Provider (lib/types.ts) + {gpu, host, uptime_s, vllm_model, region, vllm_health}
 Interval: 30s, timeout 10s, log warn on fail
 ```
@@ -250,9 +250,10 @@ curl -fsS http://127.0.0.1:47901/v1/chat/template | jq .chat_template
 # 5) Fleet pokazuje Verified (zielony)
 # GET https://seedinfer.com/api/v1/providers -> dane + verification
 # provider-fleet.tsx badge "verified" zielony, karta opacity 100 (oficjalny węzeł)
-# Ręczna weryfikacja:
-# curl -X POST https://seedinfer.com/api/v1/providers/verify -H "Content-Type: application/json" -d '{"provider_id":"provider-5090-xxx"}' | jq
-# lub ./scripts/verify-provider.sh --provider-id xxx --gateway https://seedinfer.com
+# Ręczna weryfikacja (provider_id to PROVIDER_ID z seedinfer.env; wymaga tokenu właściciela):
+# curl -X POST https://seedinfer.com/api/v1/providers/verify -H "Authorization: Bearer $SEEDINFER_NODE_TOKEN" -H "Content-Type: application/json" -d '{"provider_id":"provider-5090-xxx"}' | jq
+# (gateway sonduje wyłącznie zapisane dane noda — agent_url z żądania jest ignorowany)
+# lub SEEDINFER_NODE_TOKEN=... ./scripts/verify-provider.sh --provider-id xxx --gateway https://seedinfer.com
 ```
 
 Headscale/tunnel nie ruszane — gateway decyduje `verified` (nie Headscale ACL).
@@ -280,7 +281,7 @@ app/api/v1/providers/
   verify/route.ts        # POST verify -> health + inference test
   route.ts               # GET list providers z verification (dla fleet)
 components/provider-fleet.tsx # badge pending/verifying/verified + opacity 60 dla nie-verified
-scripts/verify-provider.sh    # helper: curl /api/v1/providers/verify
+scripts/verify-provider.sh    # helper: curl /api/v1/providers/verify (z Authorization: Bearer $SEEDINFER_NODE_TOKEN)
 ```
 
 Nie buduje obrazu w Phase 0 — tylko pliki + walidacja (`python -m py_compile`, `shellcheck`, `tsc --noEmit`, `docker compose config`).

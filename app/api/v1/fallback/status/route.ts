@@ -35,7 +35,8 @@ export async function GET(req: Request) {
   } catch {}
 
   const providers = listProviders()
-  const verified = providers.filter((p) => p.verification.status === "verified" && !isStale(p))
+  // Boot-hydrated nodes have no live connection — never advertise them as healthy capacity.
+  const verified = providers.filter((p) => p.verification.status === "verified" && !p.awaiting_heartbeat && !isStale(p))
   const pending = providers.filter((p) => p.verification.status === "pending")
   const failed = providers.filter((p) => p.verification.status === "failed")
 

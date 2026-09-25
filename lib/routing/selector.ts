@@ -340,7 +340,10 @@ export function isNetworkSaturated(
   incomingTokens: number = 1000
 ): boolean {
   if (!providers || providers.length === 0) return false
-  const verified = (providers as any).filter((p: any) => p.verification?.status === "verified" || !p.verification)
+  // Boot-hydrated nodes have no live connection — they contribute no capacity.
+  const verified = (providers as any).filter(
+    (p: any) => !p.awaiting_heartbeat && (p.verification?.status === "verified" || !p.verification)
+  )
   if (verified.length === 0) return false
   return verified.every((p: any) => {
     const s = ensureStat(p.id)
@@ -366,13 +369,16 @@ export function selectProvider(
     try { hydrateFromProvider(p as StoredProvider) } catch {}
   }
 
-  let candidates = (providers as any).filter((p: any) => p.verification?.status === "verified")
+  // awaiting_heartbeat nodes are boot-hydrated without a live connection — never routable.
+  let candidates = (providers as any).filter((p: any) => p.verification?.status === "verified" && !p.awaiting_heartbeat)
   if (candidates.length === 0) {
-    candidates = (providers as any).filter((p: any) => p.verification?.status === "verifying")
+    candidates = (providers as any).filter((p: any) => p.verification?.status === "verifying" && !p.awaiting_heartbeat)
     if (candidates.length === 0) {
       const anyVerifiable = (providers as any).some((p: any) => p.verification)
       if (!anyVerifiable && providers.length > 0) {
-        candidates = providers as any
+        // Legacy objects without `verification` (cold-start/test): still never route to boot-hydrated nodes.
+        candidates = (providers as any).filter((p: any) => !p.awaiting_heartbeat)
+        if (candidates.length === 0) return null
       } else {
         return null
       }
@@ -514,12 +520,13 @@ export function getSortedProviders(
 ): (StoredProvider | import("@/lib/types").Provider)[] {
   if (!providers || providers.length === 0) return []
   for (const p of providers as StoredProvider[]) { try { hydrateFromProvider(p as StoredProvider) } catch {} }
-  let cands = (providers as any).filter((p: any) => p.verification?.status === "verified")
+  let cands = (providers as any).filter((p: any) => p.verification?.status === "verified" && !p.awaiting_heartbeat)
   if (cands.length === 0) {
-    cands = (providers as any).filter((p: any) => p.verification?.status === "verifying")
+    cands = (providers as any).filter((p: any) => p.verification?.status === "verifying" && !p.awaiting_heartbeat)
     if (cands.length === 0) {
       const anyVerifiable = (providers as any).some((p: any) => p.verification)
-      if (!anyVerifiable && providers.length > 0) cands = providers as any
+      // Legacy objects without `verification`: still never advertise boot-hydrated nodes.
+      if (!anyVerifiable && providers.length > 0) cands = (providers as any).filter((p: any) => !p.awaiting_heartbeat)
     }
   }
   const isOpenRouter = !!opts?.openRouter
@@ -618,8 +625,11 @@ export function getAffinityProvider(
   const provider = (providers as any).find((p: any) => p.id === rec.providerId)
   if (!provider) return null
 
-  // Ensure node is verified if verification status exists
+  // Ensure node is verified if verification status exists; boot-hydrated nodes have no live connection.
   if (provider.verification?.status && provider.verification.status !== "verified") {
+    return null
+  }
+  if ((provider as any).awaiting_heartbeat) {
     return null
   }
 

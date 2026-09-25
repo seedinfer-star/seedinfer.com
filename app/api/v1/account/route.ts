@@ -9,6 +9,7 @@ import {
   verifyPassword,
 } from "@/lib/auth";
 import {
+  REAUTH_REQUIRED,
   deleteAccount,
   exportUserData,
   getAccountSnapshot,
@@ -17,7 +18,7 @@ import {
   unlinkIdentity,
 } from "@/lib/accounts";
 
-const REAUTH = { error: "For security, sign in again (less than 15 minutes ago) to do this.", code: "reauth_required" };
+const REAUTH = REAUTH_REQUIRED;
 import { isOAuthProvider } from "@/lib/oauth/flow";
 
 export const dynamic = "force-dynamic";

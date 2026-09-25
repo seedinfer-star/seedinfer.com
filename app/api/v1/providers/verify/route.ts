@@ -3,25 +3,24 @@ import { sanitizePublic, sanitizeProvider } from "@/lib/public-sanitize"
 import { verifyProvider, getProvider } from "@/lib/providers-store"
 import { getProviderStat } from "@/lib/routing/selector"
 import { getProviderCircuitState } from "@/lib/fallback-state"
+import { checkRateLimit, getClientIp } from "@/lib/rate-limit"
+import { checkVerifyAuth } from "@/lib/verify-auth"
 
 export const dynamic = "force-dynamic"
 
-const CORS_HEADERS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "POST, OPTIONS, GET",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization",
-}
-
-export async function OPTIONS() {
-  return new NextResponse(null, { status: 204, headers: CORS_HEADERS })
-}
+const NO_STORE = { "Cache-Control": "no-store, max-age=0" }
 
 /**
  * POST /api/v1/providers/verify
- * Body: { provider_id: string, agent_url?: string, timeoutMs?: number }
- * lub query ?provider_id=xxx&agent_url=http://...
- * Gateway wykonuje health check:
- *  fetch http://<tailscale_ip>:3001/health oraz test POST <provider>/v1/chat/completions
+ * Body: { provider_id: string, timeoutMs?: number }
+ * (any request-supplied agent_url/URL is ALWAYS ignored — probes use only
+ * the stored node data, so callers cannot steer probes at arbitrary hosts.)
+ *
+ * Auth: a valid node token (`Authorization: Bearer sipn_…`) whose user owns
+ * the requested provider_id per provider_nodes, OR admin via checkAdmin.
+ *
+ * Gateway runs health checks:
+ *  fetch http://<tailscale_ip>:47901/health oraz test POST <provider>/v1/chat/completions
  *  Checks 6 conditions, 30s timeout, logs.
  * If pass -> verified & serving else failed.
  * Called automatically after 2 pending heartbeats (non-blocking) or manually.
@@ -36,28 +35,53 @@ export async function POST(req: Request) {
   }
   const url = new URL(req.url)
   const provider_id = body.provider_id || body.id || body.providerId || url.searchParams.get("provider_id") || url.searchParams.get("id")
-  const agent_url = body.agent_url || url.searchParams.get("agent_url") || undefined
+  // NOTE: agent_url / URL from the request is deliberately ignored (SSRF).
+  // Probing uses only the stored node data (tailscale_ip / agent_url on record).
   const timeoutMs = body.timeoutMs ? Number(body.timeoutMs) : undefined
 
   if (!provider_id) {
     return NextResponse.json(
-      { error: { message: "Missing provider_id", type: "invalid_request_error", code: "missing_provider_id" }, hint: "POST {provider_id, agent_url?}" },
-      { status: 400, headers: CORS_HEADERS }
+      { error: { message: "Missing provider_id", type: "invalid_request_error", code: "missing_provider_id" }, hint: "POST {provider_id}" },
+      { status: 400, headers: NO_STORE }
     )
   }
 
-  const existing = getProvider(String(provider_id))
+  const nodeId = String(provider_id)
+
+  // Rate limits: 10/min per client IP, plus 1 per 30 s per node id (probes are expensive).
+  const byIp = checkRateLimit(`verify:ip:${getClientIp(req)}`, 10, 60_000)
+  if (!byIp.ok) {
+    return NextResponse.json(
+      { ok: false, error: "Rate limited — slow down and retry.", code: "rate_limited" },
+      { status: 429, headers: { ...NO_STORE, "Retry-After": String(byIp.retryAfterSec) } }
+    )
+  }
+  const byNode = checkRateLimit(`verify:node:${nodeId}`, 1, 30_000)
+  if (!byNode.ok) {
+    return NextResponse.json(
+      { ok: false, error: "Rate limited — slow down and retry.", code: "rate_limited" },
+      { status: 429, headers: { ...NO_STORE, "Retry-After": String(byNode.retryAfterSec) } }
+    )
+  }
+
+  // Auth: owner node token OR admin. (After rate limits so probes stay throttled
+  // even for unauthenticated callers; before the existence check so anonymous
+  // callers cannot probe which node ids exist.)
+  const auth = checkVerifyAuth(req, nodeId)
+  if (!auth.ok) return auth.response
+
+  const existing = getProvider(nodeId)
   if (!existing) {
     return NextResponse.json(
-      { error: { message: `Provider ${provider_id} not found — awaiting heartbeat`, type: "not_found", code: "provider_not_found" } },
-      { status: 404, headers: CORS_HEADERS }
+      { ok: false, error: `Provider ${provider_id} not found — awaiting heartbeat`, code: "provider_not_found" },
+      { status: 404, headers: NO_STORE }
     )
   }
 
-  console.log(`[verify-route] manual verify request for ${provider_id} agent_url=${agent_url || "(store candidates)"} timeout=${timeoutMs || 30000}`)
+  console.log(`[verify-route] manual verify request for ${provider_id} via=${auth.via} timeout=${timeoutMs || 30000}`)
 
   try {
-    const result = await verifyProvider(String(provider_id), { agent_url, timeoutMs: timeoutMs || 30000 })
+    const result = await verifyProvider(String(provider_id), { timeoutMs: timeoutMs || 30000 })
     // TTFT probe already measured and saved via verifyProvider (EWMA + circuit). Expose routing stats + Server-Timing
     const routingStat = getProviderStat(String(provider_id))
     const circuit = getProviderCircuitState(String(provider_id))
@@ -81,7 +105,6 @@ export async function POST(req: Request) {
           "Server-Timing": ttft !== null ? `ttft;dur=${Math.round(ttft)}` : "ttft;dur=0",
           "X-SeedInfer-TTFT": ttftHeader,
           "X-SeedInfer-Provider": String(provider_id),
-          ...CORS_HEADERS,
         },
       }
     )
@@ -96,34 +119,20 @@ export async function POST(req: Request) {
         },
         provider_id,
       },
-      { status: 500, headers: CORS_HEADERS }
+      { status: 500, headers: NO_STORE }
     )
   }
 }
 
-export async function GET(req: Request) {
-  // Allow GET for convenience: /api/v1/providers/verify?provider_id=xxx
-  const url = new URL(req.url)
-  const provider_id = url.searchParams.get("provider_id") || url.searchParams.get("id")
-  if (provider_id) {
-    // proxy to POST logic
-    const fakeReq = new Request(req.url, { method: "POST", headers: req.headers } as any)
-    // inject body via cloning? Instead just call same logic via POST handler style:
-    // Reuse POST by constructing new Request with body
-    const body = { provider_id, agent_url: url.searchParams.get("agent_url") || undefined }
-    const newReq = new Request(req.url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    })
-    return POST(newReq)
-  }
+export async function GET() {
+  // Usage message only — no probe, no state change, no auth required.
   return NextResponse.json(
     {
-      message: "Use POST /api/v1/providers/verify {provider_id, agent_url?}",
-      example: { provider_id: "provider-5090-xxx", agent_url: "http://100.64.0.10:3001" },
-      hint: "Gateway runs health checks on the provider: GET /health oraz POST /v1/chat/completions {model:'google/gemma-4-26b-a4b-nvfp4',messages:[{role:'user',content:'ping'}],max_tokens:5}",
+      message: "Use POST /api/v1/providers/verify {provider_id}",
+      example: { provider_id: "provider-5090-xxx" },
+      auth: "Authorization: Bearer $SEEDINFER_NODE_TOKEN (node owner) or admin token",
+      hint: "Gateway runs health checks against the stored node data: GET /health oraz POST /v1/chat/completions {model:'google/gemma-4-26b-a4b-nvfp4',messages:[{role:'user',content:'ping'}],max_tokens:5}",
     },
-    { headers: CORS_HEADERS }
+    { headers: NO_STORE }
   )
 }

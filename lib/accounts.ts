@@ -213,14 +213,38 @@ export function getAccountSnapshot(userId: string, currentToken: string): Accoun
   };
 }
 
+/** Shared 403 body for sudo-mode re-auth (session older than 15 min via isFreshSession). */
+export const REAUTH_REQUIRED = {
+  error: "For security, sign in again (less than 15 minutes ago) to do this.",
+  code: "reauth_required",
+} as const;
+
 /** GDPR-style export: profile, links, sessions (metadata only), credits, invoices, usage. */
 export function exportUserData(userId: string): Record<string, unknown> | null {
   const db = getDb();
   const u = db
-    .prepare("SELECT id, email, email_verified, display_name, avatar_url, wallet_address, created_at, last_login_at FROM users WHERE id = ?")
+    .prepare(
+      "SELECT id, email, email_verified, display_name, avatar_url, wallet_address, payout_wallet, payout_wallet_updated_at, created_at, last_login_at FROM users WHERE id = ?"
+    )
     .get(String(userId)) as any;
   if (!u) return null;
   const q = (sql: string) => db.prepare(sql).all(String(userId));
+  let node_tokens: unknown[] = [];
+  let nodes: unknown[] = [];
+  let account_events: unknown[] = [];
+  try {
+    node_tokens = q(
+      "SELECT id, name, prefix, created_at, last_used_at, revoked_at FROM provider_tokens WHERE user_id = ?"
+    );
+  } catch {}
+  try {
+    nodes = q("SELECT node_id, token_id, bound_at, last_seen_at FROM provider_nodes WHERE user_id = ?");
+  } catch {}
+  try {
+    account_events = q(
+      "SELECT id, type, detail, ip, user_agent, created_at FROM account_events WHERE user_id = ?"
+    );
+  } catch {}
   return {
     exported_at: new Date().toISOString(),
     user: u,
@@ -229,6 +253,10 @@ export function exportUserData(userId: string): Record<string, unknown> | null {
     credits: q("SELECT balance_usd_cents, updated_at FROM credits WHERE user_id = ?"),
     invoices: q("SELECT id, chain, chain_id, token, token_address, amount, amount_usd_cents, address_to, tx_hash, status, created_at, confirmed_at, expires_at, block_number, block_hash FROM invoices WHERE user_id = ?"),
     usage: q("SELECT id, invoice_id, model, prompt_tokens, completion_tokens, cost_usd_cents, created_at FROM usage WHERE user_id = ?"),
+    // Node auth + account audit (token metadata only — never token_hash).
+    node_tokens,
+    nodes,
+    account_events,
   };
 }
 

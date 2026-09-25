@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { listProviders } from "@/lib/providers-store"
+import { listRoutableProviders } from "@/lib/providers-store"
 import { MODELS, HIDDEN_ROUTING_ALIASES, LIVE_MODEL, perTokenUsd, type CatalogModel } from "@/lib/catalog"
 
 export const dynamic = "force-dynamic"
@@ -163,8 +163,9 @@ const KNOWN_IDS = new Set<string>([
 ])
 
 export async function GET() {
-  // Collect dynamic models from connected verified providers
-  const activeProviders = listProviders().filter((p) => p.verification?.status === "verified")
+  // Collect dynamic models from connected verified providers.
+  // Boot-hydrated nodes (awaiting_heartbeat) are excluded until a fresh heartbeat — never advertised.
+  const activeProviders = listRoutableProviders()
   const dynamicModelsMap = new Map<string, any>()
 
   for (const prov of activeProviders) {

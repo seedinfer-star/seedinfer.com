@@ -1,18 +1,17 @@
 import { NextResponse } from "next/server"
-import { execSync } from "child_process"
+import { verifyNodeToken } from "@/lib/provider-tokens"
+import { checkRateLimit, getClientIp } from "@/lib/rate-limit"
+import { recordAccountEvent } from "@/lib/account-events"
+import { extractBearerToken } from "@/lib/node-auth"
+import { mintAuthKey } from "@/lib/auth-key-minter"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
 
-const CORS_HEADERS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization",
-}
+// No CORS headers on this route: callers are server-side installers/agents, not browsers.
+const NO_STORE = { "Cache-Control": "no-store, max-age=0" }
 
-export async function OPTIONS() {
-  return new NextResponse(null, { status: 204, headers: CORS_HEADERS })
-}
+const KEY_EXPIRY = "1h"
 
 type AuthResponse = {
   authkey: string
@@ -28,57 +27,15 @@ type AuthResponse = {
   reusable: boolean
 }
 
-function tryHeadscale(): string | null {
-  try {
-    execSync("which docker", { stdio: "ignore", timeout: 2000 })
-  } catch {
-    return null
-  }
-  try {
-    const out = execSync(
-      `docker exec seedinfer-headscale headscale preauthkeys create --user seedinfer --tags tag:provider --reusable --expiration 24h 2>&1`,
-      { encoding: "utf-8", timeout: 8000, maxBuffer: 1024 * 1024 }
-    )
-    const lines = out.trim().split("\n")
-    for (const line of lines.reverse()) {
-      const m1 = line.match(/nodekey:[a-f0-9]+/i)
-      if (m1) return m1[0]
-      const m2 = line.match(/[a-f0-9]{48,}/i)
-      if (m2) return m2[0]
-      const m3 = line.match(/hskey-[a-z0-9\-_]+/i)
-      if (m3) return m3[0]
-    }
-    const tokens = out.trim().split(/\s+/).filter(Boolean)
-    if (tokens.length > 0) {
-      const last = tokens[tokens.length - 1]
-      if (last.length >= 20) return last
-    }
-    return null
-  } catch (e: any) {
-    console.warn(`[auth/request] headscale exec failed: ${e?.message?.slice(0, 300) || e}`)
-    return null
-  }
+function errBody(code: string, message: string) {
+  return { ok: false as const, error: message, code }
 }
 
-async function tryHeadscaleViaProxy(tag: string): Promise<string | null> {
-  const proxyUrl = process.env.HEADSCALE_PROXY_URL || process.env.HEADSCALE_API_URL || ""
-  if (!proxyUrl) return null
-  try {
-    const ctrl = new AbortController()
-    const t = setTimeout(() => ctrl.abort(), 5000)
-    const res = await fetch(`${proxyUrl.replace(/\/$/, "")}/preauthkeys/create`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ user: "seedinfer", tags: [tag], reusable: true, expiration: "24h" }),
-      signal: ctrl.signal as any,
-    } as any)
-    clearTimeout(t)
-    if (!res.ok) return null
-    const j: any = await res.json().catch(() => ({}))
-    return j.authkey || j.key || j.preAuthKey || null
-  } catch {
-    return null
-  }
+function rateLimited(retryAfterSec: number) {
+  return NextResponse.json(errBody("rate_limited", "Rate limited — slow down and retry."), {
+    status: 429,
+    headers: { ...NO_STORE, "Retry-After": String(retryAfterSec) },
+  })
 }
 
 function errorResponse(message: string, status = 503) {
@@ -90,58 +47,101 @@ function errorResponse(message: string, status = 503) {
       gateway: "https://seedinfer.com",
       retry_after: 30,
     },
-    { status, headers: { "Cache-Control": "no-store, max-age=0", ...CORS_HEADERS } }
+    { status, headers: NO_STORE }
   )
+}
+
+function successResponse(key: string) {
+  const now = new Date()
+  return NextResponse.json(
+    {
+      authkey: key,
+      expires: KEY_EXPIRY,
+      tag: "tag:provider",
+      login_server: "https://tailnet.seedinfer.com",
+      gateway: "https://seedinfer.com",
+      mode: "headscale",
+      hint: `Preauth key via Headscale (tag:tag:provider). Use: tailscale up --login-server https://tailnet.seedinfer.com --authkey ${key} --advertise-tags tag:provider`,
+      dashboard: "https://dashboard.seedinfer.com",
+      created_at: now.toISOString(),
+      ephemeral: false,
+      reusable: false,
+    } as AuthResponse,
+    { headers: NO_STORE }
+  )
+}
+
+type Gate = { ok: true; userId: string; tokenId: string; bearer: string } | { ok: false; response: NextResponse }
+
+/**
+ * Shared gate for GET and POST: node-token auth, per-token + per-IP rate
+ * limits, and provider-tag allowlist. Never echoes request data back.
+ */
+function gate(req: Request, rawTag: string | null): Gate {
+  const bearer = extractBearerToken(req)
+  if (!bearer) {
+    return {
+      ok: false,
+      response: NextResponse.json(
+        errBody("node_token_missing", "Missing node token — send Authorization: Bearer sipn_... (SEEDINFER_NODE_TOKEN)."),
+        { status: 401, headers: NO_STORE }
+      ),
+    }
+  }
+  const verified = verifyNodeToken(bearer)
+  if (!verified) {
+    return {
+      ok: false,
+      response: NextResponse.json(
+        errBody("node_token_invalid", "Unknown or revoked node token — create a new one in /provider/portal."),
+        { status: 401, headers: NO_STORE }
+      ),
+    }
+  }
+
+  const ip = getClientIp(req)
+  const byToken = checkRateLimit(`authkey:token:${verified.tokenId}`, 5, 60 * 60_000)
+  if (!byToken.ok) return { ok: false, response: rateLimited(byToken.retryAfterSec) }
+  const byIp = checkRateLimit(`authkey:ip:${ip}`, 10, 60 * 60_000)
+  if (!byIp.ok) return { ok: false, response: rateLimited(byIp.retryAfterSec) }
+
+  const t = String(rawTag || "tag:provider").trim()
+  if (t !== "provider" && t !== "tag:provider") {
+    return {
+      ok: false,
+      response: NextResponse.json(errBody("invalid_tag", "Only the provider tag is allowed."), {
+        status: 400,
+        headers: NO_STORE,
+      }),
+    }
+  }
+
+  return { ok: true, userId: verified.userId, tokenId: verified.tokenId, bearer }
+}
+
+async function issue(req: Request, rawTag: string | null) {
+  const g = gate(req, rawTag)
+  if (!g.ok) return g.response
+
+  // The key itself is never stored or logged; only the response carries it.
+  const key = await mintAuthKey()
+  if (!key) {
+    return errorResponse("Failed to generate Headscale preauth key — control plane unavailable")
+  }
+
+  recordAccountEvent(g.userId, "tailnet_key_issued", {
+    // Prefix = first 12 chars of the secret (same value stored as provider_tokens.prefix).
+    detail: { node_token_prefix: g.bearer.slice(0, 12) },
+    ip: getClientIp(req),
+    userAgent: req.headers.get("user-agent"),
+  })
+
+  return successResponse(key)
 }
 
 export async function GET(req: Request) {
   const url = new URL(req.url)
-  const tag = url.searchParams.get("tag") || "tag:provider"
-
-  // Try proxy first if configured
-  const viaProxy = await tryHeadscaleViaProxy(tag)
-  if (viaProxy) {
-    const now = new Date()
-    return NextResponse.json(
-      {
-        authkey: viaProxy,
-        expires: "24h",
-        tag,
-        login_server: "https://tailnet.seedinfer.com",
-        gateway: "https://seedinfer.com",
-        mode: "headscale",
-        hint: `Preauth key via Headscale (tag:${tag}). Use: tailscale up --login-server https://tailnet.seedinfer.com --authkey ${viaProxy} --advertise-tags ${tag}`,
-        dashboard: "https://dashboard.seedinfer.com",
-        created_at: now.toISOString(),
-        ephemeral: false,
-        reusable: true,
-      } as AuthResponse,
-      { headers: { "Cache-Control": "no-store, max-age=0", ...CORS_HEADERS } }
-    )
-  }
-
-  const real = tryHeadscale()
-  if (real) {
-    const now = new Date()
-    return NextResponse.json(
-      {
-        authkey: real,
-        expires: "24h",
-        tag,
-        login_server: "https://tailnet.seedinfer.com",
-        gateway: "https://seedinfer.com",
-        mode: "headscale",
-        hint: `Preauth key via Headscale (tag:${tag}). Use: tailscale up --login-server https://tailnet.seedinfer.com --authkey ${real} --advertise-tags ${tag}`,
-        dashboard: "https://dashboard.seedinfer.com",
-        created_at: now.toISOString(),
-        ephemeral: false,
-        reusable: true,
-      } as AuthResponse,
-      { headers: { "Cache-Control": "no-store, max-age=0", ...CORS_HEADERS } }
-    )
-  }
-
-  return errorResponse("Failed to generate Headscale preauth key — control plane unavailable")
+  return issue(req, url.searchParams.get("tag"))
 }
 
 export async function POST(req: Request) {
@@ -151,52 +151,8 @@ export async function POST(req: Request) {
     if (t) body = JSON.parse(t)
   } catch {}
   const url = new URL(req.url)
-  const tag = body.tag || url.searchParams.get("tag") || "tag:provider"
-  const email = body.email || url.searchParams.get("email") || ""
-
-  const viaProxy = await tryHeadscaleViaProxy(tag)
-  if (viaProxy) {
-    const now = new Date()
-    return NextResponse.json(
-      {
-        authkey: viaProxy,
-        expires: "24h",
-        tag,
-        login_server: "https://tailnet.seedinfer.com",
-        gateway: "https://seedinfer.com",
-        mode: "headscale",
-        hint: `Preauth key${email ? ` for ${email}` : ""} (tag:${tag}).`,
-        dashboard: "https://dashboard.seedinfer.com",
-        created_at: now.toISOString(),
-        ephemeral: false,
-        reusable: true,
-        ...(email ? { email } : {}),
-      } as AuthResponse,
-      { headers: { "Cache-Control": "no-store, max-age=0", ...CORS_HEADERS } }
-    )
-  }
-
-  const key = tryHeadscale()
-  if (key) {
-    const now = new Date()
-    return NextResponse.json(
-      {
-        authkey: key,
-        expires: "24h",
-        tag,
-        login_server: "https://tailnet.seedinfer.com",
-        gateway: "https://seedinfer.com",
-        mode: "headscale",
-        hint: `Preauth key${email ? ` for ${email}` : ""} (tag:${tag}).`,
-        dashboard: "https://dashboard.seedinfer.com",
-        created_at: now.toISOString(),
-        ephemeral: false,
-        reusable: true,
-        ...(email ? { email } : {}),
-      } as AuthResponse,
-      { headers: { "Cache-Control": "no-store, max-age=0", ...CORS_HEADERS } }
-    )
-  }
-
-  return errorResponse("Failed to generate Headscale preauth key — control plane unavailable")
+  // NOTE: the `email` param is intentionally dropped (never read, never echoed).
+  const rawTag =
+    (body && typeof body.tag === "string" ? body.tag : null) || url.searchParams.get("tag")
+  return issue(req, rawTag)
 }

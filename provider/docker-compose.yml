@@ -15,6 +15,14 @@ services:
     restart: unless-stopped
     runtime: nvidia
     ipc: host
+    # Identity + auth: generated once by scripts/install.sh into
+    # $INSTALL_DIR/seedinfer.env (chmod 600) and bind-mounted below.
+    # Optional: missing file must not fail `docker compose up` (long syntax
+    # requires Compose >= 2.24; install.sh installs the current compose plugin).
+    # Explicit `environment:` entries below already cover the same vars.
+    env_file:
+      - path: ${SEEDINFER_ENV_FILE:-/opt/seedinfer-provider/seedinfer.env}
+        required: false
     environment:
       NVIDIA_VISIBLE_DEVICES: all
       NVIDIA_DRIVER_CAPABILITIES: compute,utility
@@ -41,13 +49,19 @@ services:
       TAILSCALE_EXTRA_ARGS: ${TAILSCALE_EXTRA_ARGS:-}
       # --- Gateway ---
       SEEDINFER_GATEWAY_URL: ${SEEDINFER_GATEWAY_URL:-https://seedinfer.com}
+      SEEDINFER_NODE_TOKEN: ${SEEDINFER_NODE_TOKEN:-}
       PROVIDER_API_KEY: ${PROVIDER_API_KEY:-}
       SEEDINFER_API_KEY: ${SEEDINFER_API_KEY:-}
+      SEEDINFER_ENV_PATH: ${SEEDINFER_ENV_FILE:-/opt/seedinfer-provider/seedinfer.env}
       # --- Model / vLLM — Gemma 4 26B A4B NVFP4 (DiffusionGemma Studio 1:1) ---
       MODEL: ${MODEL:-google/gemma-4-26b-a4b-nvfp4}
       VLLM_MODEL: ${VLLM_MODEL:-/models/Gemma-4-26B-A4B-NVFP4}
       HF_TOKEN: ${HF_TOKEN:-}
-      VLLM_PORT: ${VLLM_PORT:-47900}
+      # vLLM ALWAYS listens on container port 8000 (entrypoint.sh: VLLM_PORT
+      # defaults to 8000; VLLM_URL below points at it). Do NOT pass a host
+      # port as VLLM_PORT into the container — the host side is HOST_VLLM_PORT
+      # in the ports mapping below. (Default VLLM_PORT=47900 here would make
+      # vLLM listen on 47900 while the mapping + agent probe 8000.)
       VLLM_GPU_MEMORY_UTILIZATION: ${VLLM_GPU_MEMORY_UTILIZATION:-0.94}
       VLLM_MAX_MODEL_LEN: ${VLLM_MAX_MODEL_LEN:-262144}
       VLLM_MAX_NUM_SEQS: ${VLLM_MAX_NUM_SEQS:-32}
@@ -75,9 +89,21 @@ services:
       PROVIDER_REGION: ${PROVIDER_REGION:-}
       VLLM_URL: http://127.0.0.1:8000
     ports:
-      - "${HOST_VLLM_PORT:-47900}:${VLLM_PORT:-8000}"   # vLLM OpenAI API — host 47900 -> container 8000
+      - "${HOST_VLLM_PORT:-47900}:8000"   # vLLM OpenAI API — host 47900 -> container 8000 (vLLM always listens on 8000)
       - "${HOST_AGENT_PORT:-47901}:${AGENT_PORT:-3001}"  # agent health + priority proxy — host 47901 -> container 3001
     volumes:
+      # Identity file (600 on host): sourced by entrypoint so the agent gets
+      # SEEDINFER_NODE_TOKEN + PROVIDER_ID even when using the prebuilt image.
+      # Long syntax with create_host_path:false — a missing file must NOT be
+      # auto-created as a directory (that would break the installer's writes).
+      # entrypoint.sh skips absent files harmlessly; explicit environment:
+      # above already covers the same vars.
+      - type: bind
+        source: ${SEEDINFER_ENV_FILE:-/opt/seedinfer-provider/seedinfer.env}
+        target: /run/seedinfer/seedinfer.env
+        read_only: true
+        bind:
+          create_host_path: false
       - ${HF_CACHE_HOST:-./models/cache}:/root/.cache/huggingface
       - ${MODELS_HOST:-/mnt/d/models/hf}:/models:ro
       - /mnt/d:/mnt/d:ro

@@ -13,6 +13,8 @@ LOGIN_SERVER="https://tailnet.seedinfer.com"
 MODEL="google/gemma-4-26b-a4b-nvfp4"
 VLLM_MODEL="google/gemma-4-26b-a4b-nvfp4"
 AUTHKEY=""
+SEEDINFER_NODE_TOKEN="${SEEDINFER_NODE_TOKEN:-}"
+NODE_TOKEN_INPUT=""
 # --- HOSTNAME sanitization (DNS label RFC1123: [a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?) ---
 # FIX: cut -c1-12 na "jakub-B550M-AORUS-ELITE" dawał "jakub-B550M-" kończące się "-" -> invalid DNS label.
 sanitize_hostname() {
@@ -52,9 +54,12 @@ FORCE_HOST_TAILSCALE="${FORCE_HOST_TAILSCALE:-0}"
 EXTRA_ARGS=""
 INSTALL_DIR="/opt/seedinfer-provider"
 REPO_URL="https://github.com/seedinfer-star/seedinfer.com.git" # public clone (org seedinfer 404, use star)
+# VLLM_PORT/AGENT_PORT are HOST ports here (host 47900 -> container 8000,
+# host 47901 -> container 3001). The container side is fixed: vLLM always
+# listens on 8000 (see provider/docker-compose.yml ports mapping).
 # Robust defaults — fix invalid containerPort gdy VLLM_PORT/AGENT_PORT pusty (env override "")
-VLLM_PORT=${VLLM_PORT:-47900}; [ -z "$VLLM_PORT" ] && VLLM_PORT=47900
-AGENT_PORT=${AGENT_PORT:-47901}; [ -z "$AGENT_PORT" ] && AGENT_PORT=47901
+VLLM_PORT=${HOST_VLLM_PORT:-${VLLM_PORT:-47900}}; [ -z "$VLLM_PORT" ] && VLLM_PORT=47900
+AGENT_PORT=${HOST_AGENT_PORT:-${AGENT_PORT:-47901}}; [ -z "$AGENT_PORT" ] && AGENT_PORT=47901
 # --- Prebuild (Pi + ghcr) ---
 # Primary: ghcr.io pull (x86_64 CUDA image zbudowany na hoście 5090, wypchnięty via scripts/publish-provider-image.sh)
 # Fallback: Pi tar via https://seedinfer.com/provider-image.tar.gz (docker save | gzip na Pi /opt/seedinfer/public, serwowany przez Caddy/Next)
@@ -100,6 +105,9 @@ Opcje:
   --gateway URL        SeedInfer gateway (default: $GATEWAY)
   --login-server URL   Headscale control plane (default: $LOGIN_SERVER)
   --hostname NAME      Tailscale hostname (default: $HOSTNAME) — sanitizowany do DNS label
+  --token TOKEN        SeedInfer node token (sipn_…) — albo env SEEDINFER_NODE_TOKEN.
+                       Utwórz na https://seedinfer.com/provider/portal. Bez tokena
+                       węzeł nie zostanie przyjęty (instalacja kontynuowana z ostrzeżeniem).
   --dir PATH           Katalog instalacji (default: $INSTALL_DIR)
   --skip-tailscale     Pomiń tailscale up (offline/testy) — env SKIP_TAILSCALE=1
   --force-host-tailscale  Wymuś przełączenie hostowego tailscale na Headscale (control plane switch z tailscale.com -> $LOGIN_SERVER) — wymaga --reset --force-reauth, rozłączy tailscale.com (utracisz MagicDNS *.ts.net, 100.94.x.x routing, --operator). Domyślnie: kontener (bezpieczne, nie rusza hosta). --force-host-tailscale to opt-in do starego zachowania (--reset --force-reauth na hoście).
@@ -138,8 +146,9 @@ while [[ $# -gt 0 ]]; do
     --vllm-model) VLLM_MODEL="$2"; CUSTOM_VLLM=true; shift 2 ;;
     --gateway) GATEWAY="$2"; shift 2 ;;
     --login-server) LOGIN_SERVER="$2"; shift 2 ;;
-    --hostname) HOSTNAME="$2"; shift 2 ;;
-    --dir) INSTALL_DIR="$2"; shift 2 ;;
+  --hostname) HOSTNAME="$2"; shift 2 ;;
+  --token) NODE_TOKEN_INPUT="$2"; shift 2 ;;
+  --dir) INSTALL_DIR="$2"; shift 2 ;;
     --skip-tailscale) SKIP_TAILSCALE=1; shift ;;
     --force-host-tailscale) FORCE_HOST_TAILSCALE=1; shift ;;
     --help|-h) usage; exit 0 ;;
@@ -174,7 +183,25 @@ generate_or_load_identity() {
     existing_priv=$(grep -E "^SEEDINFER_PRIVATE_KEY=" "$env_file" 2>/dev/null | cut -d= -f2- | tr -d '"' | tr -d "'" || true)
     existing_pub=$(grep -E "^SEEDINFER_PUBLIC_KEY=" "$env_file" 2>/dev/null | cut -d= -f2- | tr -d '"' | tr -d "'" || true)
   fi
+  # seedinfer.env is hand-editable — never trust preserved keys blindly
+  # (values are written unquoted; docker --env-file takes quotes literally).
+  if [[ -n "$existing_priv" ]] && ! [[ "$existing_priv" =~ ^[A-Za-z0-9._:-]+$ ]]; then
+    echo "⚠️  preserved SEEDINFER_PRIVATE_KEY ma zły format — generuję świeży klucz."
+    existing_priv=""; existing_pub=""
+  fi
+  if [[ -n "$existing_pub" ]] && ! [[ "$existing_pub" =~ ^[A-Za-z0-9._:-]+$ ]]; then
+    echo "⚠️  preserved SEEDINFER_PUBLIC_KEY ma zły format — generuję świeżą parę."
+    existing_priv=""; existing_pub=""
+  fi
 
+  # --private-key is user input: never allow newlines / shell-significant content
+  # into seedinfer.env (docker --env-file takes quotes literally, so values stay unquoted).
+  if [[ -n "$PRIVATE_KEY_INPUT" ]]; then
+    if [[ "$PRIVATE_KEY_INPUT" == *$'\n'* || "$PRIVATE_KEY_INPUT" == *$'\r'* ]] || ! [[ "$PRIVATE_KEY_INPUT" =~ ^[A-Za-z0-9._:-]+$ ]]; then
+      echo "⚠️  --private-key ma zły format (dozwolone: [A-Za-z0-9._:-], bez nowych linii) — ignoruję, generuję świeży klucz."
+      PRIVATE_KEY_INPUT=""
+    fi
+  fi
   if [[ -n "$PRIVATE_KEY_INPUT" ]]; then
     SEEDINFER_PRIVATE_KEY="$PRIVATE_KEY_INPUT"
     if command -v python3 >/dev/null 2>&1; then
@@ -197,11 +224,79 @@ generate_or_load_identity() {
 
   SEEDINFER_HW_FINGERPRINT=$(get_hw_fingerprint)
 
+  # Preserve across reinstalls: read the existing values BEFORE resolving.
+  existing_token=$(grep -E "^SEEDINFER_NODE_TOKEN=" "$env_file" 2>/dev/null | cut -d= -f2- | tr -d '"' | tr -d "'" || true)
+  existing_provider_id=$(grep -E "^PROVIDER_ID=" "$env_file" 2>/dev/null | cut -d= -f2- | tr -d '"' | tr -d "'" || true)
+
+  # Node token: --token > env > preserved seedinfer.env > TTY prompt (never the piped script, never blocking).
+  # Prompt only when a terminal is available so `curl | bash` without TTY never hangs.
+  if [[ -n "${NODE_TOKEN_INPUT:-}" ]]; then
+    SEEDINFER_NODE_TOKEN="$NODE_TOKEN_INPUT"
+  elif [[ -n "${SEEDINFER_NODE_TOKEN:-}" ]]; then
+    : # keep env value
+  elif [[ -n "${existing_token:-}" ]]; then
+    SEEDINFER_NODE_TOKEN="$existing_token"
+  elif (exec </dev/tty) 2>/dev/null; then
+    read -r -p "SeedInfer node token (sipn_…, create at https://seedinfer.com/provider/portal, Enter to skip): " SEEDINFER_NODE_TOKEN </dev/tty || true
+  fi
+
+  if [[ -n "${SEEDINFER_NODE_TOKEN:-}" && ! "$SEEDINFER_NODE_TOKEN" =~ ^sipn_[A-Za-z0-9_-]{43}$ ]]; then
+    echo "⚠️  node token does not match ^sipn_[A-Za-z0-9_-]{43}$ — ignoring it (create a valid token in https://seedinfer.com/provider/portal)."
+    SEEDINFER_NODE_TOKEN=""
+  fi
+  if [[ -z "${SEEDINFER_NODE_TOKEN:-}" ]]; then
+    echo "⚠️  WARNING: no SEEDINFER_NODE_TOKEN — the node will NOT be accepted until a token is set."
+    echo "   Create one at https://seedinfer.com/provider/portal, then re-run:"
+    echo "     curl -fsSL https://seedinfer.com/install.sh | SEEDINFER_NODE_TOKEN=sipn_… bash"
+    echo "   or: curl -fsSL https://seedinfer.com/install.sh | bash -s -- --token sipn_…"
+  fi
+
+  # Persistent node id (anti-squatting): <sanitized-hostname>-<6 random hex>, generated once.
+  # Preserved across reinstalls; must match ^[A-Za-z0-9._-]{1,64}$.
+  if [[ -n "${PROVIDER_ID:-}" ]]; then
+    _san_pid=$(echo "$PROVIDER_ID" | sed 's/[^A-Za-z0-9._-]/-/g; s/[-_.][-.][-.]*/-/g; s/^[-_.]*//; s/[-_.]*$//' | cut -c1-64 || true)
+    if [[ -n "$_san_pid" && "$_san_pid" =~ ^[A-Za-z0-9._-]{1,64}$ ]]; then
+      PROVIDER_ID="$_san_pid"
+    else
+      echo "⚠️  PROVIDER_ID '$PROVIDER_ID' invalid — generating a fresh one."
+      PROVIDER_ID=""
+    fi
+  fi
+  if [[ -z "${PROVIDER_ID:-}" && -n "${existing_provider_id:-}" ]]; then
+    # seedinfer.env is hand-editable — never trust it blindly (it is written
+    # unquoted into env files, where docker --env-file takes quotes literally).
+    if [[ "$existing_provider_id" =~ ^[A-Za-z0-9._-]{1,64}$ ]]; then
+      PROVIDER_ID="$existing_provider_id"
+      echo "INFO: reusing preserved PROVIDER_ID=$PROVIDER_ID"
+    else
+      echo "⚠️  preserved PROVIDER_ID '$existing_provider_id' invalid — generating a fresh one."
+    fi
+  fi
+  if [[ -z "${PROVIDER_ID:-}" ]]; then
+    _san_host=$(echo "${HOSTNAME:-provider}" | sed 's/[^A-Za-z0-9._-]/-/g; s/[-_.][-.][-. ]*/-/g; s/^[-_.]*//; s/[-_.]*$//' | cut -c1-57 || true)
+    [[ -z "$_san_host" ]] && _san_host="provider"
+    if command -v openssl >/dev/null 2>&1; then
+      _rand=$(openssl rand -hex 3 2>/dev/null || echo "000000")
+    else
+      _rand=$(date +%s%N | sha256sum | cut -c1-6)
+    fi
+    PROVIDER_ID="${_san_host}-${_rand}"
+    echo "INFO: generated persistent PROVIDER_ID=$PROVIDER_ID"
+  fi
+
+  # Payout wallet is NOT collected here anymore — it is an account-level setting,
+  # changeable only by the logged-in owner at https://seedinfer.com/provider/portal.
+  # The server ignores any payout_wallet sent by the agent.
+
   cat > "$env_file" 2>/dev/null <<EOF
 # SeedInfer Provider Identity & Hardware Lock
 SEEDINFER_PRIVATE_KEY=$SEEDINFER_PRIVATE_KEY
 SEEDINFER_PUBLIC_KEY=$SEEDINFER_PUBLIC_KEY
 SEEDINFER_HW_FINGERPRINT=$SEEDINFER_HW_FINGERPRINT
+# Node token (account-bound auth for heartbeats) — create at https://seedinfer.com/provider/portal
+SEEDINFER_NODE_TOKEN=${SEEDINFER_NODE_TOKEN:-}
+# Persistent node id (^[A-Za-z0-9._-]{1,64}$) — generated once, reused on reinstall
+PROVIDER_ID=${PROVIDER_ID:-}
 EOF
   chmod 600 "$env_file" 2>/dev/null || true
 
@@ -210,7 +305,14 @@ EOF
   echo "============================================================"
   echo " PUBLIC KEY:     $SEEDINFER_PUBLIC_KEY"
   echo " HW FINGERPRINT: $SEEDINFER_HW_FINGERPRINT"
+  echo " PROVIDER_ID:    ${PROVIDER_ID:-}"
+  if [[ -n "${SEEDINFER_NODE_TOKEN:-}" ]]; then
+    echo " NODE TOKEN:     ${SEEDINFER_NODE_TOKEN:0:12}… (set)"
+  else
+    echo " NODE TOKEN:     (missing — node will not be accepted until set)"
+  fi
   echo " IDENTITY FILE:  $env_file"
+  echo " 💰 PAYOUT WALLET: set your USDC (Base) payout wallet at https://seedinfer.com/provider/portal"
   echo "============================================================"
 }
 
@@ -243,35 +345,124 @@ if [[ -z "$VLLM_MODEL" ]]; then
   VLLM_MODEL="nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4"
 fi
 
-# --- Auto-authkey: jeśli --authkey brak, fetch z gateway ---
+# --- Auto-authkey: jeśli --authkey brak, fetch z gateway (Bearer SEEDINFER_NODE_TOKEN) ---
+# Token resolved above in generate_or_load_identity() (--token > env > seedinfer.env > TTY).
+# Keys are SINGLE-USE, expire in 1h. Explicit --authkey keeps working as before.
+# Never print the token (only the 12-char masked authkey prefix below).
+seedinfer_fetch_authkey() {
+  # args: none; uses $GATEWAY + $SEEDINFER_NODE_TOKEN; sets AUTHKEY_FETCHED + AUTHKEY_HTTP_CODE
+  AUTHKEY_FETCHED=""
+  AUTHKEY_HTTP_CODE="000"
+  AUTHKEY_RETRY_AFTER=""
+  local _tmp _hdr _http _body
+  _tmp=$(mktemp 2>/dev/null || echo "/tmp/.seedinfer-authkey-body.$$")
+  _hdr=$(mktemp 2>/dev/null || echo "/tmp/.seedinfer-authkey-hdr.$$")
+  _http="000"
+  if command -v curl >/dev/null 2>&1; then
+    # Single request: Bearer token, body to tmp file, headers to hdr file, status via -w.
+    _http=$(curl -sS --max-time 10 -o "$_tmp" -D "$_hdr" -w '%{http_code}' \
+      -H "Authorization: Bearer $SEEDINFER_NODE_TOKEN" \
+      "$GATEWAY/api/v1/auth/request" 2>/dev/null || echo "000")
+    # curl -w prints code even on failure; keep last 3 chars in case of "000000" concat
+    _http=$(echo "$_http" | tr -d ' \n' | tail -c 3)
+    [[ -z "$_http" ]] && _http="000"
+  else
+    echo "WARN: curl nie znalezione — nie można auto-fetch authkey" >&2
+    rm -f "$_tmp" "$_hdr" 2>/dev/null || true
+    AUTHKEY_HTTP_CODE="000"
+    return 1
+  fi
+  AUTHKEY_HTTP_CODE="$_http"
+  _body=$(cat "$_tmp" 2>/dev/null || true)
+  AUTHKEY_RETRY_AFTER=$(grep -i '^Retry-After:' "$_hdr" 2>/dev/null | head -n1 | awk '{print $2}' | tr -d '\r ' || true)
+  rm -f "$_tmp" "$_hdr" 2>/dev/null || true
+  if [[ "$_http" != "200" ]]; then
+    return 1
+  fi
+  # Parse `authkey`: jq -> python3 -> grep (body only, no extra requests).
+  if command -v jq >/dev/null 2>&1; then
+    AUTHKEY_FETCHED=$(printf '%s' "$_body" | jq -r .authkey 2>/dev/null || true)
+  fi
+  if [[ -z "$AUTHKEY_FETCHED" || "$AUTHKEY_FETCHED" == "null" ]]; then
+    if command -v python3 >/dev/null 2>&1; then
+      AUTHKEY_FETCHED=$(printf '%s' "$_body" | python3 -c "import sys,json;print(json.load(sys.stdin).get('authkey',''))" 2>/dev/null || true)
+    fi
+  fi
+  if [[ -z "$AUTHKEY_FETCHED" || "$AUTHKEY_FETCHED" == "null" ]]; then
+    AUTHKEY_FETCHED=$(printf '%s' "$_body" | grep -o '"authkey"[[:space:]]*:[[:space:]]*"[^"]*"' | head -n1 | cut -d'"' -f4 || true)
+  fi
+  [[ -n "$AUTHKEY_FETCHED" && "$AUTHKEY_FETCHED" != "null" && ${#AUTHKEY_FETCHED} -ge 10 ]]
+}
+seedinfer_report_authkey_error() {
+  # uses $AUTHKEY_HTTP_CODE, $AUTHKEY_RETRY_AFTER; never prints the token
+  local _code="${AUTHKEY_HTTP_CODE:-000}"
+  case "$_code" in
+    401)
+      echo "BŁĄD: gateway odrzucił node token (401 node_token_missing/invalid)." >&2
+      echo "Utwórz/sprawdź token na https://seedinfer.com/provider/portal i ustaw:" >&2
+      echo "  curl -fsSL $GATEWAY/install.sh | SEEDINFER_NODE_TOKEN=sipn_… bash" >&2 ;;
+    429)
+      echo "BŁĄD: rate-limited (429)${AUTHKEY_RETRY_AFTER:+ — Retry-After: ${AUTHKEY_RETRY_AFTER}s} — odczekaj i spróbuj ponownie." >&2 ;;
+    400)
+      echo "BŁĄD: gateway odrzucił żądanie (400 invalid_tag) — serwer nie ma tagu provider." >&2 ;;
+    000)
+      echo "BŁĄD: brak połączenia z $GATEWAY (curl exit / timeout)." >&2 ;;
+    5*)
+      echo "BŁĄD: gateway error HTTP $_code — spróbuj ponownie za chwilę." >&2 ;;
+    *)
+      echo "BŁĄD: auto-fetch nie powiódł się (HTTP $_code)." >&2 ;;
+  esac
+}
+# Set to 1 after the first tailscale enrollment attempt (single-use key tracking, see below).
+# AUTHKEY_AUTO_FETCHED=1 only when the key came from auto-fetch (single-use);
+# an explicit --authkey is user-managed and keeps the old reuse behavior.
+AUTHKEY_CONSUMED=0
+AUTHKEY_AUTO_FETCHED=0
+seedinfer_ensure_fresh_authkey() {
+  # Fetch a fresh single-use key when a *separate* enrollment needs one
+  # (container identity vs host identity). Same-identity retries reuse the key.
+  if [[ -n "${SEEDINFER_NODE_TOKEN:-}" ]]; then
+    if seedinfer_fetch_authkey; then
+      AUTHKEY="$AUTHKEY_FETCHED"
+      AUTHKEY_CONSUMED=0
+      AUTHKEY_AUTO_FETCHED=1
+      echo "Fresh authkey fetched OK (${#AUTHKEY} chars, $(echo "$AUTHKEY" | cut -c1-12)...)."
+      return 0
+    fi
+    seedinfer_report_authkey_error
+  else
+    echo "WARN: klucz jednorazowy już użyty, a brak SEEDINFER_NODE_TOKEN — nie mogę pobrać świeżego (https://seedinfer.com/provider/portal)." >&2
+  fi
+  return 1
+}
 if [[ -z "$AUTHKEY" ]]; then
   echo "-- brak --authkey, próbuję auto-fetch z $GATEWAY/api/v1/auth/request ..."
   AUTHKEY_FETCHED=""
-  if command -v curl >/dev/null 2>&1; then
-    # próbuj jq first
-    if command -v jq >/dev/null 2>&1; then
-      AUTHKEY_FETCHED=$(curl -fsS --max-time 10 "$GATEWAY/api/v1/auth/request" 2>/dev/null | jq -r .authkey 2>/dev/null || true)
-    fi
-    if [[ -z "$AUTHKEY_FETCHED" || "$AUTHKEY_FETCHED" == "null" ]]; then
-      AUTHKEY_FETCHED=$(curl -fsS --max-time 10 "$GATEWAY/api/v1/auth/request" 2>/dev/null | grep -o '"authkey"[[:space:]]*:[[:space:]]*"[^"]*"' | head -n1 | cut -d'"' -f4 || true)
-    fi
-    if [[ -z "$AUTHKEY_FETCHED" || "$AUTHKEY_FETCHED" == "null" ]]; then
-      # python fallback (bez jq)
-      if command -v python3 >/dev/null 2>&1; then
-        AUTHKEY_FETCHED=$(curl -fsS --max-time 10 "$GATEWAY/api/v1/auth/request" 2>/dev/null | python3 -c "import sys,json;print(json.load(sys.stdin).get('authkey',''))" 2>/dev/null || true)
-      fi
-    fi
-  else
-    echo "WARN: curl nie znalezione — nie można auto-fetch authkey" >&2
+  if [[ -z "${SEEDINFER_NODE_TOKEN:-}" ]]; then
+    echo "BŁĄD: brak SEEDINFER_NODE_TOKEN — auto-fetch wymaga tokena (Authorization: Bearer)." >&2
+    echo "Utwórz token na https://seedinfer.com/provider/portal, potem:" >&2
+    echo "  curl -fsSL $GATEWAY/install.sh | SEEDINFER_NODE_TOKEN=sipn_… bash" >&2
+    echo "Lub podaj: curl -fsSL $GATEWAY/install.sh | bash -s -- --authkey YOUR_AUTHKEY" >&2
+    sleep 2
+    usage
+    exit 1
   fi
-  if [[ -n "$AUTHKEY_FETCHED" && "$AUTHKEY_FETCHED" != "null" && ${#AUTHKEY_FETCHED} -ge 10 ]]; then
+  if ! [[ "$SEEDINFER_NODE_TOKEN" =~ ^sipn_[A-Za-z0-9_-]{43}$ ]]; then
+    echo "BŁĄD: SEEDINFER_NODE_TOKEN ma zły format — auto-fetch pominięty." >&2
+    echo "Utwórz ważny token na https://seedinfer.com/provider/portal." >&2
+    sleep 2
+    usage
+    exit 1
+  fi
+  if seedinfer_fetch_authkey; then
     AUTHKEY="$AUTHKEY_FETCHED"
-    # mask dla logów
+    AUTHKEY_AUTO_FETCHED=1
+    # mask dla logów (nigdy nie drukuj tokena ani pełnego klucza)
     MASKED="$(echo "$AUTHKEY" | cut -c1-12)..."
-    echo "Authkey auto-fetched OK (${#AUTHKEY} chars, $MASKED) — tag:provider, ważny 24h"
+    echo "Authkey auto-fetched OK (${#AUTHKEY} chars, $MASKED) — tag:provider, jednorazowy, ważny 1h"
   else
-    echo "BŁĄD: --authkey nie podano i auto-fetch z $GATEWAY/api/v1/auth/request nie powiódł się" >&2
-    echo "Hint: wygeneruj ręcznie: curl -fsSL $GATEWAY/api/v1/auth/request | jq -r .authkey" >&2
+    seedinfer_report_authkey_error
+    echo "Hint: ręcznie (z tokenem): curl -fsSL -H \"Authorization: Bearer \$SEEDINFER_NODE_TOKEN\" $GATEWAY/api/v1/auth/request | jq -r .authkey" >&2
     echo "Lub podaj: curl -fsSL $GATEWAY/install.sh | bash -s -- --authkey YOUR_AUTHKEY" >&2
     echo "Czekam 2s i pokazuję pomoc..." >&2
     sleep 2
@@ -581,9 +772,17 @@ else
   fi
 
   # base args: zawsze przekazuj --hostname sanitized, --authkey, --login-server, --accept-routes, --advertise-tags
+  # Single-use keys: AUTHKEY may be used for at most ONE enrollment per install run.
+  # Same-identity `tailscale up` retries reuse it (fine after successful registration),
+  # but a SEPARATE enrollment (container -> host fallback) must fetch a fresh key first.
   _ts_base_args=(--login-server "$LOGIN_SERVER" --authkey "$AUTHKEY" --hostname "$HOSTNAME" --advertise-tags tag:provider --accept-routes)
+  _ts_refresh_base_args() {
+    _ts_base_args=(--login-server "$LOGIN_SERVER" --authkey "$AUTHKEY" --hostname "$HOSTNAME" --advertise-tags tag:provider --accept-routes)
+  }
 
   TAILSCALE_UP_OK=false
+  CONTAINER_ENROLLED=false
+  HOST_ENROLLED=false
   # --- Container mode (persistent) — nie rusza hostowego tailscaled ---
   if [[ "$TAILSCALE_USE_CONTAINER" == "1" ]]; then
     echo "INFO: TAILSCALE_USE_CONTAINER=1 — używam docker tailscale/tailscale (persistent, nie rusza hostowego tailscaled)" >&2
@@ -611,6 +810,10 @@ else
         -e TS_STATE_DIR=/tailscale \
         --health-cmd="tailscale status >/dev/null 2>&1 || exit 1" --health-interval=30s --health-timeout=5s --health-retries=3 \
         tailscale/tailscale:latest 2>&1 | tail -n 20; then
+        # TS_AUTHKEY auto-registers the container on start — the single-use key is
+        # consumed here even if the IP check below fails. Any later SEPARATE
+        # enrollment (host fallback) must fetch a fresh key first.
+        AUTHKEY_CONSUMED=1
         echo "INFO: tailscale-seedinfer uruchomiony (persistent) — czekam 3s na status..." >&2
         sleep 3
         $DOCKER logs tailscale-seedinfer 2>&1 | tail -n 30 || true
@@ -618,14 +821,18 @@ else
         _cont_ip=$($DOCKER exec tailscale-seedinfer tailscale ip -4 2>/dev/null | head -n1 || true)
         if [[ -n "$_cont_ip" && "$_cont_ip" =~ ^100\. ]]; then
           TAILSCALE_UP_OK=true
+          CONTAINER_ENROLLED=true
+          AUTHKEY_CONSUMED=1
           echo "tailscale (container) status OK: IP $_cont_ip"
         else
-          echo "WARN: tailscale container brak IP — próbuję exec z --reset na $LOGIN_SERVER / LAN fallback..." >&2
+          echo "WARN: tailscale container brak IP — próbuję exec z --reset na $LOGIN_SERVER / LAN fallback (ten sam klucz, ta sama tożsamość)..." >&2
           $DOCKER exec tailscale-seedinfer tailscale up --reset --login-server "$LOGIN_SERVER" --authkey "$AUTHKEY" --hostname "$HOSTNAME" --advertise-tags tag:provider --accept-routes 2>&1 || true
           sleep 2
           _cont_ip=$($DOCKER exec tailscale-seedinfer tailscale ip -4 2>/dev/null | head -n1 || true)
           if [[ -n "$_cont_ip" && "$_cont_ip" =~ ^100\. ]]; then
             TAILSCALE_UP_OK=true
+            CONTAINER_ENROLLED=true
+            AUTHKEY_CONSUMED=1
             echo "tailscale (container) retry status OK: IP $_cont_ip"
           else
             echo "WARN: retry też bez IP — sprawdzam czy LAN Headscale (192.168.1.15) wyratuje..." >&2
@@ -634,6 +841,8 @@ else
             _cont_ip=$($DOCKER exec tailscale-seedinfer tailscale ip -4 2>/dev/null | head -n1 || true)
             if [[ -n "$_cont_ip" && "$_cont_ip" =~ ^100\. ]]; then
               TAILSCALE_UP_OK=true
+              CONTAINER_ENROLLED=true
+              AUTHKEY_CONSUMED=1
               echo "tailscale (container) LAN fallback status OK: IP $_cont_ip"
             else
               echo "BŁĄD: kontener tailscale nie zarejestrował się w Headscale" >&2
@@ -661,6 +870,17 @@ else
   fi
 
   if [[ "$TAILSCALE_UP_OK" != "true" ]]; then
+    # FALLBACK host enrollment = separate identity from the container above.
+    # Auto-fetched keys are single-use: never reuse a consumed one here.
+    # An explicit --authkey is user-managed -> keep old reuse behavior.
+    if [[ "$AUTHKEY_AUTO_FETCHED" == "1" && ("$CONTAINER_ENROLLED" == "true" || "$AUTHKEY_CONSUMED" == "1") ]]; then
+      echo "INFO: klucz jednorazowy zużyty przez próbę kontenera — pobieram świeży dla enrollowania hosta..." >&2
+      if ! seedinfer_ensure_fresh_authkey; then
+        echo "BŁĄD: nie mogę pobrać świeżego klucza dla hosta — przerywam fallback." >&2
+        exit 1
+      fi
+      _ts_refresh_base_args
+    fi
     _can_sudo_nopass=false
     if sudo -n true 2>/dev/null; then
       _can_sudo_nopass=true
@@ -674,14 +894,18 @@ else
         echo "sudo -v OK — lease uzyskany"
       else
         echo "WARN: sudo -v nie powiódło się (brak TTY w pipe lub złe hasło) — próbuję tailscale up bez sudo (userspace) ..." >&2
-        # userspace fallback: try without --reset first, then with --reset
+        # userspace fallback: try without --reset first, then with --reset (same identity -> same key OK)
         if tailscale up "${_ts_base_args[@]}" 2>&1; then
           TAILSCALE_UP_OK=true
+          HOST_ENROLLED=true
+          AUTHKEY_CONSUMED=1
           echo "tailscale up bez sudo OK (userspace/perm)"
         else
           echo "INFO: userspace bez --reset nie powiódł się — próbuję z --reset --force-reauth ..." >&2
           if tailscale up --reset --force-reauth "${_ts_base_args[@]}" 2>&1; then
             TAILSCALE_UP_OK=true
+            HOST_ENROLLED=true
+            AUTHKEY_CONSUMED=1
             echo "tailscale up bez sudo z --reset --force-reauth OK"
           else
             echo "BŁĄD: sudo wymagane ale niedostępne non-interactively. Rozwiązania:" >&2
@@ -717,6 +941,8 @@ else
         set -e
         if [[ $_ts_exit -eq 0 ]]; then
           TAILSCALE_UP_OK=true
+          HOST_ENROLLED=true
+          AUTHKEY_CONSUMED=1
           rm -f "$_ts_out"
           break
         else
@@ -750,6 +976,8 @@ else
               echo "tailscale up fallback attempt: sudo tailscale up --reset --force-reauth --login-server $LOGIN_SERVER --authkey **** --hostname $HOSTNAME --advertise-tags=tag:provider --accept-routes"
               if sudo tailscale up --reset --force-reauth "${_ts_base_args[@]}" 2>&1; then
                 TAILSCALE_UP_OK=true
+                HOST_ENROLLED=true
+                AUTHKEY_CONSUMED=1
                 rm -f "$_ts_out"
                 break
               else
@@ -762,7 +990,7 @@ else
         fi
       done
       if [[ "$TAILSCALE_UP_OK" != "true" ]]; then
-        echo "BŁĄD: tailscale up nie powiodło się po 2 próbach — sprawdź klucz (tag:provider, ważny 24h) i LOGIN_SERVER=$LOGIN_SERVER oraz hostname=$HOSTNAME (DNS valid)" >&2
+        echo "BŁĄD: tailscale up nie powiodło się po 2 próbach — sprawdź klucz (tag:provider, jednorazowy, ważny 1h) i LOGIN_SERVER=$LOGIN_SERVER oraz hostname=$HOSTNAME (DNS valid)" >&2
         echo "Sprawdź: tailscale status --json | jq .CurrentTailnet ; tailscale status ; journalctl -u tailscaled --no-pager -n 50 ; headscale health: curl -fsS $LOGIN_SERVER/health" >&2
         echo "Hint: jeśli host jest w tailscale.com, użyj TAILSCALE_USE_CONTAINER=1 aby nie ruszać hosta, lub --force-host-tailscale aby wymusić przełączenie z --reset --force-reauth (rozłączy tailscale.com)." >&2
         exit 1
@@ -884,13 +1112,58 @@ if [[ -n "$COMPOSE_FILE" ]]; then
   if command -v tailscale >/dev/null 2>&1; then
     _detected_ts_ip=$(tailscale ip -4 2>/dev/null | head -n1 || true)
   fi
+  # Tell compose where the identity file lives (default /opt/seedinfer-provider/seedinfer.env).
+  SEEDINFER_ENV_FILE="$target_dir/seedinfer.env"
+  if [[ ! -f "$SEEDINFER_ENV_FILE" && -f "/opt/seedinfer-provider/seedinfer.env" ]]; then
+    SEEDINFER_ENV_FILE="/opt/seedinfer-provider/seedinfer.env"
+  fi
+  # Validate every value before writing: env files are consumed unquoted by
+  # `docker --env-file` (quotes would be literal), so no value may contain
+  # newlines or shell-significant content. Invalid values -> clear error, not written.
+  if [[ -n "$AUTHKEY" ]] && ! [[ "$AUTHKEY" =~ ^[A-Za-z0-9._:-]+$ ]]; then
+    echo "BŁĄD: TAILSCALE_AUTHKEY ma zły format (dozwolone: [A-Za-z0-9._:-], bez nowych linii) — nie zapisuję go." >&2
+    AUTHKEY=""
+  fi
+  if ! [[ "$GATEWAY" =~ ^https?://[^[:space:]\'\"]+$ ]]; then
+    echo "BŁĄD: SEEDINFER_GATEWAY_URL '$GATEWAY' ma zły format — używam https://seedinfer.com." >&2
+    GATEWAY="https://seedinfer.com"
+  fi
+  if ! [[ "$LOGIN_SERVER" =~ ^https?://[^[:space:]\'\"]+$ ]]; then
+    echo "BŁĄD: TAILSCALE_LOGIN_SERVER '$LOGIN_SERVER' ma zły format — używam https://tailnet.seedinfer.com." >&2
+    LOGIN_SERVER="https://tailnet.seedinfer.com"
+  fi
+  if ! [[ "$HOSTNAME" =~ ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$ ]]; then
+    echo "BŁĄD: TAILSCALE_HOSTNAME '$HOSTNAME' nievalid DNS — używam provider-5090." >&2
+    HOSTNAME="provider-5090"
+  fi
+  # PROVIDER_ID / node token were validated at generation time above, but
+  # env overrides could still inject junk — re-check before writing.
+  if [[ -n "${PROVIDER_ID:-}" ]] && ! [[ "$PROVIDER_ID" =~ ^[A-Za-z0-9._-]{1,64}$ ]]; then
+    echo "BŁĄD: PROVIDER_ID '$PROVIDER_ID' ma zły format — nie zapisuję go." >&2
+    PROVIDER_ID=""
+  fi
+  if [[ -n "${SEEDINFER_NODE_TOKEN:-}" ]] && ! [[ "$SEEDINFER_NODE_TOKEN" =~ ^sipn_[A-Za-z0-9_-]{43}$ ]]; then
+    echo "BŁĄD: SEEDINFER_NODE_TOKEN ma zły format — nie zapisuję go." >&2
+    SEEDINFER_NODE_TOKEN=""
+  fi
+  for _env_check in MODEL VLLM_MODEL; do
+    if [[ "${!_env_check:-}" == *$'\n'* || "${!_env_check:-}" == *$'\r'* || "${!_env_check:-}" == *'"'* || "${!_env_check:-}" == *"'"* ]]; then
+      echo "BŁĄD: $_env_check zawiera nową linię lub cudzysłów — nie zapisuję go." >&2
+      printf -v "$_env_check" '%s' ""
+    fi
+  done
+  unset _env_check
   # usuń stare wpisy i dopisz (NVFP4 defaults)
-  grep -v -E "^(TAILSCALE_AUTHKEY|MODEL|VLLM_MODEL|SEEDINFER_GATEWAY_URL|TAILSCALE_LOGIN_SERVER|TAILSCALE_HOSTNAME|TAILSCALE_IP|HOST_AGENT_PORT|HF_TOKEN|PYTORCH_CUDA_ALLOC_CONF|VLLM_GPU_MEMORY_UTILIZATION|HF_CACHE_HOST|SEEDINFER_PUBLIC_KEY|SEEDINFER_PRIVATE_KEY|SEEDINFER_HW_FINGERPRINT)=" "$ENV_FILE" > "$ENV_FILE.tmp" 2>/dev/null || cp "$ENV_FILE" "$ENV_FILE.tmp"
+  grep -v -E "^(TAILSCALE_AUTHKEY|MODEL|VLLM_MODEL|SEEDINFER_GATEWAY_URL|TAILSCALE_LOGIN_SERVER|TAILSCALE_HOSTNAME|TAILSCALE_IP|HOST_AGENT_PORT|HF_TOKEN|PYTORCH_CUDA_ALLOC_CONF|VLLM_GPU_MEMORY_UTILIZATION|HF_CACHE_HOST|SEEDINFER_PUBLIC_KEY|SEEDINFER_PRIVATE_KEY|SEEDINFER_HW_FINGERPRINT|SEEDINFER_NODE_TOKEN|PROVIDER_ID|SEEDINFER_ENV_FILE|SEEDINFER_PAYOUT_WALLET)=" "$ENV_FILE" > "$ENV_FILE.tmp" 2>/dev/null || cp "$ENV_FILE" "$ENV_FILE.tmp"
+  # Drop the legacy payout-wallet key entirely (now an account setting in the portal).
   cat >> "$ENV_FILE.tmp" <<EOF
 TAILSCALE_AUTHKEY=$AUTHKEY
 MODEL=$MODEL
 VLLM_MODEL=$VLLM_MODEL
 SEEDINFER_GATEWAY_URL=$GATEWAY
+SEEDINFER_NODE_TOKEN=${SEEDINFER_NODE_TOKEN:-}
+PROVIDER_ID=${PROVIDER_ID:-}
+SEEDINFER_ENV_FILE=$SEEDINFER_ENV_FILE
 TAILSCALE_LOGIN_SERVER=$LOGIN_SERVER
 TAILSCALE_HOSTNAME=$HOSTNAME
 TAILSCALE_IP=${_detected_ts_ip}
@@ -908,7 +1181,8 @@ EOF
   fi
   mv "$ENV_FILE.tmp" "$ENV_FILE"
   echo "-- .env zapisany: $ENV_FILE --"
-  cat "$ENV_FILE"
+  # Never print the full node token; mask to the 12-char prefix.
+  sed -E 's/^(TAILSCALE_AUTHKEY=.{0,8}).*/\1…(masked)/; s/^(SEEDINFER_NODE_TOKEN=.?.?.?.?.?.?.?.?.?.?.?).*/\1…(masked)/' "$ENV_FILE"
   echo "-- NVFP4 plug-and-play: VLLM_MODEL=$VLLM_MODEL — vLLM pobierze wagi automatycznie przy pierwszym starcie (~30GB do \$(dirname \$(dirname ${ENV_FILE}))/models/cache) --"
 fi
 
@@ -1154,12 +1428,9 @@ echo "Gateway heartbeat: co 30s do $GATEWAY/api/v1/providers/heartbeat"
 echo ""
 echo "Weryfikacja gateway (po 60s — 2 heartbeaty):"
 echo "  curl -fsS $GATEWAY/api/v1/providers | jq '.data[] | {id, status, verification}'"
-# Provider ID includes tailscale IP — for container use docker exec ip
-if [[ "$TAILSCALE_USE_CONTAINER" == "1" ]]; then
-  echo "  curl -fsS $GATEWAY/api/v1/providers/verify -H 'Content-Type: application/json' -d '{\"provider_id\":\"$HOSTNAME-$(docker exec tailscale-seedinfer tailscale ip -4 2>/dev/null | head -n1 || tailscale ip -4 2>/dev/null | head -n1)\"}' | jq  # manual verify jeśli pending (kontener 100.64.x.x)"
-else
-  echo "  curl -fsS $GATEWAY/api/v1/providers/verify -H 'Content-Type: application/json' -d '{\"provider_id\":\"$HOSTNAME-$(tailscale ip -4 2>/dev/null | head -n1)\"}' | jq  # manual verify jeśli pending"
-fi
+# Manual verify uses the persistent PROVIDER_ID from seedinfer.env (the id the agent heartbeats with).
+# NOTE: $SEEDINFER_NODE_TOKEN below is a LITERAL variable reference — the token is never expanded here.
+echo "  curl -fsS $GATEWAY/api/v1/providers/verify -H \"Authorization: Bearer \$SEEDINFER_NODE_TOKEN\" -H 'Content-Type: application/json' -d '{\"provider_id\":\"$PROVIDER_ID\"}' | jq  # manual verify jeśli pending (provider_id = PROVIDER_ID z seedinfer.env)"
 echo "  # Pi docs sync:"
 echo "  # cat /opt/seedinfer/public/provider/README.md  (Pi: orangepi@100.107.9.52:/opt/seedinfer)"
 # Best-effort gateway reachability check (non-blocking)
@@ -1175,11 +1446,13 @@ fi
 
 echo ""
 echo "== SeedInfer Provider — final URLs =="
-echo "Dashboard: https://seedinfer.com/providers"
-echo "Agent health: curl -fsS http://127.0.0.1:${AGENT_PORT}/health | jq   # host ${AGENT_PORT} -> container 3001"
-echo "VLLM:      curl -fsS http://127.0.0.1:${VLLM_PORT}/v1/models | jq  # host ${VLLM_PORT} -> container 8000"
-echo "Chat:      curl http://127.0.0.1:${AGENT_PORT}/v1/chat/completions -H 'Content-Type: application/json' -d '{\"model\":\"$MODEL\",\"messages\":[{\"role\":\"user\",\"content\":\"Hello\"}]}'"
-echo "One-liner: curl -fsSL https://seedinfer.com/install.sh | bash"
-echo "Prebuild:  $PREBUILD_IMAGE (ghcr) || $PREBUILD_URL (Pi tar) || local build"
-# Ensure VLLM_PORT/AGENT_PORT robust defaults were applied (for public test)
-echo "Ports: VLLM_PORT=${VLLM_PORT} AGENT_PORT=${AGENT_PORT}"
+echo "Dashboard:       https://seedinfer.com/providers"
+echo "Provider Portal: https://seedinfer.com/provider/portal (Configure Base Chain Wallet for Payouts)"
+echo "Agent health:    curl -fsS http://127.0.0.1:${AGENT_PORT}/health | jq   # host ${AGENT_PORT} -> container 3001"
+echo "VLLM:            curl -fsS http://127.0.0.1:${VLLM_PORT}/v1/models | jq  # host ${VLLM_PORT} -> container 8000"
+echo "Chat:            curl http://127.0.0.1:${AGENT_PORT}/v1/chat/completions -H 'Content-Type: application/json' -d '{\"model\":\"$MODEL\",\"messages\":[{\"role\":\"user\",\"content\":\"Hello\"}]}'"
+echo "One-liner:       curl -fsSL https://seedinfer.com/install.sh | bash"
+echo "With token:      curl -fsSL https://seedinfer.com/install.sh | SEEDINFER_NODE_TOKEN=sipn_… bash"
+echo "Prebuild:        $PREBUILD_IMAGE (ghcr) || $PREBUILD_URL (Pi tar) || local build"
+echo "Ports:           VLLM_PORT=${VLLM_PORT} AGENT_PORT=${AGENT_PORT}"
+echo "Payout wallet:   set your USDC (Base) payout wallet at https://seedinfer.com/provider/portal"

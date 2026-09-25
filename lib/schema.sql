@@ -22,7 +22,9 @@ CREATE TABLE IF NOT EXISTS users (
   display_name TEXT,
   created_at TEXT,
   updated_at TEXT,
-  last_login_at TEXT
+  last_login_at TEXT,
+  payout_wallet TEXT,
+  payout_wallet_updated_at TEXT
 );
 
 -- sessions
@@ -96,6 +98,44 @@ CREATE INDEX IF NOT EXISTS idx_oauth_accounts_provider ON oauth_accounts(provide
 CREATE INDEX IF NOT EXISTS idx_oauth_accounts_email ON oauth_accounts(email);
 
 -- users delta: email_verified + avatar_url (nullable) — ALTER handled in lib/db.ts initDb try/catch
+
+-- users payout wallet (account-level USDC destination, sudo-mode gated)
+-- ALTER handled in lib/db.ts ADDED_COLUMNS (payout_wallet, payout_wallet_updated_at)
+
+-- provider node tokens (sha256(token) in token_hash; plaintext returned once at creation)
+CREATE TABLE IF NOT EXISTS provider_tokens (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  token_hash TEXT NOT NULL UNIQUE,
+  prefix TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  last_used_at TEXT,
+  revoked_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_provider_tokens_user ON provider_tokens(user_id);
+
+-- provider node bindings (node_id bound to owning user; survives token revocation)
+CREATE TABLE IF NOT EXISTS provider_nodes (
+  node_id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token_id TEXT REFERENCES provider_tokens(id) ON DELETE SET NULL,
+  bound_at TEXT NOT NULL,
+  last_seen_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_provider_nodes_user ON provider_nodes(user_id);
+
+-- account audit trail (payout_wallet_changed | node_token_created | node_token_revoked | node_bound)
+CREATE TABLE IF NOT EXISTS account_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  type TEXT NOT NULL,
+  detail TEXT,
+  ip TEXT,
+  user_agent TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_account_events_user ON account_events(user_id, created_at);
 
 -- indexes
 CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);

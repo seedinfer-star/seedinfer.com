@@ -7,6 +7,24 @@ set -euo pipefail
 MODEL="${MODEL:-google/gemma-4-26b-a4b-nvfp4}"
 VLLM_MODEL="${VLLM_MODEL:-/models/Gemma-4-26B-A4B-NVFP4}"
 
+# Identity file (written once by scripts/install.sh, chmod 600):
+# SEEDINFER_NODE_TOKEN + PROVIDER_ID. Compose passes them via env_file/environment,
+# but source the bind-mounted copy as fallback so the prebuilt image also works
+# when those are missing (never override an already-set env var).
+for _env_candidate in "/run/seedinfer/seedinfer.env" "${SEEDINFER_ENV_FILE:-}" "/opt/seedinfer-provider/seedinfer.env"; do
+  if [[ -n "$_env_candidate" && -f "$_env_candidate" ]]; then
+    while IFS='=' read -r _k _v; do
+      case "$_k" in
+        SEEDINFER_NODE_TOKEN|PROVIDER_ID)
+          if [[ -z "${!_k:-}" && -n "$_v" ]]; then export "$_k=$_v"; fi ;;
+      esac
+    done < <(grep -E '^(SEEDINFER_NODE_TOKEN|PROVIDER_ID)=' "$_env_candidate" 2>/dev/null || true)
+    echo "[entrypoint] identity sourced from $_env_candidate (PROVIDER_ID=${PROVIDER_ID:-unset}, token=$([ -n "${SEEDINFER_NODE_TOKEN:-}" ] && echo "set" || echo "missing"))"
+    break
+  fi
+done
+unset _env_candidate _k _v
+
 # Auto-detect local snapshot if /models/Gemma-4-26B-A4B-NVFP4 is not present
 if [[ ! -d "$VLLM_MODEL" || ! -f "$VLLM_MODEL/config.json" ]]; then
   _SNAP_FOUND=false

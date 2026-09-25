@@ -9,10 +9,19 @@ Kontener **Linux (x86_64)** dla dostawcy GPU (node). Serwuje **OpenAI-compatible
 ## Szybki start — jedna komenda (polecane)
 
 ```bash
-curl -fsSL https://seedinfer.com/install.sh | bash
+curl -fsSL https://seedinfer.com/install.sh | SEEDINFER_NODE_TOKEN=sipn_... bash
+# albo: curl -fsSL https://seedinfer.com/install.sh | bash -s -- --token sipn_...
 ```
 
-Bez parametrów — `install.sh` sam pobierze authkey z `https://seedinfer.com/api/v1/auth/request` (tag:provider, 24h, via Headscale) i spróbuje prebuild:
+Token utwórz na **https://seedinfer.com/provider/portal** (format `sipn_` + 43 znaki base64url).
+Bez ważnego tokena węzeł **nie zostanie przyjęty** (heartbeat 401/403) — instalacja
+kontynuuje się z ostrzeżeniem, token można dopisać później do `seedinfer.env` i zrestartować agenta.
+Payout wallet (USDC na Base) ustawiasz **na koncie w portalu** — zmienna `SEEDINFER_PAYOUT_WALLET`
+została usunięta (serwer ignoruje `payout_wallet` z heartbeatów).
+
+Bez parametrów — `install.sh` pobierze authkey z `https://seedinfer.com/api/v1/auth/request`
+(jednorazowy, tag:provider, ważny 1h, via Headscale) — wymaga `SEEDINFER_NODE_TOKEN`
+(`Authorization: Bearer`, token z https://seedinfer.com/provider/portal) — i spróbuje prebuild:
 `docker pull ghcr.io/seedinfer/provider:cuda13.3-nvfp4` (primary, ~8-15GB gzip, zbudowany na hoście 5090) → `curl https://seedinfer.com/provider-image.tar.gz | docker load` (Pi fallback, Orange Pi hostuje tar z `/opt/seedinfer/public`) → `docker compose build` (fallback lokalny, ~28GB). Pi ARM nie buduje CUDA image — tylko hostuje.
 
 Warianty (kompatybilność wsteczna — --authkey opcjonalny):
@@ -25,7 +34,7 @@ curl -fsSL https://seedinfer.com/install.sh | bash -s -- --authkey YOUR_AUTHKEY 
 ```
 
 Skrypt:
-1. Auto-fetch `authkey` jeśli brak `--authkey` (`curl https://seedinfer.com/api/v1/auth/request | jq -r .authkey` fallback grep/python), sprawdza `nvidia-smi` (CUDA 13.3+, driver 580+ Blackwell), instaluje Docker + `nvidia-container-toolkit` + `tailscale` jeśli brak
+ 1. Auto-fetch `authkey` jeśli brak `--authkey` (wymaga `SEEDINFER_NODE_TOKEN`: `curl -H "Authorization: Bearer $SEEDINFER_NODE_TOKEN" https://seedinfer.com/api/v1/auth/request | jq -r .authkey`, fallback python3/grep; klucz jednorazowy, 1h; 401 → token z https://seedinfer.com/provider/portal, 429 → odczekaj Retry-After), sprawdza `nvidia-smi` (CUDA 13.3+, driver 580+ Blackwell), instaluje Docker + `nvidia-container-toolkit` + `tailscale` jeśli brak
 2. **Tailscale (domyślnie kontener, bezpieczne):** wykrywa `tailscale status --json` (`CurrentTailnet.BaseDomain` / `Self.ControlURL` / `MagicDNSSuffix`, `BackendState Running`). Jeśli host już w `tailscale.com` (`100.94.x.x` `tail*.ts.net`) → **domyślnie kontener** `tailscale-seedinfer` (`docker run -d --name tailscale-seedinfer --restart unless-stopped --cap-add=NET_ADMIN --cap-add=NET_RAW --device /dev/net/tun -v tailscale-seedinfer-state:/tailscale -e TS_AUTHKEY -e TS_HOSTNAME -e TS_LOGIN_SERVER -e TS_EXTRA_ARGS="--advertise-tags=tag:provider --accept-routes" tailscale/tailscale:latest` z healthcheck + `docker volume create` + `docker network create seedinfer-tailnet`). Współistnienie `100.94.x.x` (host, tailscale.com) + `100.64.x.x` (kontener, Headscale) — nie rozłącza domowego tailnetu. Provider agent używa kontenera (DNS `100.64.x.x`). Opt-in host: `--force-host-tailscale` (przełącza hosta `--reset`, rozłączy tailscale.com) lub `TAILSCALE_USE_CONTAINER=0` (advanced).
 3. Klonuje `provider/` do `/opt/seedinfer-provider`, tworzy `.env`, próbuje `docker pull ghcr.io/seedinfer/provider:cuda13.3-nvfp4` / Pi tar / `docker compose up -d` (bez --build gdy prebuild OK). Sidecar compose: `provider/docker-compose.yml` zawiera `tailscale` service (`profiles: [tailscale]`, `docker compose --profile tailscale up -d`)
 
@@ -119,6 +128,9 @@ docker run --gpus all --runtime nvidia -p 47900:8000 -p 47901:3001 \
 | ENV | Default | Opis |
 |-----|---------|------|
 | `SEEDINFER_GATEWAY_URL` | `https://seedinfer.com` | Gateway do heartbeat |
+| `SEEDINFER_NODE_TOKEN` | — | **Wymagany.** token noda (`sipn_…`) z portalu; fallback `PROVIDER_API_KEY` / `SEEDINFER_API_KEY` |
+| `PROVIDER_ID` | auto `<host>-<6 hex>` | Stałe id noda (`^[A-Za-z0-9._-]{1,64}$`), generowane raz przez install.sh, trzymane w `seedinfer.env` |
+| `SEEDINFER_ENV_FILE` | `/opt/seedinfer-provider/seedinfer.env` | Plik tożsamości (600) montowany do kontenera; entrypoint doczytuje token+id gdy brak w env |
 | `PROVIDER_API_KEY` | — | Bearer dla heartbeat (opcjonalnie) |
 | `TAILSCALE_AUTHKEY` | — | preauth key `tag:provider` (Headscale) |
 | `TAILSCALE_LOGIN_SERVER` | `https://tailnet.seedinfer.com` | Headscale control plane |
@@ -140,7 +152,7 @@ docker run --gpus all --runtime nvidia -p 47900:8000 -p 47901:3001 \
 | `VLLM_ALLOW_LONG_MAX_MODEL_LEN` | `1` | Host 1:1 |
 | `HF_HUB_OFFLINE` | `0` | Provider online 0 (`/root/.cache/huggingface`), host offline 1 (`/tmp/hf_home`) |
 | `HF_TOKEN` | — | HF token (NVFP4 public → nie wymagane; cache w `/root/.cache/huggingface`) |
-| `VLLM_PORT` / `AGENT_PORT` | `47900` / `47901` | porty host -> container 8000/3001, can be overridden via env (zakres 479xx wolny) |
+| `VLLM_PORT` / `AGENT_PORT` | `47900` / `47901` | porty HOSTA -> container 8000/3001 (vLLM w kontenerze zawsze słucha 8000; host-side override via HOST_VLLM_PORT/HOST_AGENT_PORT), can be overridden via env (zakres 479xx wolny) |
 | `VLLM_MAX_MODEL_LEN` | `1048576` | 1M context (2M KV) |
 | `VLLM_GPU_MEMORY_UTILIZATION` | `0.93` | Host 1:1 dla 32GB (nie 0.90) — 1M KV + marlin GEMM |
 
@@ -157,9 +169,12 @@ docker run --gpus all --runtime nvidia -p 47900:8000 -p 47901:3001 \
 Heartbeat:
 ```
 POST https://seedinfer.com/api/v1/providers/heartbeat (fallback /api/providers/heartbeat)
-Headers: Authorization: Bearer $PROVIDER_API_KEY (jeśli ustawiony)
-Body: Provider (lib/types.ts) + {gpu, host, uptime_s, vllm_model, region, vllm_health}
-Interval: 30s, timeout 10s, log warn on fail
+Headers: Authorization: Bearer $SEEDINFER_NODE_TOKEN (fallback $PROVIDER_API_KEY / $SEEDINFER_API_KEY)
+Body: Provider (lib/types.ts) + {gpu, host, uptime_s, vllm_model, region, vllm_health} — bez payout_wallet (serwer ignoruje)
+Interval: 30s, timeout 10s
+Błędy: 401/403 -> ERROR z instrukcją (max 1/10 min), bez próby alt URL;
+  node_owned_by_another_account -> ustaw inne PROVIDER_ID;
+  429 -> honoruje Retry-After (cap 300 s); alt URL tylko dla błędów sieci, 404 i 5xx
 ```
 
 ---
@@ -210,8 +225,8 @@ Interval: 30s, timeout 10s, log warn on fail
 | `nvidia-smi` brak | zainstaluj driver 580+ (CUDA 13.3); `sudo apt update && sudo apt install nvidia-driver-580 && sudo reboot` lub `ubuntu-drivers autoinstall` + reboot. Fallback 570+ dla 13.2, 550+ legacy |
 | `docker: no nvidia runtime` | `sudo apt install nvidia-container-toolkit && sudo nvidia-ctk runtime configure --runtime=docker && sudo systemctl restart docker` |
 | `vLLM down` w `/health` | `docker logs seedinfer-provider --tail 100`; sprawdź `HF_TOKEN` dla gated modeli; `VLLM_MODEL` musi istnieć na HF |
-| `tailscale up: invalid authkey` | klucz wygasł — na Pi: `./scripts/headscale-setup.sh --create-keys` + nowy `--authkey` |
-| heartbeat 401/404 | gateway nie ma `/api/v1/providers/heartbeat` w Phase 0 — agent fallback na `/api/providers/heartbeat` i loguje warn (nie krytyczne) |
+| `tailscale up: invalid authkey` | klucz jednorazowy/wygasł (1h) — pobierz świeży: `curl -H "Authorization: Bearer $SEEDINFER_NODE_TOKEN" https://seedinfer.com/api/v1/auth/request` + nowy `--authkey` |
+| heartbeat 401/403 | brak/zły token albo node zajęty przez inne konto — utwórz token w portalu, ustaw `SEEDINFER_NODE_TOKEN` w `seedinfer.env`, zrestartuj agenta (`node_owned_by_another_account` → zmień `PROVIDER_ID`) |
 | OOM CUDA | zmniejsz `VLLM_GPU_MEMORY_UTILIZATION=0.80` i `VLLM_MAX_MODEL_LEN=32768` tymczasowo |
 | Host już w tailscale.com (100.94.x.x) — nie chcesz rozłączać domowego tailnetu | **Domyślnie kontener (bezpieczne):** `install.sh` auto-wykrywa `tailscale status --json` (`CurrentTailnet.BaseDomain`, `Self.ControlURL`, `MagicDNSSuffix` != seedinfer, `BackendState Running`) i uruchamia `tailscale-seedinfer` jako `docker run -d --name tailscale-seedinfer --restart unless-stopped --cap-add=NET_ADMIN --cap-add=NET_RAW --device /dev/net/tun -v tailscale-seedinfer-state:/tailscale -e TS_AUTHKEY -e TS_HOSTNAME -e TS_LOGIN_SERVER -e TS_EXTRA_ARGS="--advertise-tags=tag:provider --accept-routes" tailscale/tailscale:latest` z healthcheck. Współistnienie: host `100.94.x.x` (`tail*.ts.net`, tailscale.com) + kontener `100.64.x.x` (Headscale) — nie rozłącza. Provider agent używa kontenera (DNS `100.64.x.x`, `gateway.seedinfer.ts.net`). Weryfikacja: `docker exec tailscale-seedinfer tailscale status`; `tailscale status` (host — nienaruszony). Alternatywa: `docker compose --profile tailscale up -d` (sidecar `tailscale` w `provider/docker-compose.yml`). Opt-in host: `--force-host-tailscale` (przełącza hosta z `--reset`, rozłączy tailscale.com) lub `TAILSCALE_USE_CONTAINER=0` (advanced). |
 | `tailscale-seedinfer` nie startuje | `docker logs tailscale-seedinfer`; `docker volume create tailscale-seedinfer-state`; `docker network create seedinfer-tailnet`; `docker rm -f tailscale-seedinfer && docker run -d ...` jak wyżej; sprawdź `TS_AUTHKEY` i `TS_LOGIN_SERVER=https://tailnet.seedinfer.com`; healthcheck `tailscale status` w kontenerze |
@@ -226,14 +241,14 @@ Logi: `docker compose -f provider/docker-compose.yml logs -f` · `docker exec ta
 ```bash
 # 1) Provider — jedna komenda (polecane, auto-authkey + prebuild)
 curl -fsSL https://seedinfer.com/install.sh | bash
-# install.sh sam pobierze authkey z /api/v1/auth/request (jeśli brak --authkey) i prebuild:
+# install.sh sam pobierze authkey z /api/v1/auth/request (Bearer SEEDINFER_NODE_TOKEN, jednorazowy 1h; jeśli brak --authkey) i prebuild:
 #   docker pull ghcr.io/seedinfer/provider:cuda13.3-nvfp4 || curl https://seedinfer.com/provider-image.tar.gz | docker load || docker compose build
 # Porównaj: host 5090 buduje image (28GB) -> scripts/publish-provider-image.sh --push --rsync-pi -> Pi hostuje tar
 # Opcjonalnie custom (kompatybilność):
 # curl -fsSL https://seedinfer.com/install.sh | bash -s -- --authkey YOUR_AUTHKEY --vllm-model nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4 --hostname provider-5090 --gateway https://seedinfer.com
 
 # Co robi install.sh:
-#  - auto-fetch authkey jeśli brak --authkey (curl /api/v1/auth/request + jq/grep/python fallback)
+#  - auto-fetch authkey jeśli brak --authkey (curl -H "Authorization: Bearer $SEEDINFER_NODE_TOKEN" /api/v1/auth/request + jq/python3/grep fallback; jednorazowy, 1h)
 #  - sprawdza nvidia-smi (>=32GB VRAM, CUDA 13.3+ driver 580+, fallback 12.4) + HF model exists
 #  - instaluje Docker + nvidia-container-toolkit + tailscale jeśli brak
 #  - tailscale (domyślnie kontener, nie rusza hosta): wykrywa tailscale.com (100.94.x.x) via tailscale status --json (CurrentTailnet.BaseDomain/Self.ControlURL/MagicDNSSuffix + BackendState Running). Jeśli host już w tailscale.com -> kontener tailscale-seedinfer (Headscale 100.64.x.x) z docker run -d --name tailscale-seedinfer --restart unless-stopped --cap-add=NET_ADMIN --cap-add=NET_RAW --device /dev/net/tun -v tailscale-seedinfer-state:/tailscale -e TS_AUTHKEY -e TS_HOSTNAME -e TS_LOGIN_SERVER -e TS_EXTRA_ARGS="--advertise-tags=tag:provider --accept-routes" tailscale/tailscale:latest (healthcheck, volume, network seedinfer-tailnet). Współistnienie 100.94.x.x + 100.64.x.x, nie rozłącza. Provider agent używa kontenera (DNS 100.64.x.x). Jeśli brak istniejącego tailnetu -> host tailscale up --login-server https://tailnet.seedinfer.com --authkey XXX --advertise-tags tag:provider. Opt-in host: --force-host-tailscale (--reset, rozłączy tailscale.com).
@@ -255,8 +270,9 @@ curl -fsS http://127.0.0.1:3001/v1/models | jq
 curl -fsS http://127.0.0.1:47901/v1/chat/template | jq .chat_template
 
 # 3) Heartbeat -> gateway (co 30s, non-blocking)
-# agent/main.py build_provider_payload() + vllm_health + tailscale_ip/agent_url
-# POST https://seedinfer.com/api/v1/providers/heartbeat
+# agent/main.py build_provider_payload() + vllm_health + tailscale_ip
+# (server ignoruje agent_url z requestu; provider_id = PROVIDER_ID)
+# POST https://seedinfer.com/api/v1/providers/heartbeat -H "Authorization: Bearer $SEEDINFER_NODE_TOKEN"
 # Gateway: lib/providers-store.ts upsert -> status pending, last_heartbeat, verification:{status:pending, checks:[], ...}
 # UI: provider-fleet.tsx pokaże kartę z badge "pending" + opacity 60 (nie oficjalny węzeł)
 
@@ -271,8 +287,9 @@ curl -fsS http://127.0.0.1:47901/v1/chat/template | jq .chat_template
 # 5) Fleet pokazuje Verified (zielony)
 # GET https://seedinfer.com/api/v1/providers -> dane + verification
 # provider-fleet.tsx badge "verified" zielony, karta opacity 100 (oficjalny węzeł)
-# Ręczna weryfikacja:
-# curl -X POST https://seedinfer.com/api/v1/providers/verify -H "Content-Type: application/json" -d '{"provider_id":"provider-5090-xxx"}' | jq
+# Ręczna weryfikacja (provider_id = PROVIDER_ID z seedinfer.env; verify wymaga
+# Authorization: Bearer <node token>, request agent_url jest ignorowany):
+# curl -X POST https://seedinfer.com/api/v1/providers/verify -H "Authorization: Bearer $SEEDINFER_NODE_TOKEN" -H "Content-Type: application/json" -d '{"provider_id":"<PROVIDER_ID>"}' | jq
 # lub ./scripts/verify-provider.sh --provider-id xxx --gateway https://seedinfer.com
 ```
 
@@ -322,7 +339,7 @@ provider/
     requirements.txt     # fastapi, uvicorn, httpx, pynvml, psutil
     entrypoint.sh        # start vLLM (NVFP4 args: --max-model-len 1048576 --enable-prefix-caching --enable-chunked-prefill ...) + agent, HF cache wait + progress
   scripts/
-    install.sh           # one-liner polecane `curl | bash` (auto-authkey + prebuild ghcr -> Pi tar -> build), VRAM + HF check
+    install.sh           # one-liner polecane `curl | bash` (auto-authkey Bearer + prebuild ghcr -> Pi tar -> build), VRAM + HF check
   README.md              # ten plik
 scripts/
   publish-provider-image.sh # host 5090: build + save + push ghcr + rsync Pi + opcjonalnie Pi registry

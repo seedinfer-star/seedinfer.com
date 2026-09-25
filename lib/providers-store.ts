@@ -32,14 +32,14 @@ export type StoredProvider = Provider & {
   last_heartbeat_ip?: string | null
   tailscale_ip?: string | null
   agent_url?: string | null
+  /** Telemetry only: public_key is NOT an identity or credential (node tokens are). */
   public_key?: string | null
   hw_fingerprint?: string | null
-  /**
-   * Provider's own Base payout wallet (USDC destination). Self-reported via heartbeat or set in the
-   * Provider Portal; shown publicly so the provider can verify it. Never a private key.
-   */
-  payout_wallet?: string | null
-  payout_wallet_updated_at?: string | null
+  /** Server-set owner binding (from the node token). Never accepted from the heartbeat payload. */
+  owner_user_id?: string | null
+  token_id?: string | null
+  /** True after boot hydration until a fresh authenticated heartbeat arrives; excluded from routing. */
+  awaiting_heartbeat?: boolean
   hardware_mismatch?: boolean
   heartbeat_count: number
   raw?: Record<string, any>
@@ -80,47 +80,6 @@ function getStore(): GlobalStore {
 }
 
 // Verification helpers
-
-const EVM_ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/;
-
-/** Normalize a payout wallet: trimmed EVM address, or null when missing/invalid. */
-export function normalizePayoutWallet(v: unknown): string | null {
-  if (typeof v !== "string") return null;
-  const t = v.trim();
-  return EVM_ADDRESS_RE.test(t) ? t : null;
-}
-
-/**
- * Authoritative payout-wallet write (Provider Portal): only when the caller's public key matches
- * the key the node heartbeats with. Prevents one provider from redirecting another node's payouts.
- * Returns { ok } or { ok: false, error } with provider_not_found | key_mismatch | invalid_wallet.
- */
-export function setPayoutWallet(
-  id: string,
-  publicKey: string,
-  wallet: string
-): { ok: true; wallet: string } | { ok: false; error: "provider_not_found" | "key_mismatch" | "invalid_wallet" } {
-  const store = getStore();
-  const p = store.providers.get(id);
-  if (!p) return { ok: false, error: "provider_not_found" };
-  const pk = String(publicKey || "").trim();
-  if (!p.public_key || p.public_key !== pk) return { ok: false, error: "key_mismatch" };
-  const w = normalizePayoutWallet(wallet);
-  if (!w) return { ok: false, error: "invalid_wallet" };
-  p.payout_wallet = w;
-  p.payout_wallet_updated_at = new Date().toISOString();
-  return { ok: true, wallet: w };
-}
-
-/** Find a provider by its public key (portal login / wallet write). */
-export function getProviderByPublicKey(publicKey: string): StoredProvider | undefined {
-  const pk = String(publicKey || "").trim();
-  if (!pk) return undefined;
-  for (const p of getStore().providers.values()) {
-    if (p.public_key === pk) return p;
-  }
-  return undefined;
-}
 
 export function getProvider(id: string): StoredProvider | undefined {
   return getStore().providers.get(id)
@@ -189,11 +148,31 @@ export function decProviderConcurrent(id: string): void {
   p.concurrentRequests = Math.max(0, (p.concurrentRequests ?? 0) - 1)
 }
 
+/**
+ * Fields the heartbeat handler strips before calling (defense in depth — also ignored here).
+ * Owner identity comes ONLY from opts (the verified node token), never from the payload.
+ */
+const IGNORED_HEARTBEAT_FIELDS = [
+  "payout_wallet",
+  "payoutWallet",
+  "owner_user_id",
+  "user_id",
+  "token_id",
+  "owner",
+] as const;
+
+function stripIgnoredHeartbeatFields(payload: Record<string, any>): void {
+  for (const k of IGNORED_HEARTBEAT_FIELDS) {
+    if (k in payload) delete payload[k]
+  }
+}
+
 export function upsertProvider(
   payload: Record<string, any>,
-  opts?: { ip?: string | null }
+  opts?: { ip?: string | null; ownerUserId?: string | null; tokenId?: string | null }
 ): StoredProvider {
   const store = getStore()
+  if (payload && typeof payload === "object") stripIgnoredHeartbeatFields(payload)
   const id = String(payload.id || payload.provider_id || payload.providerId || "unknown")
   const now = new Date().toISOString()
   const existing = store.providers.get(id)
@@ -240,14 +219,6 @@ export function upsertProvider(
     agent_version: payload.agent_version || payload.agentVersion || "0.1.0",
   }
 
-  // Payout wallet (Base EVM address): accepted from the heartbeat payload, but the Portal write wins
-  // — a heartbeat may carry it, but only setPayoutWallet() (after the public-key check) is authoritative.
-  const payout = normalizePayoutWallet(payload.payout_wallet ?? payload.payoutWallet);
-  if (payout && !existing?.payout_wallet) {
-    base.payout_wallet = payout;
-    base.payout_wallet_updated_at = now;
-  }
-
   let verification: Verification
   let heartbeat_count: number
   if (existing) {
@@ -278,6 +249,10 @@ export function upsertProvider(
     public_key,
     hw_fingerprint,
     hardware_mismatch,
+    owner_user_id: opts?.ownerUserId ?? existing?.owner_user_id ?? null,
+    token_id: opts?.tokenId ?? existing?.token_id ?? null,
+    // A fresh authenticated heartbeat clears the boot-hydration flag (node is live again).
+    awaiting_heartbeat: false,
     verification,
     last_heartbeat: now,
     last_heartbeat_ip: opts?.ip ?? existing?.last_heartbeat_ip ?? null,
@@ -311,6 +286,7 @@ export function upsertProvider(
   }
 
   store.providers.set(id, stored)
+  mirrorStoredProvider(stored)
 
   // Auto-trigger verify after 2 heartbeats if still pending (non-blocking)
   if (stored.verification.status === "pending" && stored.heartbeat_count >= 2) {
@@ -714,6 +690,116 @@ export function deleteProvider(id: string): boolean {
 export function clearAll(): void {
   getStore().providers.clear()
 }
+
+/** True when the node must stay out of routing (boot-hydrated, no fresh heartbeat yet). */
+export function isRoutable(p: StoredProvider | null | undefined): boolean {
+  if (!p) return false
+  if ((p as StoredProvider).awaiting_heartbeat) return false
+  return true
+}
+
+/** Verified AND live providers only (awaiting_heartbeat nodes are excluded until a fresh heartbeat). */
+export function listRoutableProviders(): StoredProvider[] {
+  return listProviders().filter(
+    (p) => p.verification?.status === "verified" && !p.awaiting_heartbeat
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Durable mirror (providers_mirror write-through + boot hydration)
+// ---------------------------------------------------------------------------
+
+const MIRROR_THROTTLE_MS = 60_000
+const HYDRATE_MAX_AGE_MS = 24 * 3600_000
+const lastMirrorWrite = new Map<string, number>()
+const lastMirrorStatus = new Map<string, string>()
+let hydrationAttempted = false
+
+/** Fields that must never reach the durable mirror (volatile routing / raw payload). */
+function toMirrorPayload(p: StoredProvider): Record<string, any> {
+  const { _routingWeight, _routingCurrentWeight, concurrentRequests, raw, ...rest } = p as any
+  void _routingWeight
+  void _routingCurrentWeight
+  void concurrentRequests
+  void raw
+  return rest
+}
+
+/** Write-through: at most once per 60 s per node, or on verification-status change. */
+export function mirrorStoredProvider(p: StoredProvider): void {
+  try {
+    const now = Date.now()
+    const prevStatus = lastMirrorStatus.get(p.id)
+    const prevWrite = lastMirrorWrite.get(p.id) ?? 0
+    const statusChanged = prevStatus !== p.verification?.status
+    if (!statusChanged && now - prevWrite < MIRROR_THROTTLE_MS) return
+    lastMirrorStatus.set(p.id, p.verification?.status)
+    lastMirrorWrite.set(p.id, now)
+    const { mirrorProvider } = require("@/lib/db") as typeof import("@/lib/db")
+    mirrorProvider(p.id, toMirrorPayload(p))
+  } catch {}
+}
+
+/**
+ * Lazy boot hydration: rows updated in the last 24 h whose id exists in provider_nodes
+ * are restored with awaiting_heartbeat=true (not routable until a fresh heartbeat).
+ * Safe when the DB is unavailable (try/catch, no crash); runs once per process.
+ */
+export function hydrateProvidersFromMirror(): number {
+  if (hydrationAttempted) return 0
+  hydrationAttempted = true
+  try {
+    const { listMirroredProviders } = require("@/lib/db") as typeof import("@/lib/db")
+    const { getDb } = require("@/lib/db") as typeof import("@/lib/db")
+    const db = getDb()
+    let boundIds: Set<string>
+    try {
+      const rows = db.prepare("SELECT node_id FROM provider_nodes").all() as Array<{ node_id: string }>
+      boundIds = new Set(rows.map((r) => String(r.node_id)))
+    } catch {
+      return 0
+    }
+    const cutoff = Date.now() - HYDRATE_MAX_AGE_MS
+    const store = getStore()
+    let n = 0
+    for (const row of listMirroredProviders() as Array<{ id: string; payload: any; updated_at: string }>) {
+      try {
+        if (!boundIds.has(row.id)) continue
+        const t = new Date(row.updated_at).getTime()
+        if (!Number.isFinite(t) || t < cutoff) continue
+        if (store.providers.has(row.id)) continue
+        const p = { ...(row.payload as object), awaiting_heartbeat: true } as StoredProvider
+        store.providers.set(row.id, p)
+        lastMirrorStatus.set(row.id, p.verification?.status)
+        lastMirrorWrite.set(row.id, Date.now())
+        n++
+      } catch {}
+    }
+    if (n > 0) console.log(`[providers-store] hydrated ${n} node(s) from mirror (awaiting_heartbeat)`)
+    return n
+  } catch (e: any) {
+    console.warn(`[providers-store] hydration skipped: ${e?.message || e}`)
+    return 0
+  }
+}
+
+/** Test hook: reset hydration state (lets tests simulate a restart). */
+export function __resetHydrationForTests(): void {
+  hydrationAttempted = false
+  lastMirrorWrite.clear()
+  lastMirrorStatus.clear()
+}
+
+try {
+  if (typeof process !== "undefined" && process.env.NEXT_RUNTIME !== "edge") {
+    // Lazy: only when the DB module is already loaded (tests / server boot), never crash.
+    setTimeout(() => {
+      try {
+        hydrateProvidersFromMirror()
+      } catch {}
+    }, 0)
+  }
+} catch {}
 
 // global flag for stats zero after admin reset (so /api/stats can return zeros for testing)
 const gZero = globalThis as unknown as { __seedinferForceZero?: boolean }

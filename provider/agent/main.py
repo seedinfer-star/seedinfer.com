@@ -11,6 +11,7 @@ import json
 import logging
 import os
 import platform
+import re
 import signal
 import socket
 import time
@@ -27,7 +28,15 @@ from fastapi.responses import JSONResponse, StreamingResponse
 AGENT_PORT = int(os.getenv("AGENT_PORT", "3001"))
 VLLM_URL = os.getenv("VLLM_URL", f"http://127.0.0.1:{os.getenv('VLLM_PORT','8000')}").rstrip("/")
 GATEWAY_URL = os.getenv("SEEDINFER_GATEWAY_URL", "https://seedinfer.com").rstrip("/")
-PROVIDER_API_KEY = os.getenv("PROVIDER_API_KEY") or os.getenv("SEEDINFER_API_KEY") or ""
+# Node token (account-bound). First non-empty wins; legacy names kept as fallback.
+NODE_TOKEN = (
+    os.getenv("SEEDINFER_NODE_TOKEN")
+    or os.getenv("PROVIDER_API_KEY")
+    or os.getenv("SEEDINFER_API_KEY")
+    or ""
+).strip()
+# Back-compat alias (vLLM proxy auth forwarding below).
+PROVIDER_API_KEY = NODE_TOKEN
 MODEL = os.getenv("MODEL", "google/gemma-4-26b-a4b-nvfp4")
 VLLM_MODEL = os.getenv("VLLM_MODEL", "nvidia/Gemma-4-26B-A4B-NVFP4")
 PROVIDER_ID_ENV = os.getenv("PROVIDER_ID", "")
@@ -36,9 +45,6 @@ TAILSCALE_HOSTNAME = os.getenv("TAILSCALE_HOSTNAME", "")
 HEARTBEAT_INTERVAL = int(os.getenv("HEARTBEAT_INTERVAL", "30"))
 SEEDINFER_PUBLIC_KEY = os.getenv("SEEDINFER_PUBLIC_KEY", "")
 SEEDINFER_HW_FINGERPRINT = os.getenv("SEEDINFER_HW_FINGERPRINT", "")
-# Provider's own Base payout wallet (USDC destination). Set it in the Provider Portal or here;
-# the portal value wins on conflict. Never a private key — a plain 0x address.
-SEEDINFER_PAYOUT_WALLET = os.getenv("SEEDINFER_PAYOUT_WALLET", "").strip()
 LOG_LEVEL = os.getenv("AGENT_LOG_LEVEL", "info").upper()
 MAX_CONCURRENT_REQUESTS = int(os.getenv("MAX_CONCURRENT_REQUESTS", "32"))
 MAX_KV_CACHE_TOKENS = int(os.getenv("MAX_KV_CACHE_TOKENS", "1500000")) # RTX 5090 FP8 KV cache baseline
@@ -50,21 +56,55 @@ logging.basicConfig(
 )
 log = logging.getLogger("seedinfer-provider")
 
+# --- Token + node-id validation ---
+NODE_TOKEN_RE = re.compile(r"^sipn_[A-Za-z0-9_-]{43}$")
+NODE_ID_RE = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
+
+
+def _mask_token(tok: str) -> str:
+    # Never log the full token: 12-char prefix + ellipsis.
+    return (tok[:12] + "…") if tok else "(unset)"
+
+
+if NODE_TOKEN:
+    log.info("node token configured: %s", _mask_token(NODE_TOKEN))
+    if not NODE_TOKEN_RE.match(NODE_TOKEN):
+        log.warning("SEEDINFER_NODE_TOKEN does not match ^sipn_[A-Za-z0-9_-]{43}$ — "
+                    "heartbeat will likely be rejected; create a token at "
+                    "https://seedinfer.com/provider/portal")
+else:
+    log.warning("no node token configured — heartbeat will be rejected; set "
+                "SEEDINFER_NODE_TOKEN (create one at https://seedinfer.com/provider/portal)")
+
 # --- Active Request & KV Cache Token Capacity Management ---
 active_requests = 0
 active_tokens = 0
 active_requests_lock = asyncio.Lock()
 
+
 # --- Provider ID ---
+def _sanitize_provider_id(raw: str) -> str:
+    s = re.sub(r"[^A-Za-z0-9._-]", "-", (raw or "").strip())
+    s = re.sub(r"[-_.]{2,}", "-", s).strip("-_.")
+    return s[:64]
+
+
+def _default_provider_id() -> str:
+    hn = TAILSCALE_HOSTNAME or socket.gethostname()
+    base = _sanitize_provider_id(hn) or "provider"
+    try:
+        rand = f"{uuid.getnode() & 0xFFFFFF:06x}"
+    except Exception:
+        rand = "000000"
+    return f"{base}-{rand}"[:64]
+
+
 def _provider_id() -> str:
     if PROVIDER_ID_ENV:
-        return PROVIDER_ID_ENV
-    hn = TAILSCALE_HOSTNAME or socket.gethostname()
-    try:
-        mac = uuid.getnode()
-        return f"{hn}-{mac:012x}"[:64]
-    except Exception:
-        return hn
+        s = _sanitize_provider_id(PROVIDER_ID_ENV)
+        if s and NODE_ID_RE.match(s):
+            return s
+    return _default_provider_id()
 
 PROVIDER_ID = _provider_id()
 
@@ -251,7 +291,6 @@ def build_provider_payload() -> dict[str, Any]:
         "agent_url": agent_url,
         "public_key": SEEDINFER_PUBLIC_KEY,
         "hw_fingerprint": SEEDINFER_HW_FINGERPRINT,
-        "payout_wallet": SEEDINFER_PAYOUT_WALLET or None,
         "max_concurrency": MAX_CONCURRENT_REQUESTS,
         "max_kv_tokens": MAX_KV_CACHE_TOKENS,
         "active_requests": active_requests,
@@ -310,12 +349,40 @@ async def detect_vllm_kv_cache_capacity() -> int:
 
     return MAX_KV_CACHE_TOKENS
 
+# Timestamp of the last auth-error log (rate-limited to at most one per 10 min).
+_last_auth_error_log_ts: float = 0.0
+# Retry-After delay (seconds) honored after a 429, before the next attempt.
+_retry_after_until: float = 0.0
+
+
+def _auth_error_hint(code: str, env_path: str) -> str:
+    if code == "node_owned_by_another_account":
+        return (f"Heartbeat rejected ({code}): this node id is already bound to a different "
+                f"account — set a different PROVIDER_ID in {env_path} (or clear it so the "
+                f"installer generates a fresh one), then restart the agent.")
+    return (f"Heartbeat rejected ({code}): create a node token at "
+            f"https://seedinfer.com/provider/portal and set SEEDINFER_NODE_TOKEN in "
+            f"{env_path}, then restart the agent.")
+
+
+def _parse_error_code(resp: Any) -> str:
+    try:
+        body = resp.json()
+        if isinstance(body, dict) and isinstance(body.get("code"), str):
+            return body["code"]
+    except Exception:
+        pass
+    return ""
+
+
 async def heartbeat_loop():
+    global _last_auth_error_log_ts, _retry_after_until
     url = f"{GATEWAY_URL}/api/v1/providers/heartbeat"
     alt_url = f"{GATEWAY_URL}/api/providers/heartbeat"
     headers = {"Content-Type": "application/json"}
-    if PROVIDER_API_KEY:
-        headers["Authorization"] = f"Bearer {PROVIDER_API_KEY}"
+    if NODE_TOKEN:
+        headers["Authorization"] = f"Bearer {NODE_TOKEN}"
+    env_path = os.getenv("SEEDINFER_ENV_PATH", "seedinfer.env")
     log.info("heartbeat -> %s every %ds (provider=%s model=%s)", url, HEARTBEAT_INTERVAL, PROVIDER_ID, MODEL)
     async with httpx.AsyncClient(timeout=10) as client:
         while not _stop.is_set():
@@ -325,14 +392,46 @@ async def heartbeat_loop():
             payload["vllm_health"] = vh
             if vh.get("status") != "ok":
                 payload["status"] = "draining"
-            for hb_url in (url, alt_url):
+            # Honor Retry-After from a previous 429 (cap 300 s).
+            now = time.monotonic()
+            if now < _retry_after_until:
+                await asyncio.sleep(min(_retry_after_until - now, 300))
+                continue
+            urls = (url, alt_url)
+            for hb_url in urls:
                 try:
                     r = await client.post(hb_url, json=payload, headers=headers)
-                    if r.status_code in (200, 201, 202, 204):
-                        log.debug("heartbeat ok %s -> %s", hb_url, r.status_code)
-                        break
                 except Exception as e:
+                    # Network error: try the alt URL, else wait for the next interval.
                     log.warning("heartbeat %s failed: %s", hb_url, e)
+                    continue
+                if r.status_code in (200, 201, 202, 204):
+                    log.debug("heartbeat ok %s -> %s", hb_url, r.status_code)
+                    break
+                if r.status_code in (401, 403, 429):
+                    # Auth / rate-limit errors: NEVER try the alt URL.
+                    code = _parse_error_code(r) or f"http_{r.status_code}"
+                    if r.status_code == 429:
+                        retry_after = 60.0
+                        try:
+                            retry_after = float(r.headers.get("retry-after", "60"))
+                        except (TypeError, ValueError):
+                            pass
+                        _retry_after_until = time.monotonic() + min(max(retry_after, 1.0), 300.0)
+                        log.warning("heartbeat rate-limited (429 %s): retrying in %.0fs",
+                                    code, _retry_after_until - time.monotonic())
+                    else:
+                        now2 = time.time()
+                        if now2 - _last_auth_error_log_ts >= 600:
+                            _last_auth_error_log_ts = now2
+                            log.error(_auth_error_hint(code, env_path))
+                    break
+                if r.status_code == 404 or 500 <= r.status_code <= 599:
+                    # Fall through to the alt URL; warn only if both fail.
+                    log.warning("heartbeat %s -> %s, trying alt URL", hb_url, r.status_code)
+                    continue
+                log.warning("heartbeat %s -> unexpected %s", hb_url, r.status_code)
+                break
             try:
                 await asyncio.wait_for(_stop.wait(), timeout=HEARTBEAT_INTERVAL)
             except asyncio.TimeoutError:

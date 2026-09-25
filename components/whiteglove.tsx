@@ -69,10 +69,10 @@ export default function WhiteGlove() {
                 Quick install
               </div>
               <pre className="mt-2 overflow-x-auto rounded-md bg-bg-tertiary px-3 py-2.5 font-mono text-[11px] leading-4 text-text-secondary">
-                <code>curl -fsSL https://seedinfer.com/install.sh | bash -s -- --authkey YOUR_AUTH_KEY</code>
+                <code className="break-all">curl -fsSL https://seedinfer.com/install.sh | SEEDINFER_NODE_TOKEN=sipn_… bash</code>
               </pre>
               <p className="mt-1.5 font-mono text-[10px] leading-3 text-text-tertiary">
-                Auth key is issued after the eligibility check
+                Create a node token in the Provider portal (sign-in required)
               </p>
             </div>
           </div>
