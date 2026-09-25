@@ -47,8 +47,8 @@ print(resp.choices[0].message.content)`
 const STEPS = [
   {
     icon: KeyRound,
-    title: "Get an API key",
-    body: "Create an account, add a few dollars of credit and generate a key. No minimum commitment.",
+    title: "Create an account",
+    body: "Sign up and top up pay-as-you-go credit in USDC or ETH — no minimum commitment. API keys are in early access during the public beta.",
   },
   {
     icon: Plug,
@@ -104,7 +104,7 @@ export default function HomePage() {
                   href="/register"
                   className="inline-flex h-11 items-center gap-2 rounded-lg bg-accent-brand px-5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-accent-brand-hover"
                 >
-                  <KeyRound className="h-4 w-4" /> Get API key
+                  <KeyRound className="h-4 w-4" /> Get started
                 </Link>
                 <Link
                   href="/provider"
@@ -183,7 +183,7 @@ export default function HomePage() {
           <SectionHeader
             id="live-network"
             eyebrow="Live network"
-            title="Real GPUs, serving real tokens"
+            title="Network status, refreshed every 15 seconds"
             actions={
               <Link href="/stats" className="inline-flex items-center gap-1 text-sm font-medium text-accent-brand hover:underline">
                 Full network stats <ArrowRight className="h-3.5 w-3.5" />
@@ -313,7 +313,7 @@ export default function HomePage() {
         </section>
 
         <footer className="flex flex-col gap-3 border-t border-border-dim pt-6 text-xs text-text-tertiary sm:flex-row sm:items-center sm:justify-between">
-          <span>© {new Date().getFullYear()} SeedInfer · Public alpha</span>
+          <span>© {new Date().getFullYear()} SeedInfer · Public beta</span>
           <nav aria-label="Footer" className="flex flex-wrap gap-x-4 gap-y-1">
             <Link href="/docs" className="hover:text-text-primary">Docs</Link>
             <Link href="/models" className="hover:text-text-primary">Models</Link>

@@ -27,7 +27,7 @@ function ModelCard({ m, providers }: { m: CatalogModel; providers: number | null
       <CardHeader className="pb-2">
         <div className="flex items-start justify-between gap-2">
           <CardTitle
-            className={`min-w-0 break-all text-xs font-mono leading-4 ${live ? "text-text-primary" : "text-text-tertiary"}`}
+            className={`min-w-0 break-words text-xs font-mono leading-4 ${live ? "text-text-primary" : "text-text-tertiary"}`}
             title={m.id}
           >
             {m.id}
@@ -157,7 +157,7 @@ export default function ModelsCatalog({ models }: { models: ModelStat[] }) {
         </div>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         {live.map((m) => (
           <ModelCard key={m.id} m={m} providers={providersFor(m, models)} />
         ))}
@@ -168,7 +168,7 @@ export default function ModelsCatalog({ models }: { models: ModelStat[] }) {
           <h3 className="font-mono text-[11px] font-semibold uppercase tracking-wide text-text-tertiary">Coming soon</h3>
           <div className="h-px flex-1 bg-border-dim" />
         </div>
-        <div className="grid gap-3 opacity-70 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        <div className="grid gap-3 opacity-70 sm:grid-cols-2 xl:grid-cols-3">
           {soon.map((m) => (
             <ModelCard key={m.id} m={m} providers={null} />
           ))}
