@@ -34,7 +34,7 @@ export default function EarnContent() {
           </div>
         </header>
 
-        <main id="main" className="min-h-0 flex-1 overflow-y-auto bg-bg-primary">
+        <main id="main" className="flex-1 bg-bg-primary md:min-h-0 md:overflow-y-auto">
           <div className="mx-auto max-w-[1600px] space-y-6 p-4 sm:p-6">
             
             {/* Interactive Provider Revenue & Net-Profit Calculator */}
@@ -42,13 +42,13 @@ export default function EarnContent() {
 
             {/* Provider Quick Install Callout */}
             <Card className="border border-accent-brand/20 bg-accent-brand/10">
-              <CardContent className="p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-                <div className="flex items-start gap-2">
+              <CardContent className="p-4 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-3">
+                <div className="flex min-w-0 items-start gap-2">
                   <Server className="h-4 w-4 mt-0.5 shrink-0 text-accent-brand" />
-                  <div>
+                  <div className="min-w-0">
                     <div className="text-sm font-semibold text-text-primary">Become a provider — NVIDIA ≥{MIN_VRAM_GB}GB VRAM · {LIVE_MODEL.name} · CUDA 13.3</div>
                     <div className="mt-0.5 font-mono text-xs leading-4 text-text-secondary">
-                      One-liner: <code className="rounded bg-bg-tertiary px-1">curl -fsSL https://seedinfer.com/install.sh | bash</code> — Ubuntu 24.04+ ·
+                      One-liner: <code className="break-all rounded bg-bg-tertiary px-1">curl -fsSL https://seedinfer.com/install.sh | bash</code> — Ubuntu 24.04+ ·
                       driver 580+ (CUDA 13.3) · Docker + nvidia-container-toolkit ·{" "}
                       <a href="/provider" className="font-medium text-accent-brand underline">
                         /provider
@@ -57,7 +57,7 @@ export default function EarnContent() {
                     </div>
                   </div>
                 </div>
-                <div className="flex shrink-0 items-center gap-2">
+                <div className="flex shrink-0 flex-wrap items-center gap-2">
                   <a
                     href="/provider"
                     className="inline-flex items-center gap-1.5 rounded-lg bg-accent-brand px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-brand-hover"

@@ -24,7 +24,7 @@ export default function LeaderboardPage() {
           </Badge>
         </header>
 
-        <main id="main" className="min-h-0 flex-1 overflow-y-auto bg-bg-primary">
+        <main id="main" className="flex-1 bg-bg-primary md:min-h-0 md:overflow-y-auto">
           <div className="mx-auto max-w-3xl space-y-6 p-4 sm:p-6">
             <Card className="border border-border-dim bg-bg-secondary">
               <CardContent className="flex flex-col items-center gap-3 p-8 text-center">

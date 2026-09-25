@@ -15,9 +15,9 @@ const CHECKLIST = [
 export default function WhiteGlove() {
   return (
     <section className="col-span-12 rounded-xl bg-accent-brand p-6 text-white lg:p-8">
-      <div className="grid grid-cols-12 gap-8">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-12 lg:gap-8">
         {/* Left — copy */}
-        <div className="col-span-12 lg:col-span-6">
+        <div className="lg:col-span-6">
           <p className="font-mono text-[10px] uppercase tracking-wide text-white/70">
             CONCIERGE · WHITE-GLOVE
           </p>
@@ -45,7 +45,7 @@ export default function WhiteGlove() {
         </div>
 
         {/* Right — form card */}
-        <div className="col-span-12 lg:col-span-6">
+        <div className="lg:col-span-6">
           <div className="rounded-xl border border-white/10 bg-bg-secondary p-5 text-text-primary">
             <div className="space-y-3">
               <p className="text-sm leading-5 text-text-secondary">

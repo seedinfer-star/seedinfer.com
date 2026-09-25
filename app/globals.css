@@ -119,9 +119,12 @@
     scrollbar-width: thin;
     -webkit-text-size-adjust: 100%;
   }
+  html {
+    height: 100%;
+  }
   html,
   body {
-    height: 100%;
+    min-height: 100%;
     background: rgb(var(--bg-primary));
     color: rgb(var(--text-primary));
     -webkit-font-smoothing: antialiased;
@@ -178,6 +181,16 @@
   samp {
     font-family: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
   }
+  /* Grid items default to min-width:auto, so a long code line or wide table inside a
+     card would stretch the whole column (and the page) on mobile. Let them shrink so
+     overflow-x-auto containers scroll inside the card instead. */
+  .grid > * {
+    min-width: 0;
+  }
+  pre {
+    max-width: 100%;
+    overflow-x: auto;
+  }
   @media (prefers-reduced-motion: reduce) {
     html {
       scroll-behavior: auto;
@@ -188,20 +201,6 @@
       animation-duration: 0.01ms !important;
       transition-duration: 0.01ms !important;
     }
-  }
-}
-
-/*
- * App shell — responsive fallback for pages that still render
- * `<div className="flex h-screen overflow-hidden"> <Sidebar/> … </div>` themselves.
- * On < md the Sidebar renders a top bar as the first child, so the row
- * must become a column (and use the dynamic viewport height on mobile).
- * New pages should use <AppShell> (components/app-shell.tsx) instead.
- */
-@media (max-width: 767.98px) {
-  .flex.h-screen:has(> [data-app-topbar]) {
-    flex-direction: column;
-    height: 100dvh;
   }
 }
 

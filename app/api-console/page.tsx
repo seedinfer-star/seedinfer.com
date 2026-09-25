@@ -184,7 +184,7 @@ export default function ApiConsolePage() {
           </a>
         </header>
 
-        <main id="main" className="min-h-0 flex-1 overflow-y-auto bg-bg-primary">
+        <main id="main" className="flex-1 bg-bg-primary md:min-h-0 md:overflow-y-auto">
           <div className="mx-auto max-w-[1600px] space-y-6 p-4 sm:p-6">
             
             {/* OpenRouter Banner */}
@@ -227,11 +227,11 @@ export default function ApiConsolePage() {
                     <Activity className="h-4 w-4 text-accent-brand" />
                     <CardTitle className="text-sm font-semibold text-text-primary">Live API Playground (Real Network Execution)</CardTitle>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex min-w-0 flex-wrap items-center gap-2">
                     <select
                       value={selectedModel}
                       onChange={(e) => setSelectedModel(e.target.value)}
-                      className="rounded-lg border border-border-dim bg-bg-tertiary px-2.5 py-1.5 font-mono text-xs text-text-primary focus:outline-none focus:ring-1 focus:ring-accent-brand"
+                      className="min-w-0 max-w-full rounded-lg border border-border-dim bg-bg-tertiary px-2.5 py-1.5 font-mono text-xs text-text-primary focus:outline-none focus:ring-1 focus:ring-accent-brand"
                     >
                       {PUBLIC_MODEL_IDS.map((id) => (
                         <option key={id} value={id}>

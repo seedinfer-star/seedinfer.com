@@ -68,7 +68,7 @@ export default function HomePage() {
     <AppShell>
       <PageContainer wide={false} className="space-y-14 md:space-y-20">
         {/* Hero */}
-        <section className="relative pt-2 md:pt-6">
+        <section className="relative overflow-x-clip pt-2 md:pt-6">
           <div
             aria-hidden
             className="pointer-events-none absolute -top-24 left-1/2 h-[380px] w-[900px] max-w-[140vw] -translate-x-1/2 rounded-full opacity-70 blur-3xl"

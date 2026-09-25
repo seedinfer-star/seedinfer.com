@@ -73,7 +73,7 @@ function LoginInner() {
           </Link>
         </header>
 
-        <main id="main" className="min-h-0 flex-1 overflow-y-auto bg-bg-primary">
+        <main id="main" className="flex-1 bg-bg-primary md:min-h-0 md:overflow-y-auto">
           <div className="mx-auto flex max-w-[520px] flex-col gap-4 p-4 sm:p-6">
             {(err || oauthError) && (
               <div className="flex items-start gap-2 rounded-xl border border-accent-red/20 bg-accent-red/10 px-3 py-2.5 text-xs leading-4 text-accent-red">

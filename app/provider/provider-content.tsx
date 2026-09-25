@@ -749,7 +749,7 @@ curl -fsS https://seedinfer.com/api/stats | jq '.active_providers'`}
               <div>
                 SeedInfer.com · Provider portal · Phase 0
               </div>
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                 <a href="/install.sh" className="text-accent-brand hover:underline">/install.sh</a>
                 <span>·</span>
                 <a href="/provider.tar.gz" className="text-accent-brand hover:underline">/provider.tar.gz</a>

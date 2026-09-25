@@ -13,9 +13,9 @@ import { cn } from "@/lib/utils"
  */
 export default function AppShell({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
-    <div className="flex h-dvh flex-col overflow-hidden bg-bg-primary md:flex-row">
+    <div className="flex min-h-dvh flex-col bg-bg-primary md:h-dvh md:flex-row md:overflow-hidden">
       <Sidebar />
-      <div className={cn("flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden", className)}>{children}</div>
+      <div className={cn("flex min-w-0 flex-1 flex-col md:min-h-0 md:overflow-hidden", className)}>{children}</div>
     </div>
   )
 }
@@ -53,7 +53,7 @@ export function PageContainer({
   wide?: boolean
 }) {
   return (
-    <main id="main" className="min-h-0 flex-1 overflow-y-auto bg-bg-primary">
+    <main id="main" className="flex-1 bg-bg-primary md:min-h-0 md:overflow-y-auto">
       <div
         className={cn(
           "mx-auto w-full space-y-6 px-4 py-6 md:px-6 md:py-8",
