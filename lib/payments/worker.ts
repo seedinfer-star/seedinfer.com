@@ -15,6 +15,7 @@ import { getDb } from "../db";
 import {
   CHAIN_CONFIG,
   EVM_CHAIN_KEYS,
+  describeRpcSources,
   getRpcUrl,
   getRpcUrls,
   getConfirmationsRequired,
@@ -162,17 +163,35 @@ const limit = createLimiter(CONCURRENCY);
 // ---------------------------------------------------------------------------
 // JSON-RPC fetch fallback (when viem not available or fallback RPC needed)
 // ---------------------------------------------------------------------------
-async function jsonRpcFetch(rpcUrl: string, method: string, params: any[]): Promise<any> {
-  // Element requires refinement: timeout + retry for RPC_URL_* fetch — add AbortController with 10s timeout and exponential backoff
-  const res = await fetch(rpcUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
-  });
-  if (!res.ok) throw new Error(`RPC ${method} HTTP ${res.status}`);
-  const j: any = await res.json();
-  if (j.error) throw new Error(`RPC ${method} error: ${JSON.stringify(j.error)}`);
-  return j.result;
+const RPC_TIMEOUT_MS = (() => {
+  const v = Number(process.env.RPC_TIMEOUT_MS || "10000");
+  return Number.isFinite(v) && v >= 1000 && v <= 60000 ? Math.floor(v) : 10000;
+})();
+
+async function jsonRpcFetch(rpcUrl: string, method: string, params: any[], attempt = 1): Promise<any> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), RPC_TIMEOUT_MS);
+  try {
+    const res = await fetch(rpcUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: attempt, method, params }),
+      signal: ctrl.signal as any,
+    });
+    if (!res.ok) throw new Error(`RPC ${method} HTTP ${res.status}`);
+    const j: any = await res.json();
+    if (j.error) throw new Error(`RPC ${method} error: ${JSON.stringify(j.error)}`);
+    return j.result;
+  } catch (e: any) {
+    // One retry per URL (transient network blip / rate limit); the caller tries the next URL after that.
+    if (attempt === 1 && (e?.name === "AbortError" || /429|5\d\d|fetch failed|ECONN/i.test(String(e?.message || e)))) {
+      await new Promise((r) => setTimeout(r, 500));
+      return jsonRpcFetch(rpcUrl, method, params, 2);
+    }
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 async function jsonRpcWithFallback(chain: EvmChainKey | "solana", method: string, params: any[]): Promise<any> {
@@ -1293,7 +1312,8 @@ export function startWorker(): void {
   // Element requires refinement: ensure all RPC_URL_* env are set with live keys before production — worker will skip chains where missing
   for (const k of [...EVM_CHAIN_KEYS, "solana"]) {
     const url = getRpcUrl(k as ChainKey);
-    if (!url) console.warn(`[worker] chain ${k} missing RPC URL env ${CHAIN_CONFIG[k as ChainKey].rpcEnvVar} — Element requires refinement`);
+    // Startup health: which RPC each chain polls (hosts only, no keys). Helps diagnose expired keys.
+    console.log(`[worker] rpc ${k}: ${describeRpcSources(k as ChainKey)}${url ? "" : " (MISSING — polling disabled)"}`);
   }
 
   startedAt = new Date().toISOString();

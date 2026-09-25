@@ -18,6 +18,12 @@ export type ChainConfig = {
   chainId: number | string; // number for EVM, string "solana" for Solana
   rpcEnvVar: string;
   rpcFallbackEnvVar: string;
+  /**
+   * Built-in public RPC(s), tried AFTER the env-configured URLs. Only set where a reliable
+   * no-key endpoint exists and was verified (Base: https://mainnet.base.org returns chain 0x2105).
+   * Keeps confirmation polling alive when a private key expires or is revoked (HTTP 401).
+   */
+  publicFallbackRpcs?: string[];
   confirmationsEnv: string;
   confirmationsDefault: number;
   pollMsEnv: string;
@@ -142,6 +148,7 @@ export const CHAIN_CONFIG: Record<ChainKey, ChainConfig> = {
     chainId: 8453,
     rpcEnvVar: "RPC_URL_BASE",
     rpcFallbackEnvVar: "RPC_FALLBACK_BASE",
+    publicFallbackRpcs: ["https://mainnet.base.org"],
     confirmationsEnv: "CONFIRMATIONS_BASE",
     confirmationsDefault: 24,
     pollMsEnv: "WORKER_POLL_MS",
@@ -218,18 +225,41 @@ export function getRpcUrl(chain: ChainKey): string | null {
 }
 
 /**
- * Get all configured RPC URLs for chain (primary + fallback if both set)
+ * All RPC URLs for a chain, in try-order: primary env, fallback env, built-in public endpoint(s).
+ * Deduplicated. The built-in list exists so a revoked private key (HTTP 401) does not stop
+ * confirmation polling — the worker keeps trying every URL on each call.
  * Used by worker fallback transport: viem fallback([http(primary), http(fallback)])
  */
 export function getRpcUrls(chain: ChainKey): string[] {
   const cfg = CHAIN_CONFIG[chain];
   if (!cfg) return [];
   const out: string[] = [];
-  const primary = (process.env[cfg.rpcEnvVar] || "").trim();
-  if (primary) out.push(primary);
-  const fallback = (process.env[cfg.rpcFallbackEnvVar] || "").trim();
-  if (fallback) out.push(fallback);
+  for (const u of [
+    (process.env[cfg.rpcEnvVar] || "").trim(),
+    (process.env[cfg.rpcFallbackEnvVar] || "").trim(),
+    ...(cfg.publicFallbackRpcs || []),
+  ]) {
+    if (u && !out.includes(u)) out.push(u);
+  }
   return out;
+}
+
+/** Where each URL in try-order comes from — for startup logging (no secrets, hosts only). */
+export function describeRpcSources(chain: ChainKey): string {
+  const cfg = CHAIN_CONFIG[chain];
+  if (!cfg) return "none";
+  const parts: string[] = [];
+  const host = (u: string) => {
+    try {
+      return new URL(u).host;
+    } catch {
+      return "?";
+    }
+  };
+  if ((process.env[cfg.rpcEnvVar] || "").trim()) parts.push(`primary:${host(process.env[cfg.rpcEnvVar]!.trim())}`);
+  if ((process.env[cfg.rpcFallbackEnvVar] || "").trim()) parts.push(`fallback:${host(process.env[cfg.rpcFallbackEnvVar]!.trim())}`);
+  for (const u of cfg.publicFallbackRpcs || []) parts.push(`public:${host(u)}`);
+  return parts.join(" → ") || "none";
 }
 
 /**

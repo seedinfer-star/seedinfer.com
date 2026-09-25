@@ -197,11 +197,25 @@ generate_or_load_identity() {
 
   SEEDINFER_HW_FINGERPRINT=$(get_hw_fingerprint)
 
+  # Payout wallet (Base USDC destination): keep the existing one, else accept env/prompt. Empty is
+  # allowed here — the provider can still register it later in the Provider Portal.
+  existing_payout=$(grep -E "^SEEDINFER_PAYOUT_WALLET=" "$env_file" 2>/dev/null | cut -d= -f2- | tr -d '"' | tr -d "'" || true)
+  SEEDINFER_PAYOUT_WALLET="${SEEDINFER_PAYOUT_WALLET:-${existing_payout:-}}"
+  if [[ -z "$SEEDINFER_PAYOUT_WALLET" && -t 0 ]]; then
+    read -r -p "Base payout wallet (0x…, Enter to skip — set later at https://seedinfer.com/provider/portal): " SEEDINFER_PAYOUT_WALLET || true
+  fi
+  if [[ -n "$SEEDINFER_PAYOUT_WALLET" && ! "$SEEDINFER_PAYOUT_WALLET" =~ ^0x[0-9a-fA-F]{40}$ ]]; then
+    echo "⚠️  '$SEEDINFER_PAYOUT_WALLET' is not a valid EVM address — leaving payout wallet empty (set it in the portal)."
+    SEEDINFER_PAYOUT_WALLET=""
+  fi
+
   cat > "$env_file" 2>/dev/null <<EOF
 # SeedInfer Provider Identity & Hardware Lock
 SEEDINFER_PRIVATE_KEY=$SEEDINFER_PRIVATE_KEY
 SEEDINFER_PUBLIC_KEY=$SEEDINFER_PUBLIC_KEY
 SEEDINFER_HW_FINGERPRINT=$SEEDINFER_HW_FINGERPRINT
+# Provider's own Base payout wallet (USDC) — also editable at https://seedinfer.com/provider/portal
+SEEDINFER_PAYOUT_WALLET=$SEEDINFER_PAYOUT_WALLET
 EOF
   chmod 600 "$env_file" 2>/dev/null || true
 

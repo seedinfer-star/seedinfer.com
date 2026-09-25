@@ -30,15 +30,45 @@ function readPubkeyCookie(): string {
 function PayoutWalletForm() {
   const [publicKey, setPublicKey] = useState("")
   const [wallet, setWallet] = useState("")
+  const [saved, setSaved] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
   const [sent, setSent] = useState(false)
+
+  const loadSaved = async (pk: string) => {
+    if (!pk.trim()) {
+      setSaved(null)
+      return
+    }
+    try {
+      const res = await fetch(`/api/v1/providers/payout-wallet?public_key=${encodeURIComponent(pk.trim())}`, { cache: "no-store" })
+      const data = await res.json().catch(() => ({}))
+      setSaved(typeof data?.payout_wallet === "string" && EVM_ADDRESS_RE.test(data.payout_wallet) ? data.payout_wallet : null)
+    } catch {
+      setSaved(null)
+    }
+  }
 
   useEffect(() => {
     const pk = readPubkeyCookie()
-    if (pk) setPublicKey(pk)
+    if (pk) {
+      setPublicKey(pk)
+      loadSaved(pk)
+    }
   }, [])
 
-  const onSubmit = (e: React.FormEvent) => {
+  const mailtoFallback = () => {
+    const subject = encodeURIComponent("SeedInfer payout wallet registration")
+    const body = encodeURIComponent(
+      `Node public key: ${publicKey.trim()}\n` +
+        `Payout wallet (${PROVIDER_ECONOMICS.payoutAsset} on ${PROVIDER_ECONOMICS.payoutChain}): ${wallet.trim()}\n\n` +
+        `Please register this address for my node's payouts.`,
+    )
+    setSent(true)
+    window.location.href = `mailto:${CONTACT_EMAIL}?subject=${subject}&body=${body}`
+  }
+
+  const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
     if (!publicKey.trim()) {
@@ -49,14 +79,31 @@ function PayoutWalletForm() {
       setError(`Enter a valid EVM address on ${PROVIDER_ECONOMICS.payoutChain} (0x followed by 40 hex characters).`)
       return
     }
-    const subject = encodeURIComponent("SeedInfer payout wallet registration")
-    const body = encodeURIComponent(
-      `Node public key: ${publicKey.trim()}\n` +
-        `Payout wallet (${PROVIDER_ECONOMICS.payoutAsset} on ${PROVIDER_ECONOMICS.payoutChain}): ${wallet.trim()}\n\n` +
-        `Please register this address for my node's payouts.`,
-    )
-    setSent(true)
-    window.location.href = `mailto:${CONTACT_EMAIL}?subject=${subject}&body=${body}`
+    setSaving(true)
+    try {
+      const res = await fetch("/api/v1/providers/payout-wallet", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ public_key: publicKey.trim(), wallet: wallet.trim() }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        if (data?.error?.code === "provider_not_found") {
+          // Node never sent a heartbeat (or gateway restarted) — fall back to email registration.
+          mailtoFallback()
+          return
+        }
+        setError(data?.error?.message || `Save failed (${res.status}). Try again or register by email below.`)
+        return
+      }
+      setSaved(String(data.payout_wallet))
+      setWallet("")
+      setSent(false)
+    } catch {
+      setError("Network error — try again, or register by email below.")
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -75,15 +122,24 @@ function PayoutWalletForm() {
           <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-accent-brand" aria-hidden="true" />
           <p className="text-[11px] leading-4 text-text-secondary">
             <span className="font-bold text-accent-brand">Required for payouts:</span> without a registered {PROVIDER_ECONOMICS.payoutChain} address,
-            earnings keep accruing but cannot be paid out. During the beta, registrations are confirmed by email; submitting this form opens a
-            pre-filled email to {CONTACT_EMAIL}.
+            earnings keep accruing but cannot be paid out. Saving here registers the wallet immediately; if your node has not sent a heartbeat
+            yet, the form opens a pre-filled email to {CONTACT_EMAIL} instead.
           </p>
         </div>
 
-        {sent && !error && (
+        {saved && (
+          <div className="flex items-start gap-2 rounded-lg border border-accent-green/30 bg-accent-green/10 p-3 font-mono text-xs text-accent-green">
+            <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+            <span className="min-w-0">
+              Registered payout wallet: <code className="break-all">{saved}</code>
+              <span className="block text-[11px] opacity-80">Visible in the public API next to your node — verify it after saving.</span>
+            </span>
+          </div>
+        )}
+        {sent && !error && !saved && (
           <div className="flex items-center gap-2 rounded-lg border border-accent-green/30 bg-accent-green/10 p-3 font-mono text-xs text-accent-green">
             <CheckCircle2 className="h-4 w-4 shrink-0" aria-hidden="true" />
-            Email draft opened. If nothing happened, send your public key and wallet address to {CONTACT_EMAIL}.
+            Your node has not sent a heartbeat yet, so the wallet was not saved here. Email draft opened — send your public key and wallet address to {CONTACT_EMAIL}.
           </div>
         )}
         {error && (
@@ -121,8 +177,8 @@ function PayoutWalletForm() {
               className="border-border-dim bg-bg-tertiary font-mono text-xs"
             />
           </div>
-          <Button type="submit" className="bg-accent-brand text-xs font-semibold text-white hover:bg-accent-brand-hover">
-            <Mail className="mr-2 h-3.5 w-3.5" aria-hidden="true" /> Register payout wallet
+          <Button type="submit" disabled={saving} className="bg-accent-brand text-xs font-semibold text-white hover:bg-accent-brand-hover">
+            <Mail className="mr-2 h-3.5 w-3.5" aria-hidden="true" /> {saving ? "Saving…" : saved ? "Update payout wallet" : "Register payout wallet"}
           </Button>
         </form>
       </CardContent>

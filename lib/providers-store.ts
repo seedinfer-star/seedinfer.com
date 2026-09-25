@@ -34,6 +34,12 @@ export type StoredProvider = Provider & {
   agent_url?: string | null
   public_key?: string | null
   hw_fingerprint?: string | null
+  /**
+   * Provider's own Base payout wallet (USDC destination). Self-reported via heartbeat or set in the
+   * Provider Portal; shown publicly so the provider can verify it. Never a private key.
+   */
+  payout_wallet?: string | null
+  payout_wallet_updated_at?: string | null
   hardware_mismatch?: boolean
   heartbeat_count: number
   raw?: Record<string, any>
@@ -74,6 +80,47 @@ function getStore(): GlobalStore {
 }
 
 // Verification helpers
+
+const EVM_ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/;
+
+/** Normalize a payout wallet: trimmed EVM address, or null when missing/invalid. */
+export function normalizePayoutWallet(v: unknown): string | null {
+  if (typeof v !== "string") return null;
+  const t = v.trim();
+  return EVM_ADDRESS_RE.test(t) ? t : null;
+}
+
+/**
+ * Authoritative payout-wallet write (Provider Portal): only when the caller's public key matches
+ * the key the node heartbeats with. Prevents one provider from redirecting another node's payouts.
+ * Returns { ok } or { ok: false, error } with provider_not_found | key_mismatch | invalid_wallet.
+ */
+export function setPayoutWallet(
+  id: string,
+  publicKey: string,
+  wallet: string
+): { ok: true; wallet: string } | { ok: false; error: "provider_not_found" | "key_mismatch" | "invalid_wallet" } {
+  const store = getStore();
+  const p = store.providers.get(id);
+  if (!p) return { ok: false, error: "provider_not_found" };
+  const pk = String(publicKey || "").trim();
+  if (!p.public_key || p.public_key !== pk) return { ok: false, error: "key_mismatch" };
+  const w = normalizePayoutWallet(wallet);
+  if (!w) return { ok: false, error: "invalid_wallet" };
+  p.payout_wallet = w;
+  p.payout_wallet_updated_at = new Date().toISOString();
+  return { ok: true, wallet: w };
+}
+
+/** Find a provider by its public key (portal login / wallet write). */
+export function getProviderByPublicKey(publicKey: string): StoredProvider | undefined {
+  const pk = String(publicKey || "").trim();
+  if (!pk) return undefined;
+  for (const p of getStore().providers.values()) {
+    if (p.public_key === pk) return p;
+  }
+  return undefined;
+}
 
 export function getProvider(id: string): StoredProvider | undefined {
   return getStore().providers.get(id)
@@ -191,6 +238,14 @@ export function upsertProvider(
     region: payload.region || payload.host?.region || undefined,
     country_code: payload.country_code || existing?.country_code || undefined,
     agent_version: payload.agent_version || payload.agentVersion || "0.1.0",
+  }
+
+  // Payout wallet (Base EVM address): accepted from the heartbeat payload, but the Portal write wins
+  // — a heartbeat may carry it, but only setPayoutWallet() (after the public-key check) is authoritative.
+  const payout = normalizePayoutWallet(payload.payout_wallet ?? payload.payoutWallet);
+  if (payout && !existing?.payout_wallet) {
+    base.payout_wallet = payout;
+    base.payout_wallet_updated_at = now;
   }
 
   let verification: Verification

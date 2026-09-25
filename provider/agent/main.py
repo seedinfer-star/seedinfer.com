@@ -36,6 +36,9 @@ TAILSCALE_HOSTNAME = os.getenv("TAILSCALE_HOSTNAME", "")
 HEARTBEAT_INTERVAL = int(os.getenv("HEARTBEAT_INTERVAL", "30"))
 SEEDINFER_PUBLIC_KEY = os.getenv("SEEDINFER_PUBLIC_KEY", "")
 SEEDINFER_HW_FINGERPRINT = os.getenv("SEEDINFER_HW_FINGERPRINT", "")
+# Provider's own Base payout wallet (USDC destination). Set it in the Provider Portal or here;
+# the portal value wins on conflict. Never a private key — a plain 0x address.
+SEEDINFER_PAYOUT_WALLET = os.getenv("SEEDINFER_PAYOUT_WALLET", "").strip()
 LOG_LEVEL = os.getenv("AGENT_LOG_LEVEL", "info").upper()
 MAX_CONCURRENT_REQUESTS = int(os.getenv("MAX_CONCURRENT_REQUESTS", "32"))
 MAX_KV_CACHE_TOKENS = int(os.getenv("MAX_KV_CACHE_TOKENS", "1500000")) # RTX 5090 FP8 KV cache baseline
@@ -248,6 +251,7 @@ def build_provider_payload() -> dict[str, Any]:
         "agent_url": agent_url,
         "public_key": SEEDINFER_PUBLIC_KEY,
         "hw_fingerprint": SEEDINFER_HW_FINGERPRINT,
+        "payout_wallet": SEEDINFER_PAYOUT_WALLET or None,
         "max_concurrency": MAX_CONCURRENT_REQUESTS,
         "max_kv_tokens": MAX_KV_CACHE_TOKENS,
         "active_requests": active_requests,
