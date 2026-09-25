@@ -100,7 +100,12 @@ function statusBadgeVariant(
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
-export default function CryptoGateway() {
+export default function CryptoGateway({
+  allowedTokens,
+}: {
+  /** Server-computed token options per chain (see listTokenOptions in lib/payments/tokens.ts). */
+  allowedTokens?: Partial<Record<ChainKey, string[]>>;
+} = {}) {
   // Amount — stored as cents (default $1 GO Plan)
   const [amountCents, setAmountCents] = useState<number>(100);
   const [amountInput, setAmountInput] = useState<string>("1.00"); // dollars display
@@ -147,6 +152,10 @@ export default function CryptoGateway() {
 
   // Token options per chain (dynamic via tokens.ts helper)
   const tokenOptions: string[] = useMemo(() => {
+    // Prefer the server-computed list: the env allowlist is server-only, so computing it here
+    // would diverge from what /api/v1/invoices accepts (and break hydration).
+    const fromServer = allowedTokens?.[selectedChain];
+    if (fromServer && fromServer.length > 0) return fromServer;
     try {
       const raw = listAllowedSymbols(selectedChain);
       // listAllowedSymbols includes nativeSymbol + "native" sentinel + USDC/USDT
@@ -169,7 +178,7 @@ export default function CryptoGateway() {
       if (selectedChain === "solana") return [native, "USDC", "USDT"];
       return [native];
     }
-  }, [selectedChain]);
+  }, [selectedChain, allowedTokens]);
 
   // Keep selectedToken in sync with chain: default USDC where available else native
   useEffect(() => {

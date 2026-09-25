@@ -211,3 +211,21 @@ export function listAllowedSymbols(chain: string): string[] {
   }
   return [...new Set(syms)];
 }
+
+/**
+ * Token symbols to offer in the billing UI for a chain (upper-cased, deduped, without the
+ * "native" sentinel). The allowlist comes from server-only env vars (ALLOWED_TOKENS_<CHAIN>),
+ * which are NOT available in the browser bundle — so compute this on the server and pass it
+ * to the client; otherwise the UI can offer tokens that /api/v1/invoices rejects and React
+ * hydration fails (server and client render different token lists).
+ */
+export function listTokenOptions(chain: string): string[] {
+  const opts = [
+    ...new Set(listAllowedSymbols(chain).filter((s) => s.toLowerCase() !== "native").map((s) => s.toUpperCase())),
+  ];
+  if (opts.length === 0 && isValidChain(chain)) {
+    const native = NATIVE_TOKENS[chain.toLowerCase() as ChainKey];
+    if (native) return [native.toUpperCase()];
+  }
+  return opts;
+}
