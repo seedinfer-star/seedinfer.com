@@ -7,7 +7,9 @@ import AppShell from "@/components/app-shell"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { LogIn, Github, Chrome, AlertCircle } from "lucide-react";
+import { LogIn, AlertCircle } from "lucide-react";
+import OAuthButtons from "@/components/auth/oauth-buttons";
+import { oauthErrorMessage } from "@/lib/oauth/messages";
 
 function LoginInner() {
   const router = useRouter();
@@ -17,7 +19,7 @@ function LoginInner() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
-  const [err, setErr] = useState<string | null>(oauthError ? `OAuth error: ${oauthError}` : null);
+  const [err, setErr] = useState<string | null>(oauthError ? oauthErrorMessage(oauthError) : null);
 
   // Show banner if redirected from billing unauth or oauth failure
   const nextParam = searchParams.get("next") || "/billing";
@@ -63,7 +65,7 @@ function LoginInner() {
         <header className="flex min-h-[56px] shrink-0 items-center justify-between gap-3 border-b border-border-dim bg-bg-secondary/60 px-4 py-2 md:px-6">
           <div className="min-w-0">
             <h1 className="truncate text-sm font-semibold tracking-tight text-text-primary">Sign in</h1>
-            <p className="truncate font-mono text-[11px] text-text-tertiary">SeedInfer — P2P inference · billing requires JWT</p>
+            <p className="truncate font-mono text-[11px] text-text-tertiary">Credits, billing and account settings</p>
           </div>
           <Link
             href="/register"
@@ -78,7 +80,7 @@ function LoginInner() {
             {(err || oauthError) && (
               <div className="flex items-start gap-2 rounded-xl border border-accent-red/20 bg-accent-red/10 px-3 py-2.5 text-xs leading-4 text-accent-red">
                 <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-                <span>{err || `OAuth error: ${oauthError}`}</span>
+                <span>{err || oauthErrorMessage(oauthError)}</span>
               </div>
             )}
 
@@ -91,23 +93,7 @@ function LoginInner() {
                 <CardDescription>Sign in with email and password, or continue with Google or GitHub.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                {/* OAuth buttons */}
-                <div className="grid gap-2">
-                  <a
-                    href="/api/auth/login/google"
-                    className="inline-flex h-9 w-full items-center justify-center gap-2 rounded-lg border border-border-default bg-bg-tertiary px-4 text-xs font-medium text-text-primary transition-colors hover:bg-bg-elevated"
-                  >
-                    <Chrome className="h-4 w-4" />
-                    Continue with Google
-                  </a>
-                  <a
-                    href="/api/auth/login/github"
-                    className="inline-flex h-9 w-full items-center justify-center gap-2 rounded-lg border border-border-default bg-bg-tertiary px-4 text-xs font-medium text-text-primary transition-colors hover:bg-bg-elevated"
-                  >
-                    <Github className="h-4 w-4" />
-                    Continue with GitHub
-                  </a>
-                </div>
+                <OAuthButtons next={nextParam} />
 
                 <div className="flex items-center gap-2">
                   <span className="h-px flex-1 bg-border-dim" />

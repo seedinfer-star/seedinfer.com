@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { KeyRound, FileText, Copy, Check, Shield } from "lucide-react"
 import { API_BASE_URL, GITHUB_URL } from "@/lib/catalog"
+import AccountPanel from "@/components/account/account-panel"
 
 export default function SettingsPage() {
   const [copied, setCopied] = useState(false)
@@ -24,7 +25,7 @@ export default function SettingsPage() {
     <AppShell>
       <PageHeader
         title="Settings"
-        description="API keys · preferences"
+        description="Account · API keys · preferences"
         actions={
           <Link
             href="/docs"
@@ -35,6 +36,7 @@ export default function SettingsPage() {
         }
       />
       <PageContainer>
+            <AccountPanel />
             <div className="grid gap-6 lg:grid-cols-3">
               <Card className="lg:col-span-2 border border-border-dim bg-bg-secondary">
                 <CardHeader>

@@ -11,7 +11,7 @@ import { SignJWT, jwtVerify } from "jose";
 import bcrypt from "bcryptjs";
 import { randomUUID } from "crypto";
 
-import { getDb } from "./db";
+import { getDb, withTransaction } from "./db";
 
 // ---------------------------------------------------------------------------
 // Env helpers
@@ -95,7 +95,10 @@ export type SignSessionResult = {
  * Generates random token (UUID), signs JWT (HS256, sub=user_id, jti=token), persists to sessions table.
  * Returns {token, jwt, expiresAt} — token is the DB PK, jwt is the cookie value.
  */
-export async function signSession(userId: string, opts?: { token?: string; expiresIn?: string }): Promise<SignSessionResult> {
+export async function signSession(
+  userId: string,
+  opts?: { token?: string; expiresIn?: string; userAgent?: string | null; method?: "password" | "github" | "google" | string }
+): Promise<SignSessionResult> {
   if (!userId) throw new Error("userId required");
   const token = opts?.token || randomUUID();
   const secret = getSecretKey();
@@ -128,19 +131,16 @@ export async function signSession(userId: string, opts?: { token?: string; expir
 
   const createdAt = new Date().toISOString();
 
-  // Persist to sessions table (best-effort — if DB not ready, still return jwt)
+  // Persist to the sessions table. verifySession() is strict (the row must exist), so a session that
+  // cannot be stored would be unusable — fail loudly instead of handing out a dead cookie.
+  const db = getDb();
+  db.prepare(
+    `INSERT INTO sessions (token, user_id, expires_at, created_at, user_agent, method) VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT(token) DO UPDATE SET user_id=excluded.user_id, expires_at=excluded.expires_at`
+  ).run(token, String(userId), expiresAt, createdAt, (opts?.userAgent || "").slice(0, 200) || null, opts?.method || null);
   try {
-    const db = getDb();
-    // Use INSERT ... ON CONFLICT to allow re-issue same token
-    const stmt = db.prepare(
-      `INSERT INTO sessions (token, user_id, expires_at, created_at) VALUES (?, ?, ?, ?)
-       ON CONFLICT(token) DO UPDATE SET user_id=excluded.user_id, expires_at=excluded.expires_at`
-    );
-    stmt.run(token, String(userId), expiresAt, createdAt);
-  } catch (e: any) {
-    // Element requires refinement: session persistence failure should be surfaced via error monitoring.
-    console.warn(`[auth] signSession DB persist skipped: ${e?.message || e}`);
-  }
+    db.prepare("DELETE FROM sessions WHERE expires_at < ?").run(createdAt); // housekeeping
+  } catch {}
 
   return { token, jwt, expiresAt };
 }
@@ -161,29 +161,17 @@ export async function verifySession(jwt: string): Promise<{ userId: string; toke
 
     const expiresAt = exp ? new Date(exp * 1000).toISOString() : new Date().toISOString();
 
-    // Optional DB check: token must exist and not expired (revocation support)
-    try {
-      const db = getDb();
-      const row = db
-        .prepare("SELECT token, user_id, expires_at FROM sessions WHERE token = ?")
-        .get(String(jti)) as { token: string; user_id: string; expires_at: string } | undefined;
-      if (row) {
-        // Check DB expiry
-        const dbExp = new Date(row.expires_at).getTime();
-        if (Number.isFinite(dbExp) && dbExp < Date.now()) {
-          // Expired in DB — treat as invalid
-          return null;
-        }
-        // Also ensure user_id matches JWT sub (tamper detection)
-        if (row.user_id !== String(sub)) return null;
-      } else {
-        // Token not found — for stateless JWT we still allow verify (e.g. DB was flushed),
-        // but in strict mode this would be invalid. Keep lenient for tmpfs restore window.
-        // Element requires refinement: decide strict vs lenient session revocation policy.
-      }
-    } catch {
-      // DB unavailable — still accept JWT if crypto valid
-    }
+    // Strict revocation: the session row must exist, be unexpired and belong to the same user.
+    // Logging out, "sign out everywhere", password changes and account deletion delete rows, which
+    // immediately invalidates the corresponding cookies (a copied JWT stops working too).
+    const db = getDb();
+    const row = db
+      .prepare("SELECT token, user_id, expires_at FROM sessions WHERE token = ?")
+      .get(String(jti)) as { token: string; user_id: string; expires_at: string } | undefined;
+    if (!row) return null;
+    const dbExp = new Date(row.expires_at).getTime();
+    if (Number.isFinite(dbExp) && dbExp < Date.now()) return null;
+    if (row.user_id !== String(sub)) return null;
 
     return {
       userId: String(sub),
@@ -204,7 +192,50 @@ export function revokeSession(token: string): boolean {
   try {
     const db = getDb();
     const res = db.prepare("DELETE FROM sessions WHERE token = ?").run(String(token));
-    return (res?.changes ?? 0) > 0;
+    return Number(res?.changes ?? 0) > 0;
+  } catch {
+    return false;
+  }
+}
+
+/** Revoke every session of a user, optionally keeping one (the caller's). Returns the number revoked. */
+export function revokeUserSessions(userId: string, exceptToken?: string | null): number {
+  const db = getDb();
+  const res = exceptToken
+    ? db.prepare("DELETE FROM sessions WHERE user_id = ? AND token <> ?").run(String(userId), String(exceptToken))
+    : db.prepare("DELETE FROM sessions WHERE user_id = ?").run(String(userId));
+  return Number(res?.changes ?? 0);
+}
+
+/** Resolve the signed-in user of a request (cookie or Bearer JWT). null when anonymous/invalid. */
+export async function getRequestSession(req: Request): Promise<{ userId: string; token: string } | null> {
+  const jwt = extractJwtFromRequest(req as any);
+  if (!jwt) return null;
+  const sess = await verifySession(jwt);
+  return sess ? { userId: sess.userId, token: sess.token } : null;
+}
+
+/** Public origin of the site (used for redirects and same-origin checks). */
+export function getPublicOrigin(): string {
+  const raw = process.env.NEXT_PUBLIC_SITE_URL || process.env.OAUTH_REDIRECT_BASE || "https://seedinfer.com";
+  return raw.trim().replace(/\/+$/, "");
+}
+
+/**
+ * CSRF guard for cookie-authenticated mutations (POST/PATCH/DELETE): the browser must say the request
+ * is same-origin. Session cookies are SameSite=Lax as well; this is the second layer.
+ */
+export function isSameOriginRequest(req: Request): boolean {
+  const site = req.headers.get("sec-fetch-site");
+  if (site && site !== "same-origin" && site !== "none") return false;
+  const origin = req.headers.get("origin");
+  if (!origin) return true; // non-browser client (Bearer token) or very old browser
+  try {
+    const o = new URL(origin);
+    const allowed = new Set([getPublicOrigin(), "https://seedinfer.com", "https://www.seedinfer.com"]);
+    if (allowed.has(o.origin)) return true;
+    const host = req.headers.get("x-forwarded-host") || req.headers.get("host");
+    return !!host && o.host === host;
   } catch {
     return false;
   }
@@ -312,7 +343,7 @@ export function extractJwtFromRequest(req: { headers: { get?: (k: string) => str
 export async function createUserAndSession(
   email: string,
   password: string,
-  opts?: { walletAddress?: string | null }
+  opts?: { walletAddress?: string | null; userAgent?: string | null }
 ): Promise<{ userId: string; token: string; jwt: string; expiresAt: string }> {
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error("invalid email");
   if (!password || password.length < 8) throw new Error("password too short");
@@ -321,27 +352,9 @@ export async function createUserAndSession(
   const passwordHash = await hashPassword(password);
   const createdAt = new Date().toISOString();
 
-  const db = getDb();
-  // Insert user + initial credits row in transaction
-  const tx = db.transaction(() => {
-    db.prepare(`INSERT INTO users (id, email, password_hash, wallet_address, created_at) VALUES (?, ?, ?, ?, ?)`).run(
-      userId,
-      String(email).toLowerCase().trim(),
-      passwordHash,
-      opts?.walletAddress ?? null,
-      createdAt
-    );
-    db.prepare(`INSERT INTO credits (user_id, balance_usd_cents, updated_at) VALUES (?, ?, ?)`).run(
-      userId,
-      0,
-      createdAt
-    );
-  });
-  // better-sqlite3 transaction returns wrapped function; node:sqlite may not have .transaction — fallback to serial exec
+  // Insert user + initial credits row in one transaction (works with both drivers)
   try {
-    if (typeof tx === "function") (tx as any)();
-    else {
-      // fallback without transaction
+    withTransaction((db) => {
       db.prepare(`INSERT INTO users (id, email, password_hash, wallet_address, created_at) VALUES (?, ?, ?, ?, ?)`).run(
         userId,
         String(email).toLowerCase().trim(),
@@ -350,7 +363,7 @@ export async function createUserAndSession(
         createdAt
       );
       db.prepare(`INSERT INTO credits (user_id, balance_usd_cents, updated_at) VALUES (?, ?, ?)`).run(userId, 0, createdAt);
-    }
+    });
   } catch (e: any) {
     // Re-throw with friendly message for UNIQUE constraint
     if (String(e?.message || e).toLowerCase().includes("unique") || String(e?.code || "").includes("SQLITE_CONSTRAINT")) {
@@ -359,6 +372,6 @@ export async function createUserAndSession(
     throw e;
   }
 
-  const sess = await signSession(userId);
+  const sess = await signSession(userId, { userAgent: opts?.userAgent ?? null, method: "password" });
   return { userId, token: sess.token, jwt: sess.jwt, expiresAt: sess.expiresAt };
 }

@@ -7,7 +7,8 @@ import AppShell from "@/components/app-shell"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { UserPlus, Github, Chrome, AlertCircle } from "lucide-react";
+import { UserPlus, AlertCircle } from "lucide-react";
+import OAuthButtons from "@/components/auth/oauth-buttons";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -63,7 +64,7 @@ export default function RegisterPage() {
         <header className="flex min-h-[56px] shrink-0 items-center justify-between gap-3 border-b border-border-dim bg-bg-secondary/60 px-4 py-2 md:px-6">
           <div className="min-w-0">
             <h1 className="truncate text-sm font-semibold tracking-tight text-text-primary">Create account</h1>
-            <p className="truncate font-mono text-[11px] text-text-tertiary">SeedInfer — choose email/password or OAuth</p>
+            <p className="truncate font-mono text-[11px] text-text-tertiary">Email and password, Google or GitHub</p>
           </div>
           <Link
             href="/login"
@@ -91,22 +92,7 @@ export default function RegisterPage() {
                 <CardDescription>Create a SeedInfer account with email and password, or continue with Google or GitHub.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="grid gap-2">
-                  <a
-                    href="/api/auth/login/google"
-                    className="inline-flex h-9 w-full items-center justify-center gap-2 rounded-lg border border-border-default bg-bg-tertiary px-4 text-xs font-medium text-text-primary transition-colors hover:bg-bg-elevated"
-                  >
-                    <Chrome className="h-4 w-4" />
-                    Continue with Google
-                  </a>
-                  <a
-                    href="/api/auth/login/github"
-                    className="inline-flex h-9 w-full items-center justify-center gap-2 rounded-lg border border-border-default bg-bg-tertiary px-4 text-xs font-medium text-text-primary transition-colors hover:bg-bg-elevated"
-                  >
-                    <Github className="h-4 w-4" />
-                    Continue with GitHub
-                  </a>
-                </div>
+                <OAuthButtons intent="signup" />
 
                 <div className="flex items-center gap-2">
                   <span className="h-px flex-1 bg-border-dim" />

@@ -1,13 +1,12 @@
--- lib/schema.sql — SeedInfer RAM-first SQLite schema (reference)
--- tmpfs primary: /dev/shm/seedinfer.db  -> snapshot: /mnt/nvme/seedinfer/snapshot.db
--- WAL, synchronous=NORMAL, foreign_keys=ON, cache_size=-64000, mmap_size=268435456
+-- lib/schema.sql — SeedInfer account database schema (reference)
+-- Primary: DATABASE_URL (recommended /var/lib/seedinfer/seedinfer.db on disk), rotating VACUUM INTO backups
+-- WAL, synchronous=FULL (NORMAL only in legacy tmpfs mode), foreign_keys=ON
 -- Keep in sync with lib/db.ts initDb()
 
 PRAGMA journal_mode=WAL;
-PRAGMA synchronous=NORMAL;
+PRAGMA synchronous=FULL;
 PRAGMA foreign_keys=ON;
 PRAGMA cache_size=-64000;
-PRAGMA mmap_size=268435456;
 PRAGMA temp_store=MEMORY;
 PRAGMA busy_timeout=5000;
 PRAGMA wal_autocheckpoint=1000;
@@ -18,7 +17,12 @@ CREATE TABLE IF NOT EXISTS users (
   email TEXT UNIQUE NOT NULL,
   password_hash TEXT NOT NULL,
   wallet_address TEXT,
-  created_at TEXT
+  email_verified INTEGER DEFAULT 0,
+  avatar_url TEXT,
+  display_name TEXT,
+  created_at TEXT,
+  updated_at TEXT,
+  last_login_at TEXT
 );
 
 -- sessions
@@ -26,7 +30,9 @@ CREATE TABLE IF NOT EXISTS sessions (
   token TEXT PRIMARY KEY,
   user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
   expires_at TEXT,
-  created_at TEXT
+  created_at TEXT,
+  user_agent TEXT,
+  method TEXT
 );
 
 -- credits (per user)

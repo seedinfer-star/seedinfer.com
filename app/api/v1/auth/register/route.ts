@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createUserAndSession, createSessionCookie } from "@/lib/auth";
+import { createUserAndSession, createSessionCookie, isSameOriginRequest } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -15,6 +15,9 @@ export async function OPTIONS() {
 }
 
 export async function POST(req: Request) {
+  if (!isSameOriginRequest(req)) {
+    return NextResponse.json({ error: "forbidden — same-origin requests only" }, { status: 403, headers: CORS_HEADERS });
+  }
   let body: any = {};
   try {
     const t = await req.text();
@@ -32,7 +35,10 @@ export async function POST(req: Request) {
   }
 
   try {
-    const sess = await createUserAndSession(email, password, { walletAddress: body.wallet_address || body.walletAddress || null });
+    const sess = await createUserAndSession(email, password, {
+      walletAddress: body.wallet_address || body.walletAddress || null,
+      userAgent: req.headers.get("user-agent"),
+    });
     const isProd = process.env.NODE_ENV === "production";
     const cookie = createSessionCookie(sess.jwt, { secure: isProd });
     const res = NextResponse.json(

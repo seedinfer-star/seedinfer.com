@@ -55,3 +55,8 @@ provider-image.tar.gz
 
 # build cache
 .buildx-cache
+
+# local SQLite data (never commit account data)
+data/
+*.db-wal
+*.db-shm

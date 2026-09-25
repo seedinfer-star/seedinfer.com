@@ -1,44 +1,82 @@
 /**
- * lib/db.ts — RAM-first SQLite singleton (tmpfs + NVMe snapshot)
- * Primary: /dev/shm/seedinfer.db (tmpfs, via DATABASE_URL)
- * Snapshot: /mnt/nvme/seedinfer/snapshot.db (via SNAPSHOT_PATH) — periodic every 30s via db.backup() + fsync + on SIGTERM
- * Fallback driver: better-sqlite3 (preferred, WAL) -> node:sqlite (Node >=22 DatabaseSync) -> :memory: shim
- * HMR-safe via globalThis.__seedinferDb (mirrors lib/providers-store.ts pattern)
- * Schema: users, sessions, credits, invoices, usage + providers_mirror stub + indexes (see lib/schema.sql)
+ * lib/db.ts — SQLite singleton for SeedInfer account data
+ * (users, sessions, OAuth links, credits, invoices, usage).
+ *
+ * Storage modes
+ *  - Persistent (recommended): DATABASE_URL=file:/var/lib/seedinfer/seedinfer.db on a real disk.
+ *    WAL + synchronous=FULL, so every committed write survives a crash or power loss. The Next.js
+ *    server process also writes rotating backups with `VACUUM INTO` (DB_BACKUP_DIR, default
+ *    "<db dir>/backups", every DB_BACKUP_INTERVAL_MS = 6h, keeping DB_BACKUP_KEEP = 28 files).
+ *  - Volatile (legacy RAM-first): DATABASE_URL under /dev/shm (tmpfs). The data lives in RAM and is
+ *    copied to SNAPSHOT_PATH every SNAPSHOT_INTERVAL_MS and on SIGTERM; anything written after the
+ *    last snapshot is lost on reboot. Kept only for backwards compatibility.
+ *
+ * Keep the database OUTSIDE the deploy directory — deployments swap /opt/seedinfer as a whole.
+ * Drivers: better-sqlite3 (if installed) -> node:sqlite (Node >= 22). No silent :memory: fallback:
+ * losing account data quietly is worse than failing loudly.
+ * HMR-safe via globalThis.__seedinferDb.
  */
 
-// Node built-ins — keep static imports for tsc
 import fs from "fs";
 import path from "path";
 
 // ---------------------------------------------------------------------------
-// Env helpers
+// Configuration
 // ---------------------------------------------------------------------------
 
-export function getDbPath(): string {
-  const raw = process.env.DATABASE_URL || "file:/dev/shm/seedinfer.db";
-  let p = raw.trim();
+const DEFAULT_DB_PATH = path.join(process.cwd(), "data", "seedinfer.db");
+const DEFAULT_SNAPSHOT_PATH = "/mnt/nvme/seedinfer/snapshot.db";
+const BACKUP_FILE_RE = /^seedinfer-\d{8}-\d{6}\.db$/;
+
+function stripFileUrl(raw: string): string {
+  let p = (raw || "").trim();
   if (p.startsWith("file:")) p = p.slice(5);
-  const qIdx = p.indexOf("?");
-  if (qIdx !== -1) p = p.slice(0, qIdx);
-  if (!p) p = "/dev/shm/seedinfer.db";
+  const q = p.indexOf("?");
+  if (q !== -1) p = p.slice(0, q);
   return p;
+}
+
+export function getDbPath(): string {
+  return stripFileUrl(process.env.DATABASE_URL || "") || DEFAULT_DB_PATH;
+}
+
+/** true when the primary database lives in RAM (tmpfs) and therefore needs snapshots. */
+export function isVolatileDb(dbPath: string = getDbPath()): boolean {
+  const flag = (process.env.DB_SNAPSHOT || "").toLowerCase();
+  if (flag === "on") return true;
+  if (flag === "off") return false;
+  return /^\/(dev|run)\/shm\//.test(dbPath);
 }
 
 export function getSnapshotPath(): string {
-  const raw = process.env.SNAPSHOT_PATH || "/mnt/nvme/seedinfer/snapshot.db";
-  let p = raw.trim();
-  if (p.startsWith("file:")) p = p.slice(5);
-  const qIdx = p.indexOf("?");
-  if (qIdx !== -1) p = p.slice(0, qIdx);
-  if (!p) p = "/mnt/nvme/seedinfer/snapshot.db";
-  return p;
+  return stripFileUrl(process.env.SNAPSHOT_PATH || "") || DEFAULT_SNAPSHOT_PATH;
 }
 
 export function getSnapshotIntervalMs(): number {
-  const raw = process.env.SNAPSHOT_INTERVAL_MS || "30000";
-  const v = Number(raw);
+  const v = Number(process.env.SNAPSHOT_INTERVAL_MS || "30000");
   return Number.isFinite(v) && v >= 1000 ? v : 30000;
+}
+
+export function getBackupDir(dbPath: string = getDbPath()): string {
+  return (process.env.DB_BACKUP_DIR || "").trim() || path.join(path.dirname(dbPath), "backups");
+}
+
+function getBackupIntervalMs(): number {
+  const v = Number(process.env.DB_BACKUP_INTERVAL_MS || String(6 * 3600 * 1000));
+  return Number.isFinite(v) && v >= 60_000 ? v : 6 * 3600 * 1000;
+}
+
+function getBackupKeep(): number {
+  const v = Number(process.env.DB_BACKUP_KEEP || "28");
+  return Number.isFinite(v) && v >= 1 ? Math.floor(v) : 28;
+}
+
+/** Backups run in the web server only by default (the payments worker opens the same file). */
+function backupsEnabled(): boolean {
+  const flag = (process.env.DB_BACKUPS || "").toLowerCase();
+  if (["off", "0", "false"].includes(flag)) return false;
+  if (["on", "1", "true"].includes(flag)) return true;
+  return process.env.NEXT_RUNTIME === "nodejs";
 }
 
 // ---------------------------------------------------------------------------
@@ -49,8 +87,8 @@ type GlobalDb = {
   db?: any;
   isBetter?: boolean;
   dbPath?: string;
-  snapshotPath?: string;
-  snapshotTimer?: NodeJS.Timeout | null;
+  volatile?: boolean;
+  timers?: NodeJS.Timeout[];
   initialized?: boolean;
   shutdownInstalled?: boolean;
 };
@@ -69,9 +107,7 @@ function getStore(): GlobalDb {
 
 function ensureDirForFile(filePath: string): void {
   const dir = path.dirname(filePath);
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
 }
 
 function isNonEmptyFile(filePath: string): boolean {
@@ -83,74 +119,112 @@ function isNonEmptyFile(filePath: string): boolean {
   }
 }
 
-function restoreFromSnapshotIfNeeded(dbPath: string, snapshotPath: string): boolean {
-  if (isNonEmptyFile(dbPath)) return false;
-
-  if (!isNonEmptyFile(snapshotPath)) {
-    // No snapshot to restore — ensure dir and start fresh
-    try {
-      ensureDirForFile(dbPath);
-    } catch {}
-    console.log(`[db] no snapshot at ${snapshotPath}, starting fresh at ${dbPath}`);
-    return false;
-  }
-
+function fsyncPath(p: string, flags: "r" | "r+"): void {
   try {
-    ensureDirForFile(dbPath);
-    // At startup DB is not open, plain copy is safe and fast (tmpfs -> NVMe and back)
-    // Spec also mentions sqlite3 .backup — periodic path uses db.backup(); restore uses copy for simplicity.
-    // scripts/seedinfer-restore.sh uses sqlite3 .backup when available.
-    fs.copyFileSync(snapshotPath, dbPath);
+    const fd = fs.openSync(p, flags);
     try {
-      const fd = fs.openSync(dbPath, "r+");
       fs.fsyncSync(fd);
+    } finally {
       fs.closeSync(fd);
-    } catch {}
-    // Also restore -wal/-shm sidecars if present (WAL snapshot)
-    for (const suffix of ["-wal", "-shm"]) {
-      const src = snapshotPath + suffix;
-      const dst = dbPath + suffix;
-      if (isNonEmptyFile(src)) {
-        try {
-          fs.copyFileSync(src, dst);
-        } catch {}
-      }
     }
-    try {
-      const sz = fs.statSync(snapshotPath).size;
-      console.log(`[db] restored ${dbPath} from snapshot ${snapshotPath} (${sz} bytes)`);
-    } catch {
-      console.log(`[db] restored ${dbPath} from snapshot ${snapshotPath}`);
-    }
-    return true;
-  } catch (e: any) {
-    console.error(`[db] restore failed ${snapshotPath} -> ${dbPath}:`, e?.message || e);
-    return false;
-  }
+  } catch {}
 }
 
-// ---------------------------------------------------------------------------
-// PRAGMAs (WAL + tmpfs tuned)
-// ---------------------------------------------------------------------------
+/**
+ * Transactionally consistent online copy of the live database: `VACUUM INTO` reads a snapshot
+ * (does not block writers in WAL mode, safe with a second process writing), the result is written
+ * to a temp file, fsynced and atomically renamed — a crash mid-copy can never leave a torn file.
+ */
+function writeConsistentCopy(db: any, dest: string): void {
+  ensureDirForFile(dest);
+  const tmp = `${dest}.tmp-${process.pid}`;
+  fs.rmSync(tmp, { force: true });
+  db.exec(`VACUUM INTO '${tmp.replace(/'/g, "''")}'`);
+  fsyncPath(tmp, "r+");
+  fs.renameSync(tmp, dest);
+  fsyncPath(path.dirname(dest), "r");
+}
 
-function applyPragmas(db: any): void {
+function listBackups(dir: string): string[] {
   try {
-    // WAL allows readers+writer concurrency even on tmpfs; synchronous=NORMAL is safe with WAL
-    db.exec("PRAGMA journal_mode=WAL;");
-    db.exec("PRAGMA synchronous=NORMAL;");
-    db.exec("PRAGMA foreign_keys=ON;");
-    db.exec("PRAGMA cache_size=-64000;"); // 64MB negative = KB
-    db.exec("PRAGMA mmap_size=268435456;"); // 256MB
-    db.exec("PRAGMA temp_store=MEMORY;");
-    db.exec("PRAGMA busy_timeout=5000;");
-    db.exec("PRAGMA wal_autocheckpoint=1000;");
+    return fs
+      .readdirSync(dir)
+      .filter((f) => BACKUP_FILE_RE.test(f))
+      .sort()
+      .map((f) => path.join(dir, f));
+  } catch {
+    return [];
+  }
+}
+
+function backupFileName(d = new Date()): string {
+  // 2026-09-25T15:04:05.123Z -> seedinfer-20260925-150405.db
+  const ts = d.toISOString().replace(/[-:]/g, "").replace("T", "-").slice(0, 15);
+  return `seedinfer-${ts}.db`;
+}
+
+/** Write a rotating backup now; returns its path. */
+function writeBackup(db: any, dbPath: string): string {
+  const dir = getBackupDir(dbPath);
+  const dest = path.join(dir, backupFileName());
+  writeConsistentCopy(db, dest);
+  const all = listBackups(dir);
+  for (const old of all.slice(0, Math.max(0, all.length - getBackupKeep()))) {
+    try {
+      fs.rmSync(old, { force: true });
+    } catch {}
+  }
+  return dest;
+}
+
+/**
+ * Seed an empty/missing database from the newest backup (persistent mode) or the tmpfs snapshot.
+ * Never touches a database that already holds data (also checks the -wal file).
+ */
+function restoreIfEmpty(dbPath: string, volatile: boolean): void {
+  ensureDirForFile(dbPath);
+  if (isNonEmptyFile(dbPath) || isNonEmptyFile(`${dbPath}-wal`)) return;
+  const newestBackup = volatile ? [] : listBackups(getBackupDir(dbPath)).slice(-1);
+  const source = [...newestBackup, getSnapshotPath()].find((p) => p !== dbPath && isNonEmptyFile(p));
+  if (!source) {
+    console.log(`[db] no existing data for ${dbPath} — starting with an empty database`);
+    return;
+  }
+  try {
+    for (const s of ["-wal", "-shm"]) fs.rmSync(`${dbPath}${s}`, { force: true }); // stale sidecars would corrupt the copy
+    fs.copyFileSync(source, dbPath);
+    fsyncPath(dbPath, "r+");
+    console.log(`[db] restored ${dbPath} from ${source} (${fs.statSync(source).size} bytes)`);
   } catch (e: any) {
-    console.warn("[db] pragma failed:", e?.message || e);
+    console.error(`[db] restore ${source} -> ${dbPath} failed:`, e?.message || e);
   }
 }
 
 // ---------------------------------------------------------------------------
-// Schema (exact as spec) — keep in sync with lib/schema.sql
+// PRAGMAs
+// ---------------------------------------------------------------------------
+
+function applyPragmas(db: any, volatile: boolean): void {
+  const pragmas = [
+    "busy_timeout=5000", // first: the other process may hold a lock while we switch to WAL
+    "journal_mode=WAL",
+    `synchronous=${volatile ? "NORMAL" : "FULL"}`,
+    "foreign_keys=ON",
+    "cache_size=-64000",
+    "temp_store=MEMORY",
+    "wal_autocheckpoint=1000",
+  ];
+  for (const p of pragmas) {
+    try {
+      db.exec(`PRAGMA ${p};`);
+    } catch (e: any) {
+      console.warn(`[db] PRAGMA ${p} failed:`, e?.message || e);
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Schema — keep in sync with lib/schema.sql
 // ---------------------------------------------------------------------------
 
 const SCHEMA_SQL = `
@@ -161,13 +235,18 @@ CREATE TABLE IF NOT EXISTS users (
   wallet_address TEXT,
   email_verified INTEGER DEFAULT 0,
   avatar_url TEXT,
-  created_at TEXT
+  display_name TEXT,
+  created_at TEXT,
+  updated_at TEXT,
+  last_login_at TEXT
 );
 CREATE TABLE IF NOT EXISTS sessions (
   token TEXT PRIMARY KEY,
   user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
   expires_at TEXT,
-  created_at TEXT
+  created_at TEXT,
+  user_agent TEXT,
+  method TEXT
 );
 CREATE TABLE IF NOT EXISTS oauth_accounts (
   id TEXT PRIMARY KEY,
@@ -175,7 +254,10 @@ CREATE TABLE IF NOT EXISTS oauth_accounts (
   provider TEXT NOT NULL CHECK (provider IN ('google','github')),
   provider_account_id TEXT NOT NULL,
   email TEXT,
+  username TEXT,
+  avatar_url TEXT,
   created_at TEXT NOT NULL,
+  last_login_at TEXT,
   UNIQUE(provider, provider_account_id)
 );
 CREATE INDEX IF NOT EXISTS idx_oauth_accounts_user_id ON oauth_accounts(user_id);
@@ -237,136 +319,92 @@ CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 CREATE INDEX IF NOT EXISTS idx_users_wallet ON users(wallet_address);
 `;
 
-function createSchema(db: any): void {
-  // exec may be single statement or batch; better-sqlite3 and node:sqlite both support batch via exec
-  db.exec(SCHEMA_SQL);
-  // Graceful ALTER for users columns if DB was created with old schema (RK3588 tmpfs restore)
-  try {
-    db.exec("ALTER TABLE users ADD COLUMN email_verified INTEGER DEFAULT 0");
-  } catch {}
-  try {
-    db.exec("ALTER TABLE users ADD COLUMN avatar_url TEXT");
-  } catch {}
-  // Ensure oauth_accounts exists even if snapshot predates delta (idempotent)
-  try {
-    db.exec(`
-      CREATE TABLE IF NOT EXISTS oauth_accounts (
-        id TEXT PRIMARY KEY,
-        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-        provider TEXT NOT NULL CHECK (provider IN ('google','github')),
-        provider_account_id TEXT NOT NULL,
-        email TEXT,
-        created_at TEXT NOT NULL,
-        UNIQUE(provider, provider_account_id)
-      );
-      CREATE INDEX IF NOT EXISTS idx_oauth_accounts_user_id ON oauth_accounts(user_id);
-      CREATE INDEX IF NOT EXISTS idx_oauth_accounts_provider ON oauth_accounts(provider);
-      CREATE INDEX IF NOT EXISTS idx_oauth_accounts_email ON oauth_accounts(email);
-    `);
-  } catch {}
-}
+/** Additive migrations for databases created with an older schema (idempotent). */
+const ADDED_COLUMNS: Array<[table: string, column: string, decl: string]> = [
+  ["users", "email_verified", "INTEGER DEFAULT 0"],
+  ["users", "avatar_url", "TEXT"],
+  ["users", "display_name", "TEXT"],
+  ["users", "updated_at", "TEXT"],
+  ["users", "last_login_at", "TEXT"],
+  ["sessions", "user_agent", "TEXT"],
+  ["sessions", "method", "TEXT"],
+  ["oauth_accounts", "username", "TEXT"],
+  ["oauth_accounts", "avatar_url", "TEXT"],
+  ["oauth_accounts", "last_login_at", "TEXT"],
+];
 
-// ---------------------------------------------------------------------------
-// Snapshot (periodic + SIGTERM)
-// ---------------------------------------------------------------------------
-
-async function doSnapshot(db: any, dbPath: string, snapshotPath: string, isBetter: boolean): Promise<void> {
+function ensureColumn(db: any, table: string, column: string, decl: string): void {
   try {
-    ensureDirForFile(snapshotPath);
-
-    if (isBetter && typeof db.backup === "function") {
-      // better-sqlite3: await db.backup(dest) — uses SQLite backup API (hot backup, consistent)
-      await db.backup(snapshotPath);
-      // fsync snapshot file + directory for durability on NVMe
-      try {
-        const fd = fs.openSync(snapshotPath, "r+");
-        fs.fsyncSync(fd);
-        fs.closeSync(fd);
-      } catch {}
-      try {
-        const dirFd = fs.openSync(path.dirname(snapshotPath), "r");
-        fs.fsyncSync(dirFd);
-        fs.closeSync(dirFd);
-      } catch {}
-      // console.log(`[db] snapshot via db.backup -> ${snapshotPath}`);
-    } else {
-      // Fallback: checkpoint WAL then copy file (consistent point)
-      try {
-        db.exec("PRAGMA wal_checkpoint(TRUNCATE);");
-      } catch {}
-      // Ensure source is flushed before copy
-      fs.copyFileSync(dbPath, snapshotPath);
-      try {
-        const fd = fs.openSync(snapshotPath, "r+");
-        fs.fsyncSync(fd);
-        fs.closeSync(fd);
-      } catch {}
-      try {
-        const dirFd = fs.openSync(path.dirname(snapshotPath), "r");
-        fs.fsyncSync(dirFd);
-        fs.closeSync(dirFd);
-      } catch {}
-      // console.log(`[db] snapshot via copy -> ${snapshotPath}`);
-    }
+    const cols = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+    if (!cols.some((c) => c.name === column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${decl}`);
   } catch (e: any) {
-    console.error("[db] snapshot failed:", e?.message || e);
-    throw e;
+    console.warn(`[db] add column ${table}.${column} failed:`, e?.message || e);
   }
 }
 
-function schedulePeriodicSnapshot(
-  db: any,
-  dbPath: string,
-  snapshotPath: string,
-  isBetter: boolean
-): NodeJS.Timeout {
-  const intervalMs = getSnapshotIntervalMs();
-  const timer = setInterval(() => {
-    doSnapshot(db, dbPath, snapshotPath, isBetter).catch((e) => {
-      console.warn("[db] periodic snapshot error:", e?.message || e);
-    });
-  }, intervalMs);
-  if (typeof (timer as any).unref === "function") (timer as any).unref();
-  return timer;
+function createSchema(db: any): void {
+  db.exec(SCHEMA_SQL);
+  for (const [t, c, d] of ADDED_COLUMNS) ensureColumn(db, t, c, d);
 }
 
-function installShutdownHandlers(
-  db: any,
-  dbPath: string,
-  snapshotPath: string,
-  isBetter: boolean,
-  timer: NodeJS.Timeout | null
-): void {
+// ---------------------------------------------------------------------------
+// Snapshots (volatile mode) and backups (persistent mode)
+// ---------------------------------------------------------------------------
+
+function startMaintenance(db: any, dbPath: string, volatile: boolean): NodeJS.Timeout[] {
+  const timers: NodeJS.Timeout[] = [];
+  if (dbPath === ":memory:") return timers;
+
+  if (volatile) {
+    const snapshotPath = getSnapshotPath();
+    const t = setInterval(() => {
+      try {
+        writeConsistentCopy(db, snapshotPath);
+      } catch (e: any) {
+        console.warn("[db] periodic snapshot failed:", e?.message || e);
+      }
+    }, getSnapshotIntervalMs());
+    t.unref?.();
+    timers.push(t);
+    installSnapshotOnShutdown(db, snapshotPath);
+    return timers;
+  }
+
+  if (!backupsEnabled()) return timers;
+  const run = () => {
+    try {
+      console.log(`[db] backup written: ${writeBackup(db, dbPath)}`);
+    } catch (e: any) {
+      console.warn("[db] backup failed:", e?.message || e);
+    }
+  };
+  const first = setTimeout(run, 60_000);
+  first.unref?.();
+  const t = setInterval(run, getBackupIntervalMs());
+  t.unref?.();
+  timers.push(first, t);
+  return timers;
+}
+
+function installSnapshotOnShutdown(db: any, snapshotPath: string): void {
   const store = getStore();
   if (store.shutdownInstalled) return;
   store.shutdownInstalled = true;
-
-  const handler = async (sig: string) => {
+  const handler = (sig: string) => {
     console.log(`[db] ${sig} received, flushing snapshot...`);
     try {
-      if (timer) clearInterval(timer);
-      await doSnapshot(db, dbPath, snapshotPath, isBetter);
-    } catch {}
-    try {
-      if (typeof db.close === "function") db.close();
-    } catch {}
-    if (sig === "SIGTERM" || sig === "SIGINT") {
-      // Small delay to let logs flush on systemd/docker
-      setTimeout(() => process.exit(0), 120);
+      writeConsistentCopy(db, snapshotPath);
+    } catch (e: any) {
+      console.error("[db] final snapshot failed:", e?.message || e);
     }
+    try {
+      db.close?.();
+    } catch {}
+    setTimeout(() => process.exit(0), 120);
   };
-
   try {
-    process.once("SIGTERM", () => {
-      void handler("SIGTERM");
-    });
-    process.once("SIGINT", () => {
-      void handler("SIGINT");
-    });
-    // beforeExit for non-signal termination (e.g. Next dev reload)
-    process.once("beforeExit", () => {
-      void doSnapshot(db, dbPath, snapshotPath, isBetter).catch(() => {});
-    });
+    process.once("SIGTERM", () => handler("SIGTERM"));
+    process.once("SIGINT", () => handler("SIGINT"));
   } catch {}
 }
 
@@ -374,119 +412,72 @@ function installShutdownHandlers(
 // Driver loading (better-sqlite3 with fallback to node:sqlite)
 // ---------------------------------------------------------------------------
 
-function loadBetterSqlite3(): any {
+function loadModule(name: string): any {
   try {
-    // Use dynamic eval to avoid Next.js bundler tracing static require at build time
+    // eval("require") keeps the Next.js bundler from tracing optional native modules
     // eslint-disable-next-line @typescript-eslint/no-implied-eval
     const _require = eval("require") as NodeRequire;
-    let mod: any = _require("better-sqlite3");
-    if (mod && mod.default) mod = mod.default;
-    return mod;
+    const mod: any = _require(name);
+    return mod?.default && name === "better-sqlite3" ? mod.default : mod;
   } catch {
     return null;
   }
 }
 
-function loadNodeSqlite(): any {
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-implied-eval
-    const _require = eval("require") as NodeRequire;
-    const mod: any = _require("node:sqlite");
-    return mod;
-  } catch {
-    return null;
+function openDatabase(dbPath: string): { db: any; isBetter: boolean } {
+  const BetterSqlite3 = loadModule("better-sqlite3");
+  if (BetterSqlite3) {
+    try {
+      const db = new BetterSqlite3(dbPath);
+      console.log(`[db] opened better-sqlite3 at ${dbPath}`);
+      return { db, isBetter: true };
+    } catch (e: any) {
+      console.warn("[db] better-sqlite3 open failed, trying node:sqlite:", e?.message || e);
+    }
   }
+  const NodeSqlite = loadModule("node:sqlite");
+  if (NodeSqlite?.DatabaseSync) {
+    const db = new NodeSqlite.DatabaseSync(dbPath);
+    console.log(`[db] opened node:sqlite at ${dbPath}`);
+    return { db, isBetter: false };
+  }
+  throw new Error("No SQLite driver available: install better-sqlite3 or run Node >= 22 (node:sqlite)");
 }
 
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
-/**
- * Initialize DB singleton — idempotent, HMR-safe.
- * Restores from SNAPSHOT_PATH if /dev/shm empty, applies pragmas, creates schema,
- * schedules periodic snapshot and SIGTERM handler.
- */
+/** Initialize the DB singleton — idempotent, HMR-safe. */
 export function initDb(): any {
   const store = getStore();
   if (store.initialized && store.db) return store.db;
 
   const dbPath = getDbPath();
-  const snapshotPath = getSnapshotPath();
+  const volatile = isVolatileDb(dbPath);
+  if (dbPath !== ":memory:") restoreIfEmpty(dbPath, volatile);
 
-  // Restore before opening (cold boot from NVMe snapshot)
-  restoreFromSnapshotIfNeeded(dbPath, snapshotPath);
-  ensureDirForFile(dbPath);
-
-  let BetterSqlite3: any = loadBetterSqlite3();
-  let db: any = null;
-  let isBetter = false;
-
-  if (BetterSqlite3) {
+  const { db, isBetter } = openDatabase(dbPath);
+  if (dbPath !== ":memory:") {
     try {
-      db = new BetterSqlite3(dbPath);
-      isBetter = true;
-      console.log(`[db] opened better-sqlite3 at ${dbPath}`);
-    } catch (e: any) {
-      console.warn(`[db] better-sqlite3 open failed, trying node:sqlite:`, e?.message || e);
-      BetterSqlite3 = null;
-    }
+      fs.chmodSync(dbPath, 0o600); // account data: owner-only
+    } catch {}
   }
-
-  if (!db) {
-    const NodeSqlite: any = loadNodeSqlite();
-    if (NodeSqlite && NodeSqlite.DatabaseSync) {
-      try {
-        db = new NodeSqlite.DatabaseSync(dbPath);
-        isBetter = false;
-        console.log(`[db] opened node:sqlite at ${dbPath}`);
-      } catch (e: any) {
-        console.error(`[db] node:sqlite open failed:`, e?.message || e);
-        throw e;
-      }
-    } else {
-      // Last resort: in-memory fallback if BetterSqlite3 still available but path was :memory: earlier failed
-      if (BetterSqlite3) {
-        try {
-          db = new BetterSqlite3(":memory:");
-          isBetter = true;
-          console.warn(`[db] fallback to :memory: (no persistent storage) — install better-sqlite3 or use Node >=22`);
-        } catch (e: any) {
-          throw new Error(
-            "No sqlite driver available: install better-sqlite3 (npm i better-sqlite3) or use Node >=22 with node:sqlite"
-          );
-        }
-      } else {
-        throw new Error(
-          "No sqlite driver available: install better-sqlite3 (npm i better-sqlite3) or use Node >=22 with node:sqlite"
-        );
-      }
-    }
-  }
-
-  applyPragmas(db);
-
+  applyPragmas(db, volatile);
   try {
     createSchema(db);
-    console.log("[db] schema ready");
+    console.log(`[db] schema ready (${volatile ? "volatile tmpfs + snapshots" : "persistent"})`);
   } catch (e: any) {
     console.error("[db] schema creation failed:", e?.message || e);
     throw e;
   }
 
-  let timer: NodeJS.Timeout | null = null;
-  if (dbPath !== ":memory:") {
-    timer = schedulePeriodicSnapshot(db, dbPath, snapshotPath, isBetter);
-    installShutdownHandlers(db, dbPath, snapshotPath, isBetter, timer);
-  }
-
   store.db = db;
   store.isBetter = isBetter;
   store.dbPath = dbPath;
-  store.snapshotPath = snapshotPath;
-  store.snapshotTimer = timer;
+  store.volatile = volatile;
+  store.timers = startMaintenance(db, dbPath, volatile);
   store.initialized = true;
-
   return db;
 }
 
@@ -497,51 +488,76 @@ export function getDb(): any {
   return initDb();
 }
 
-/** Close DB and clear periodic timer (for tests / graceful shutdown). */
+/** Run fn inside a write transaction (works with both drivers). */
+export function withTransaction<T>(fn: (db: any) => T): T {
+  const db = getDb();
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    const out = fn(db);
+    db.exec("COMMIT");
+    return out;
+  } catch (e) {
+    try {
+      db.exec("ROLLBACK");
+    } catch {}
+    throw e;
+  }
+}
+
+/** Close DB and clear timers (tests / graceful shutdown). */
 export function closeDb(): void {
   const store = getStore();
-  if (store.snapshotTimer) {
-    clearInterval(store.snapshotTimer);
-    store.snapshotTimer = null;
-  }
+  for (const t of store.timers || []) clearInterval(t);
+  store.timers = [];
   if (store.db) {
     try {
-      if (typeof store.db.close === "function") store.db.close();
+      store.db.close?.();
     } catch {}
     store.db = undefined;
     store.initialized = false;
   }
 }
 
-/** Force a snapshot now (e.g. before deploy or in API handler). */
-export async function snapshotNow(): Promise<void> {
+/** Force a snapshot (volatile mode) or a rotating backup (persistent mode); returns the file written. */
+export async function snapshotNow(): Promise<string> {
+  const db = getDb();
   const store = getStore();
-  if (!store.db || !store.dbPath || !store.snapshotPath) {
-    throw new Error("DB not initialized");
+  const dbPath = store.dbPath || getDbPath();
+  if (store.volatile) {
+    const snapshotPath = getSnapshotPath();
+    writeConsistentCopy(db, snapshotPath);
+    return snapshotPath;
   }
-  await doSnapshot(store.db, store.dbPath, store.snapshotPath, !!store.isBetter);
+  return writeBackup(db, dbPath);
+}
+
+/** Where the data lives — for the admin CLI / diagnostics (no secrets). */
+export function describeStorage(): { dbPath: string; volatile: boolean; snapshotPath: string | null; backupDir: string | null; backups: string[] } {
+  const dbPath = getStore().dbPath || getDbPath();
+  const volatile = isVolatileDb(dbPath);
+  const backupDir = volatile ? null : getBackupDir(dbPath);
+  return {
+    dbPath,
+    volatile,
+    snapshotPath: volatile ? getSnapshotPath() : null,
+    backupDir,
+    backups: backupDir ? listBackups(backupDir).map((p) => path.basename(p)) : [],
+  };
 }
 
 // ---------------------------------------------------------------------------
-// Providers mirror stub (durable mirror of in-memory providers-store)
-// Element requires refinement: full sync logic (heartbeat -> SQLite mirror) will be wired once lib/db.ts snapshot is stable.
+// Providers mirror (durable mirror of the in-memory providers-store)
 // ---------------------------------------------------------------------------
 
-/**
- * Persist a provider payload into providers_mirror (JSON blob).
- * Intended to be called from lib/providers-store.ts upsertProvider after DB is ready.
- * Safe to call even if DB not initialized — no-op with warn.
- */
+/** Persist a provider payload into providers_mirror (JSON blob). No-op if the DB is not initialized. */
 export function mirrorProvider(id: string, payload: Record<string, any>): void {
   try {
     const db = getStore().db;
     if (!db) return;
-    const now = new Date().toISOString();
-    const stmt = db.prepare(
+    db.prepare(
       `INSERT INTO providers_mirror (id, payload, updated_at) VALUES (?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET payload=excluded.payload, updated_at=excluded.updated_at`
-    );
-    stmt.run(String(id), JSON.stringify(payload), now);
+    ).run(String(id), JSON.stringify(payload), new Date().toISOString());
   } catch (e: any) {
     console.warn(`[db] mirrorProvider ${id} failed:`, e?.message || e);
   }
@@ -580,17 +596,8 @@ export function listMirroredProviders(): Array<{ id: string; payload: Record<str
   }
 }
 
-// ---------------------------------------------------------------------------
-// Chain RPC placeholder — not mocked, just stub with refinement comment
-// ---------------------------------------------------------------------------
-
 /**
- * Element requires refinement: on-chain invoice confirmation (RPC polling + block confirmations)
- * should live here (or in lib/payments) and use RPC_URL_* envs + block_number/block_hash persistence.
- * Current stub leaves invoices.status as 'pending' until external confirmer updates via db.
- * Do not return mock confirmed status — real RPC requires refinement per chain.
+ * On-chain invoice confirmation lives in lib/payments/worker.ts (seedinfer-payments service).
+ * Kept as a no-op for backwards compatibility with older imports.
  */
-export function confirmInvoiceStub(_invoiceId: string): void {
-  // Element requires refinement — chain RPC verification not yet implemented.
-  // Intended flow: fetch tx via RPC_URL_* , wait CONFIRMATIONS_* , update invoices set status='confirmed', confirmed_at, block_number, block_hash.
-}
+export function confirmInvoiceStub(_invoiceId: string): void {}

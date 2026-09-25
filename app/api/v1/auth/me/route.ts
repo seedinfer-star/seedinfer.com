@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { extractJwtFromRequest, verifySession } from "@/lib/auth";
+import { isOAuthOnlyAccount } from "@/lib/accounts";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -28,9 +29,9 @@ export async function GET(req: Request) {
   try {
     const db = getDb();
     const userRow = db
-      .prepare("SELECT id, email, avatar_url, email_verified FROM users WHERE id = ?")
+      .prepare("SELECT id, email, avatar_url, email_verified, display_name, password_hash FROM users WHERE id = ?")
       .get(String(sess.userId)) as
-      | { id: string; email: string; avatar_url: string | null; email_verified: number | null }
+      | { id: string; email: string; avatar_url: string | null; email_verified: number | null; display_name: string | null; password_hash: string }
       | undefined;
 
     if (!userRow) {
@@ -60,6 +61,8 @@ export async function GET(req: Request) {
           email: userRow.email,
           avatar_url: userRow.avatar_url ?? null,
           email_verified: userRow.email_verified ?? 0,
+          display_name: userRow.display_name ?? null,
+          has_password: !isOAuthOnlyAccount(userRow.password_hash),
         },
         credits: {
           balance_usd_cents: cents,

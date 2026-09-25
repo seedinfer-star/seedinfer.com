@@ -285,6 +285,26 @@ export default function PrivacyPolicyPage() {
           </div>
         </section>
 
+        {/* Account data */}
+        <section className="space-y-4">
+          <h2 className="text-xl font-bold text-text-primary flex items-center gap-2">
+            <span className="text-accent-brand">■</span> Account Data We Store
+          </h2>
+          <div className="rounded-xl border border-border-dim bg-bg-secondary p-5 space-y-3 text-sm text-text-secondary">
+            <p>If you create an account, we store only what is needed to sign you in and bill you:</p>
+            <ul className="list-disc pl-5 space-y-2">
+              <li><strong>Profile:</strong> email address, whether it is verified, optional display name and avatar URL, sign-up and last sign-in time.</li>
+              <li><strong>Sign-in methods:</strong> a bcrypt hash of your password (never the password itself) and, if you use Google or GitHub, the provider&apos;s account ID, email and username. We request only basic profile and email scopes and do not keep provider access tokens.</li>
+              <li><strong>Sessions:</strong> creation/expiry time, sign-in method and browser user-agent of each active session, so you can review and revoke them.</li>
+              <li><strong>Billing:</strong> credit balance, invoices (chain, token, amount, transaction hash, status) and per-request usage (model, token counts, cost). Prompts and completions are never stored.</li>
+            </ul>
+            <p>
+              Data is kept in a SQLite database on our own server, readable only by the service account, with rotating backups kept for up to 7 days. It is not sold or
+              shared, except with the OAuth provider you choose during sign-in.
+            </p>
+          </div>
+        </section>
+
         {/* Your Rights */}
         <section className="space-y-4">
           <h2 className="text-xl font-bold text-text-primary flex items-center gap-2">
@@ -292,10 +312,11 @@ export default function PrivacyPolicyPage() {
           </h2>
           <div className="rounded-xl border border-border-dim bg-bg-secondary p-5 space-y-3">
             <ul className="list-disc pl-5 text-sm text-text-secondary space-y-2">
-              <li><strong>Access:</strong> You may request confirmation of what aggregated metrics exist for your API key (no payload data exists to provide).</li>
-              <li><strong>Deletion:</strong> Revoke your API key in <Link href="/settings" className="text-accent-brand underline">Settings</Link> — all associated billing/auth data is purged within 30 days.</li>
-              <li><strong>Portability:</strong> Not applicable — no personal data processed beyond auth/billing.</li>
-              <li><strong>Objection:</strong> You may opt out of aggregated metrics collection by contacting us (may degrade routing quality).</li>
+              <li><strong>Access &amp; portability:</strong> download everything stored about your account as JSON in <Link href="/settings" className="text-accent-brand underline">Settings → Your data</Link>.</li>
+              <li><strong>Rectification:</strong> change your display name, password and linked Google/GitHub accounts in Settings.</li>
+              <li><strong>Deletion:</strong> delete your account in Settings — your profile, sign-in methods, sessions, credits and invoices are removed immediately; usage records are kept only in anonymized form. Copies in backups expire within 7 days.</li>
+              <li><strong>Session control:</strong> review active sessions and sign out of all other devices in Settings.</li>
+              <li><strong>Objection:</strong> you may opt out of aggregated metrics collection by contacting us (may degrade routing quality).</li>
             </ul>
           </div>
         </section>
