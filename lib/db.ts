@@ -140,6 +140,9 @@ function writeConsistentCopy(db: any, dest: string): void {
   const tmp = `${dest}.tmp-${process.pid}`;
   fs.rmSync(tmp, { force: true });
   db.exec(`VACUUM INTO '${tmp.replace(/'/g, "''")}'`);
+  try {
+    fs.chmodSync(tmp, 0o600); // account data: owner-only (VACUUM INTO inherits the umask default)
+  } catch {}
   fsyncPath(tmp, "r+");
   fs.renameSync(tmp, dest);
   fsyncPath(path.dirname(dest), "r");
