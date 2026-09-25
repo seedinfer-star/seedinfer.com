@@ -36,15 +36,22 @@ export function LiveKpiStrip() {
     }
   }, [])
 
+  // "24h" only when the server really has ~24 h of heartbeat history; otherwise say how much.
+  const wh = stats?.window_hours
+  const windowLabel = wh === undefined || wh >= 23.5 ? "24h" : wh >= 1 ? `last ${Math.floor(wh)}h` : "last hour"
   const items: { label: string; value: string; hint: string }[] = stats
     ? [
-        { label: "Nodes online", value: fmtCompact(stats.active_providers), hint: `${fmtCompact(stats.code_attested_providers)} attested` },
-        { label: "Tokens · 24h", value: fmtCompact(stats.last_24h_total_tokens), hint: `${fmtCompact(stats.total_tokens)} all-time` },
-        { label: "Requests · 24h", value: fmtCompact(stats.last_24h_requests), hint: `${fmtCompact(stats.total_requests)} all-time` },
+        {
+          label: "Nodes online",
+          value: fmtCompact(stats.active_providers),
+          hint: `${fmtCompact(stats.verified_providers ?? 0)} verified · ${fmtCompact(stats.registered_providers ?? stats.active_providers)} registered`,
+        },
+        { label: `Tokens · ${windowLabel}`, value: fmtCompact(stats.last_24h_total_tokens), hint: `${fmtCompact(stats.total_tokens)} all-time (node-reported)` },
+        { label: `Requests · ${windowLabel}`, value: fmtCompact(stats.last_24h_requests), hint: `${fmtCompact(stats.total_requests)} all-time (node-reported)` },
         {
           label: "Capacity",
-          value: `${fmtCompact(stats.network_capacity_tps)} tok/s`,
-          hint: `${fmtCompact(stats.total_memory_gb)} GB VRAM pooled`,
+          value: stats.network_capacity_tps > 0 ? `${fmtCompact(stats.network_capacity_tps)} tok/s` : "—",
+          hint: stats.network_capacity_tps > 0 ? `measured decode · ${fmtCompact(stats.total_memory_gb)} GB VRAM` : "no node throughput reported yet",
         },
       ]
     : []

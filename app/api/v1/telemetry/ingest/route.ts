@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server"
+import { timingSafeEqual } from "crypto"
 import { appendTelemetry, getTelemetryStats } from "@/lib/telemetry-store"
 
 export const dynamic = "force-dynamic"
@@ -14,7 +15,27 @@ export async function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: CORS_HEADERS })
 }
 
+/**
+ * Ingest is authenticated: events feed the public network statistics, so anonymous writes would let
+ * anyone inflate them. Set TELEMETRY_INGEST_TOKEN and send `Authorization: Bearer <token>`.
+ * No provider agent uses this endpoint today (nodes report via /api/v1/providers/heartbeat).
+ */
+function authorized(req: Request): boolean {
+  const expected = (process.env.TELEMETRY_INGEST_TOKEN || "").trim()
+  if (expected.length < 16) return false
+  const got = (req.headers.get("authorization") || "").replace(/^Bearer\s+/i, "").trim()
+  const a = Buffer.from(got)
+  const b = Buffer.from(expected)
+  return a.length === b.length && timingSafeEqual(a, b)
+}
+
 export async function POST(req: Request) {
+  if (!authorized(req)) {
+    return NextResponse.json(
+      { error: { message: "Telemetry ingest requires a valid bearer token", type: "authentication_error" } },
+      { status: 401, headers: CORS_HEADERS }
+    )
+  }
   let body: any
   try {
     body = await req.json()
@@ -37,7 +58,8 @@ export async function POST(req: Request) {
       requests: ev.requests ?? ev.requests_served ?? 0,
       tokens: ev.tokens ?? ev.tokens_generated ?? 0,
       latency: ev.latency ?? ev.latencyMs ?? undefined,
-      upstream: ev.upstream ?? null,
+      // "heartbeat" is reserved for /api/v1/providers/heartbeat — network stats are derived from it.
+      upstream: ev.upstream && ev.upstream !== "heartbeat" ? String(ev.upstream) : "ingest",
       fallback_chain: ev.fallback_chain ?? null,
       ttft: ev.ttft ?? null,
       rpm: ev.rpm ?? null,

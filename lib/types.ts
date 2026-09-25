@@ -132,6 +132,14 @@ export type StatsResponse = {
   total_requests: number
   total_tokens: number
   unknown_location_providers: number
+  /** Providers that passed server-side verification (health, vLLM, GPU, inference checks). */
+  verified_providers?: number
+  /** Every provider the registry knows (online or offline). */
+  registered_providers?: number
+  /** How many hours of heartbeat history the "last 24h" figures actually cover (≤ 24). */
+  window_hours?: number
+  /** false: nodes do not report an input/output token split, so charts show totals only. */
+  token_split_available?: boolean
   // parity optional fields from SeedInfer Network Stats (/api/stats)
   location_privacy_min_providers?: number
   location_window_hours?: number

@@ -35,12 +35,15 @@ export default function KpiGrid({ stats, loading }: Props) {
   const bottleneck = s.network_utilization.bottleneck_model
   const activeReq = s.network_utilization.active_requests
   const cap = s.network_capacity_tps
+  // "24h" only when the server really holds ~24 h of heartbeat history
+  const wh = s.window_hours
+  const win = wh === undefined || wh >= 23.5 ? "24h" : wh >= 1 ? `last ${Math.floor(wh)}h` : "last hour"
 
   const cards = [
     {
       label: "Tokens served",
       value: formatTokens(s.total_tokens),
-      sub: `${formatTokens(s.last_24h_total_tokens)} · 24h`,
+      sub: `${formatTokens(s.last_24h_total_tokens)} · ${win}`,
       icon: Layers,
       badge: "total",
       hint: `${formatNumber(s.total_requests)} req total`,
@@ -48,7 +51,7 @@ export default function KpiGrid({ stats, loading }: Props) {
     {
       label: "Requests",
       value: compact(s.total_requests),
-      sub: `${compact(s.last_24h_requests)} · 24h`,
+      sub: `${compact(s.last_24h_requests)} · ${win}`,
       icon: BarChart3,
       badge: `${s.active_providers} active`,
       hint: `${activeReq} active / ${s.network_utilization.queued_requests} queued`,
@@ -56,26 +59,26 @@ export default function KpiGrid({ stats, loading }: Props) {
     {
       label: "Nodes online",
       value: formatNumber(s.active_providers),
-      sub: `${formatNumber(s.code_attested_providers)} attested`,
+      sub: `${formatNumber(s.verified_providers ?? 0)} verified`,
       icon: Server,
-      badge: s.code_attestation_enforced ? "enforced" : "open",
-      hint: `${formatPercent(s.code_attested_providers / Math.max(1, s.active_providers))} hardware`,
+      badge: "open network",
+      hint: `${formatNumber(s.registered_providers ?? s.active_providers)} registered in total`,
     },
     {
       label: "Memory bandwidth",
       value: `${formatNumber(s.total_bandwidth_gbs)} GB/s`,
       sub: `${formatNumber(Math.round(s.total_bandwidth_gbs / Math.max(1, s.active_providers)))} per node avg`,
       icon: MemoryStick,
-      badge: "aggregate",
-      hint: "provider memory BW",
+      badge: "from GPU specs",
+      hint: "sum of online nodes' spec bandwidth",
     },
     {
       label: "Network Power",
       value: formatTps(cap),
-      sub: `${(s.active_power_watts / 1000).toFixed(1)} kW active`,
+      sub: `~${(s.active_power_watts / 1000).toFixed(1)} kW (GPU TDP est.)`,
       icon: Zap,
       badge: `${formatNumber(s.total_memory_gb)} GB RAM`,
-      hint: "capacity · power",
+      hint: "measured decode tok/s · power estimated",
     },
     {
       label: "Utilization",
@@ -83,7 +86,7 @@ export default function KpiGrid({ stats, loading }: Props) {
       sub: `bottleneck ${bottleneck.slice(0, 18)}`,
       icon: Activity,
       badge: `${formatPercent(s.network_utilization.bottleneck_utilization)} bottleneck`,
-      hint: `warm ${formatPercent(s.network_utilization.warm_utilization)}`,
+      hint: `${formatNumber(s.network_utilization.active_requests)} requests in flight`,
       progress: utilization,
     },
     {
@@ -105,10 +108,10 @@ export default function KpiGrid({ stats, loading }: Props) {
     {
       label: "Avg tok / req",
       value: formatNumber(Math.round(s.avg_tokens_per_request)),
-      sub: `${formatTokens(s.last_24h_total_tokens)} / ${compact(s.last_24h_requests)} 24h`,
+      sub: `${formatTokens(s.last_24h_total_tokens)} / ${compact(s.last_24h_requests)} · ${win}`,
       icon: Box,
       badge: "mean",
-      hint: `${formatTokens(s.last_24h_prompt_tokens)} prompt 24h`,
+      hint: "all-time, node-reported",
     },
     {
       label: "Models",

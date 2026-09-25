@@ -80,6 +80,9 @@ export default function NetworkTraffic({ stats }: { stats: StatsResponse | null 
     }
   }, [stats, range])
 
+  // Nodes currently report only total tokens; never draw an invented input/output split.
+  const split = stats?.token_split_available !== false
+
   const donutData = [
     { name: "Input", value: totals.prompt, color: c.brand },
     { name: "Output", value: totals.completion, color: c.green },
@@ -172,7 +175,7 @@ export default function NetworkTraffic({ stats }: { stats: StatsResponse | null 
         <Card className="border border-border-dim bg-bg-secondary">
           <CardHeader className="pb-2">
             <CardTitle className="font-mono text-[11px] uppercase tracking-[0.12em] text-text-tertiary">
-              Tokens / min — stacked Input / Output
+              {split ? "Tokens / min — stacked Input / Output" : "Tokens / min"}
             </CardTitle>
           </CardHeader>
           <CardContent className="h-[220px] p-2 pt-0">
@@ -194,14 +197,24 @@ export default function NetworkTraffic({ stats }: { stats: StatsResponse | null 
                 <Tooltip
                   contentStyle={tooltipStyle}
                 />
-                <Area type="monotone" dataKey="prompt" stackId="1" stroke={c.brand} fill="url(#promptFill)" strokeWidth={1.5} />
-                <Area type="monotone" dataKey="completion" stackId="1" stroke={c.green} fill="url(#compFill)" strokeWidth={1.5} />
+                {split ? (
+                  <>
+                    <Area type="monotone" dataKey="prompt" stackId="1" stroke={c.brand} fill="url(#promptFill)" strokeWidth={1.5} />
+                    <Area type="monotone" dataKey="completion" stackId="1" stroke={c.green} fill="url(#compFill)" strokeWidth={1.5} />
+                  </>
+                ) : (
+                  <Area type="monotone" dataKey="total" name="tokens" stroke={c.brand} fill="url(#promptFill)" strokeWidth={1.5} />
+                )}
               </AreaChart>
             </ResponsiveContainer>
-            <div className="mt-1 flex items-center justify-center gap-3 text-[10px]">
-              <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-accent-brand" /> Input</span>
-              <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-accent-green" /> Output</span>
-            </div>
+            {split ? (
+              <div className="mt-1 flex items-center justify-center gap-3 text-[10px]">
+                <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-accent-brand" /> Input</span>
+                <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-accent-green" /> Output</span>
+              </div>
+            ) : (
+              <div className="mt-1 text-center font-mono text-[10px] text-text-tertiary">total tokens from node heartbeats</div>
+            )}
           </CardContent>
         </Card>
 
@@ -212,6 +225,17 @@ export default function NetworkTraffic({ stats }: { stats: StatsResponse | null 
               Token Distribution
             </CardTitle>
           </CardHeader>
+          {!split ? (
+            <CardContent className="flex h-[220px] flex-col items-center justify-center gap-2 p-4 text-center">
+              <div className="text-2xl font-semibold tabular-nums text-text-primary">
+                {series.reduce((a, p) => a + (Number(p.total) || 0), 0).toLocaleString()}
+              </div>
+              <div className="font-mono text-[10px] uppercase tracking-wide text-text-tertiary">tokens · last 30 min</div>
+              <p className="max-w-[240px] text-xs leading-5 text-text-tertiary">
+                Input / output split is not reported by nodes yet, so it is not estimated here.
+              </p>
+            </CardContent>
+          ) : (
           <CardContent className="h-[220px] p-2 pt-0">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
@@ -239,6 +263,7 @@ export default function NetworkTraffic({ stats }: { stats: StatsResponse | null 
               {((totals.completion / Math.max(1, totals.prompt + totals.completion)) * 100).toFixed(1)}% output · {((totals.prompt / Math.max(1, totals.prompt + totals.completion)) * 100).toFixed(1)}% input
             </div>
           </CardContent>
+          )}
         </Card>
       </div>
     </div>

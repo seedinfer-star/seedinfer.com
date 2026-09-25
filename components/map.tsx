@@ -1,5 +1,5 @@
 "use client"
-import { useEffect, useRef } from "react"
+import { useEffect, useRef, useState } from "react"
 import maplibregl from "maplibre-gl"
 import type { ProviderLocation } from "@/lib/types"
 import { useTheme } from "@/components/theme-provider"
@@ -73,6 +73,7 @@ export default function Map({ locations, height = 360 }: Props) {
   const locationsRef = useRef(locations)
   const styleRef = useRef<keyof typeof STYLES | null>(null)
   const { theme, mounted } = useTheme()
+  const [unavailable, setUnavailable] = useState(false)
 
   locationsRef.current = locations
 
@@ -81,14 +82,22 @@ export default function Map({ locations, height = 360 }: Props) {
     if (!mounted || !ref.current || mapRef.current) return
     const initial = theme === "light" ? "light" : "dark"
     styleRef.current = initial
-    const map = new maplibregl.Map({
-      container: ref.current,
-      style: STYLES[initial],
-      center: [15, 30],
-      zoom: 1.2,
-      attributionControl: false,
-      cooperativeGestures: true,
-    })
+    let map: maplibregl.Map
+    try {
+      map = new maplibregl.Map({
+        container: ref.current,
+        style: STYLES[initial],
+        center: [15, 30],
+        zoom: 1.2,
+        attributionControl: false,
+        cooperativeGestures: true,
+      })
+    } catch {
+      // WebGL disabled/unavailable (some browsers, remote desktops): show the list-only fallback.
+      setUnavailable(true)
+      return
+    }
+    map.on("error", () => {}) // tile/style hiccups must not surface as page errors
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right")
     map.addControl(new maplibregl.AttributionControl({ compact: true }), "bottom-right")
     // (re)add our layers every time a basemap style finishes loading
@@ -127,6 +136,17 @@ export default function Map({ locations, height = 360 }: Props) {
     const src = map.getSource("providers") as maplibregl.GeoJSONSource | undefined
     if (src) src.setData(toGeoJson(locations))
   }, [locations])
+
+  if (unavailable) {
+    return (
+      <div
+        style={{ height }}
+        className="flex w-full items-center justify-center rounded-xl border border-dashed border-border-dim bg-bg-tertiary p-4 text-center text-xs text-text-tertiary"
+      >
+        Interactive map unavailable in this browser (WebGL disabled). Provider countries are listed below.
+      </div>
+    )
+  }
 
   return (
     <div

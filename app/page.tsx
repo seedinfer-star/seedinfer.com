@@ -58,7 +58,7 @@ const STEPS = [
   {
     icon: Cpu,
     title: "Verified GPUs serve it",
-    body: "Requests are routed to attested NVIDIA GPUs run by independent providers, priced close to the electricity they burn.",
+    body: "Requests are routed to verified NVIDIA GPUs run by independent providers, priced close to the electricity they burn.",
   },
 ]
 

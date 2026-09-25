@@ -26,7 +26,8 @@ export async function GET(req: Request) {
   const defaultSince = new Date(Date.now() - 60 * 60 * 1000).toISOString()
   const since = sinceParam || (showAll ? undefined : defaultSince)
 
-  const data = listTelemetry({ limit, provider_id, since })
+  // Public view: drop raw payloads and network addresses entirely (not just masked).
+  const data = listTelemetry({ limit, provider_id, since }).map(({ raw, agent_url, tailscale_ip, ...rest }: any) => rest)
   const stats = getTelemetryStats()
 
   return NextResponse.json(
@@ -38,7 +39,7 @@ export async function GET(req: Request) {
       total: stats.count,
       pending: stats.pending,
       storage: { jsonl: !!stats.jsonl, sqlite: !!stats.sqlite },
-      hint: "POST /api/v1/telemetry/ingest to append; pass ?all=1 for the full historical log or ?since=ISO_TIMESTAMP",
+      hint: "Heartbeat-derived node telemetry (no addresses or raw payloads). ?since=ISO_TIMESTAMP or ?all=1 for more history.",
     },
     { headers: { "Cache-Control": "no-store, max-age=0", ...CORS_HEADERS } }
   )

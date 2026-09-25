@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { sanitizePublic } from "@/lib/public-sanitize"
 import { upsertProvider, getProvider } from "@/lib/providers-store"
+import { normalizeCountryCode } from "@/lib/geo-centroids"
 import { getProviderStat } from "@/lib/routing/selector"
 import { getProviderCircuitState } from "@/lib/fallback-state"
 
@@ -57,6 +58,13 @@ export async function POST(req: Request) {
   }
 
   const ip = extractIp(req)
+
+  // Coarse public location: Cloudflare's country for this heartbeat (preferred over a self-reported
+  // value). Heartbeats that bypass Cloudflare (LAN/tailnet) keep their previous or self-reported country.
+  const cfCountry = normalizeCountryCode(req.headers.get("cf-ipcountry"))
+  const selfCountry = normalizeCountryCode(payload.country_code)
+  if (cfCountry || selfCountry) payload.country_code = cfCountry || selfCountry
+  else delete payload.country_code
 
   // Use store helper — it handles pending->auto-verify after 2 heartbeats non-blocking
   const stored = upsertProvider(payload, { ip })

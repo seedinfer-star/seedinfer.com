@@ -29,13 +29,13 @@ export default function LiveNetworkFlow({ locations, regions }: Props) {
         <Card className="overflow-hidden border border-border-dim bg-bg-secondary">
           <CardHeader className="pb-2">
             <CardTitle className="font-mono text-[11px] uppercase tracking-[0.12em] text-text-tertiary">
-              Global provider map — {locations.length} cities
+              Global provider map — {locations.length} {locations.length === 1 ? "country" : "countries"}
             </CardTitle>
           </CardHeader>
           <CardContent className="p-2 pt-0">
             <Map locations={locations} height={360} />
             <p className="mt-2 font-mono text-[10px] text-text-tertiary">
-              Dot size = providers per city · locations are coarse (city level) for privacy
+              Dot size = providers per country · positions are country-level (no IPs or cities) for privacy
             </p>
           </CardContent>
         </Card>
@@ -58,7 +58,7 @@ export default function LiveNetworkFlow({ locations, regions }: Props) {
                       {r.region ?? r.country} <span className="font-mono text-[10px] text-text-tertiary">{r.country_code}</span>
                     </div>
                     <div className="font-mono text-[10px] text-text-tertiary">
-                      {r.providers} nodes · {r.hardware_attested} attested · {r.memory_gb} GB
+                      {r.providers} {r.providers === 1 ? "node" : "nodes"}
                     </div>
                   </div>
                   <Badge variant="outline" className="ml-2 shrink-0 border-border-dim bg-bg-secondary font-mono text-[10px]">
@@ -72,7 +72,7 @@ export default function LiveNetworkFlow({ locations, regions }: Props) {
           <Card className="border border-border-dim bg-bg-secondary">
             <CardHeader className="pb-2">
               <CardTitle className="font-mono text-[11px] uppercase tracking-[0.12em] text-text-tertiary">
-                Provider locations (city tiles)
+                Providers by country
               </CardTitle>
             </CardHeader>
             <CardContent className="p-3 pt-0">
@@ -83,10 +83,10 @@ export default function LiveNetworkFlow({ locations, regions }: Props) {
                 {top.map((loc) => (
                   <div key={loc.key} className="rounded-lg border border-border-dim bg-bg-tertiary/50 p-2.5">
                     <div className="truncate text-xs font-medium text-text-primary">
-                      {loc.city ?? loc.region}, {loc.country_code}
+                      {loc.city ?? loc.region ?? loc.country}, {loc.country_code}
                     </div>
                     <div className="font-mono text-[10px] text-text-tertiary">
-                      {loc.region ?? ""} · {loc.providers} providers
+                      {loc.region ? `${loc.region} · ` : ""}{loc.providers} {loc.providers === 1 ? "provider" : "providers"}
                     </div>
                     <div className="mt-1 flex flex-wrap gap-1">
                       <span className="rounded-full bg-bg-elevated px-1.5 py-0.5 font-mono text-[9px] text-text-secondary">
@@ -94,9 +94,6 @@ export default function LiveNetworkFlow({ locations, regions }: Props) {
                       </span>
                       <span className="rounded-full bg-bg-elevated px-1.5 py-0.5 font-mono text-[9px] text-text-secondary">
                         {loc.memory_gb} GB
-                      </span>
-                      <span className="rounded-full bg-accent-green/10 px-1.5 py-0.5 font-mono text-[9px] text-accent-green">
-                        {loc.hardware_attested} ✓
                       </span>
                     </div>
                   </div>

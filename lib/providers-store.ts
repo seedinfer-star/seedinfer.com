@@ -43,6 +43,8 @@ export type StoredProvider = Provider & {
   vllm_health?: any
   vllm_model?: string
   region?: string
+  /** ISO-3166 alpha-2, from Cloudflare CF-IPCountry at heartbeat time (coarse, public-map only). */
+  country_code?: string
   agent_version?: string
   // --- routing state (EWMA + concurrency) — per lib/routing/selector ---
   // EWMA TTFT (czas do first token) oraz EWMA total latency (cały request)
@@ -185,7 +187,9 @@ export function upsertProvider(
     host: payload.host,
     vllm_health: payload.vllm_health,
     vllm_model: payload.vllm_model || payload.vllmModel || "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4",
-    region: payload.region || payload.host?.region || "pl-central",
+    // No invented default: unknown stays unknown (the public map must not show fake locations).
+    region: payload.region || payload.host?.region || undefined,
+    country_code: payload.country_code || existing?.country_code || undefined,
     agent_version: payload.agent_version || payload.agentVersion || "0.1.0",
   }
 
