@@ -2,8 +2,11 @@
 # Faza 0: Headscale + Headscale-UI (opcjonalnie) — ARM64 native
 # Network: host-side SQLite na NVMe (/mnt/nvme/headscale -> /etc/headscale in container)
 # Caddy i Cloudflared kierują tailnet.seedinfer.com -> 127.0.0.1:8080 (ten compose)
-# Uruchomienie: docker compose -f infra/headscale/docker-compose.headscale.yml up -d
-#   lub z roota: docker compose -f infra/headscale/docker-compose.headscale.yml --env-file .env up -d
+# Wdrożenie na Pi: stały katalog /opt/seedinfer-infra/headscale — NIE /opt/seedinfer (ten katalog jest podmieniany
+#   przy każdym deployu WWW, a bind-mounty config/acl zostawałyby na starej kopii).
+#   Aktualizacja: rsync -a --chown=root:root --chmod=D755,F644 infra/headscale/ root@192.168.1.15:/opt/seedinfer-infra/headscale/
+#     potem na Pi: docker compose -p headscale -f /opt/seedinfer-infra/headscale/docker-compose.headscale.yml up -d headscale
+#   Przed zmianą backup danych: docker stop seedinfer-headscale && cp -a /mnt/nvme/headscale /mnt/nvme/headscale.bak-$(date +%F)
 # Weryfikacja: curl -sf http://127.0.0.1:8080/health && curl -fsSL https://tailnet.seedinfer.com/health
 
 services:
@@ -30,7 +33,7 @@ services:
       # Kolejność: najpierw NVMe jako katalog, potem nadpisz config/acl plikami (file mount musi być PO katalogu, inaczej katalog zasłoni pliki)
       - /mnt/nvme/headscale:/mnt/nvme/headscale
       - /mnt/nvme/headscale:/etc/headscale
-      # Config + ACL — mount read-only z repo (na Pi skopiowane do /opt/seedinfer/infra/headscale/) — MUSI być po /etc/headscale aby nadpisać
+      # Config + ACL — mount read-only z repo (na Pi: /opt/seedinfer-infra/headscale/) — MUSI być po /etc/headscale aby nadpisać
       - ./config.yaml:/etc/headscale/config.yaml:ro
       - ./acl.json:/etc/headscale/acl.json:ro
       # Alternatywa: named volume gdy brak NVMe (dev x64):
@@ -40,11 +43,13 @@ services:
       # TZ dla logów
       - TZ=Europe/Warsaw
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/health"]
+      # Obraz jest distroless (brak wget/curl/sh). CLI łączy się z działającym serwerem przez unix socket
+      # i odpytuje DB, więc to realny test żywotności (~0,2 s). Nowsze wersje mają `headscale health` (juanfont/headscale#2275).
+      test: ["CMD", "headscale", "users", "list"]
       interval: 30s
-      timeout: 5s
+      timeout: 10s
       retries: 3
-      start_period: 15s
+      start_period: 20s
     logging:
       driver: json-file
       options:
