@@ -1,6 +1,10 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  experimental: {
+    // Light for Orange Pi RK3588: trim barrel-import cost, no extra RAM/CPU.
+    optimizePackageImports: ["recharts", "lucide-react", "maplibre-gl"],
+  },
   env: {
     NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL,
   },
