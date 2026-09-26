@@ -57,11 +57,10 @@ services:
       MODEL: ${MODEL:-google/gemma-4-26b-a4b-nvfp4}
       VLLM_MODEL: ${VLLM_MODEL:-/models/Gemma-4-26B-A4B-NVFP4}
       HF_TOKEN: ${HF_TOKEN:-}
-      # vLLM ALWAYS listens on container port 8000 (entrypoint.sh: VLLM_PORT
-      # defaults to 8000; VLLM_URL below points at it). Do NOT pass a host
-      # port as VLLM_PORT into the container — the host side is HOST_VLLM_PORT
-      # in the ports mapping below. (Default VLLM_PORT=47900 here would make
-      # vLLM listen on 47900 while the mapping + agent probe 8000.)
+      # Container ports are FIXED: vLLM always listens on 8000, agent on 3001.
+      # Host-side mapping is HOST_VLLM_PORT/HOST_AGENT_PORT (defaults 47900/47901)
+      # in the ports mapping below. Never pass a host port as VLLM_PORT/AGENT_PORT.
+      VLLM_PORT: 8000
       VLLM_GPU_MEMORY_UTILIZATION: ${VLLM_GPU_MEMORY_UTILIZATION:-0.94}
       VLLM_MAX_MODEL_LEN: ${VLLM_MAX_MODEL_LEN:-262144}
       VLLM_MAX_NUM_SEQS: ${VLLM_MAX_NUM_SEQS:-32}
@@ -80,9 +79,8 @@ services:
       VLLM_MAMBA_BACKEND: ${VLLM_MAMBA_BACKEND:-flashinfer}
       VLLM_MAMBA_CACHE_MODE: ${VLLM_MAMBA_CACHE_MODE:-align}
       VLLM_CHAT_TEMPLATE: ${VLLM_CHAT_TEMPLATE:-/qwen_setup/gemma4_chat_template.jinja}
-      # --- Agent ---
-      AGENT_PORT: ${AGENT_PORT:-3001}
-      HOST_AGENT_PORT: ${HOST_AGENT_PORT:-47901}
+      # --- Agent (container port FIXED 3001; host side HOST_AGENT_PORT) ---
+      AGENT_PORT: 3001
       TAILSCALE_IP: ${TAILSCALE_IP:-}
       AGENT_LOG_LEVEL: ${AGENT_LOG_LEVEL:-info}
       PROVIDER_ID: ${PROVIDER_ID:-}
@@ -90,7 +88,7 @@ services:
       VLLM_URL: http://127.0.0.1:8000
     ports:
       - "${HOST_VLLM_PORT:-47900}:8000"   # vLLM OpenAI API — host 47900 -> container 8000 (vLLM always listens on 8000)
-      - "${HOST_AGENT_PORT:-47901}:${AGENT_PORT:-3001}"  # agent health + priority proxy — host 47901 -> container 3001
+      - "${HOST_AGENT_PORT:-47901}:3001"  # agent health + priority proxy — host 47901 -> container 3001
     volumes:
       # Identity file (600 on host): sourced by entrypoint so the agent gets
       # SEEDINFER_NODE_TOKEN + PROVIDER_ID even when using the prebuilt image.
@@ -164,7 +162,11 @@ services:
     networks:
       - seedinfer-tailnet
     healthcheck:
-      test: ["CMD", "tailscale", "status"]
+      # BackendState==Running equivalent without jq: a 100.x tailnet IP exists
+      # only when tailscaled is Running (same check install.sh gates
+      # "Tailnet podłączony" on). `tailscale ip -4` exits non-zero when logged
+      # out, and grep fails when no 100.x address is assigned yet.
+      test: ["CMD-SHELL", "tailscale ip -4 2>/dev/null | grep -q '^100\\.'"]
       interval: 30s
       timeout: 5s
       retries: 3

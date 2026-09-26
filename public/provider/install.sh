@@ -54,12 +54,16 @@ FORCE_HOST_TAILSCALE="${FORCE_HOST_TAILSCALE:-0}"
 EXTRA_ARGS=""
 INSTALL_DIR="/opt/seedinfer-provider"
 REPO_URL="https://github.com/seedinfer-star/seedinfer.com.git" # public clone (org seedinfer 404, use star)
-# VLLM_PORT/AGENT_PORT are HOST ports here (host 47900 -> container 8000,
+# HOST_VLLM_PORT/HOST_AGENT_PORT are HOST ports here (host 47900 -> container 8000,
 # host 47901 -> container 3001). The container side is fixed: vLLM always
 # listens on 8000 (see provider/docker-compose.yml ports mapping).
-# Robust defaults — fix invalid containerPort gdy VLLM_PORT/AGENT_PORT pusty (env override "")
-VLLM_PORT=${HOST_VLLM_PORT:-${VLLM_PORT:-47900}}; [ -z "$VLLM_PORT" ] && VLLM_PORT=47900
-AGENT_PORT=${HOST_AGENT_PORT:-${AGENT_PORT:-47901}}; [ -z "$AGENT_PORT" ] && AGENT_PORT=47901
+# Canonical: HOST_*; legacy VLLM_PORT/AGENT_PORT still work as fallback.
+# Robust defaults — fix invalid containerPort gdy HOST_* pusty (env override "")
+HOST_VLLM_PORT=${HOST_VLLM_PORT:-${VLLM_PORT:-47900}}; [ -z "$HOST_VLLM_PORT" ] && HOST_VLLM_PORT=47900
+HOST_AGENT_PORT=${HOST_AGENT_PORT:-${AGENT_PORT:-47901}}; [ -z "$HOST_AGENT_PORT" ] && HOST_AGENT_PORT=47901
+# Backward-compat aliases (stare env/skrypty używają VLLM_PORT/AGENT_PORT)
+VLLM_PORT=${HOST_VLLM_PORT}; AGENT_PORT=${HOST_AGENT_PORT}
+export HOST_VLLM_PORT HOST_AGENT_PORT
 # --- Prebuild (Pi + ghcr) ---
 # Primary: ghcr.io pull (x86_64 CUDA image zbudowany na hoście 5090, wypchnięty via scripts/publish-provider-image.sh)
 # Fallback: Pi tar via https://seedinfer.com/provider-image.tar.gz (docker save | gzip na Pi /opt/seedinfer/public, serwowany przez Caddy/Next)
@@ -1026,7 +1030,14 @@ else
     else
       echo "WARN: tailscale-seedinfer container nie znaleziony — sprawdź docker ps -a" >&2
     fi
-    echo "Tailnet podłączony jako $HOSTNAME (tag:provider) — kontener 100.64.x.x (Headscale) obok hosta 100.94.x.x — gotowe dla heartbeat"
+    # Gate success message on real 100.x assignment in the CONTAINER (100.64.x.x Headscale)
+    _ts_container_ip=$($DOCKER exec tailscale-seedinfer tailscale ip -4 2>/dev/null | grep -m1 '^100\.' || true)
+    if [[ -n "$_ts_container_ip" ]]; then
+      echo "Tailnet podłączony jako $HOSTNAME (tag:provider) — kontener ${_ts_container_ip} (Headscale 100.64.x.x) obok hosta 100.94.x.x — gotowe dla heartbeat"
+    else
+      echo "WARN: Tailnet NIE podłączony (kontener tailscale-seedinfer brak 100.64.x.x) — diagnostyka: docker logs tailscale-seedinfer; docker exec tailscale-seedinfer tailscale status; sprawdź TAILSCALE_AUTHKEY/LOGIN_SERVER" >&2
+    fi
+    unset _ts_container_ip
   else
     if command -v tailscale >/dev/null 2>&1; then
       if tailscale status 2>&1 | head -n 20; then
@@ -1038,7 +1049,14 @@ else
       fi
       tailscale ip -4 2>&1 | head -n 5 || echo "WARN: tailscale ip -4 brak — może brak 100.64.x.x (sprawdź tailscale status)" >&2
     fi
-    echo "Tailnet podłączony jako $HOSTNAME (tag:provider) — 100.64.x.x gotowe dla heartbeat"
+    # Gate success message on real host 100.x assignment (host mode, zwykle 100.64.x.x Headscale)
+    _ts_host_ip=$(tailscale ip -4 2>/dev/null | grep -m1 '^100\.' || true)
+    if [[ -n "$_ts_host_ip" ]]; then
+      echo "Tailnet podłączony jako $HOSTNAME (tag:provider) — host ${_ts_host_ip} (100.64.x.x Headscale) gotowe dla heartbeat"
+    else
+      echo "WARN: Tailnet NIE podłączony (host brak 100.x) — diagnostyka: tailscale status; tailscale ip -4; systemctl status tailscaled; sprawdź TAILSCALE_AUTHKEY/LOGIN_SERVER" >&2
+    fi
+    unset _ts_host_ip
   fi
 fi
 
@@ -1154,7 +1172,7 @@ if [[ -n "$COMPOSE_FILE" ]]; then
   done
   unset _env_check
   # usuń stare wpisy i dopisz (NVFP4 defaults)
-  grep -v -E "^(TAILSCALE_AUTHKEY|MODEL|VLLM_MODEL|SEEDINFER_GATEWAY_URL|TAILSCALE_LOGIN_SERVER|TAILSCALE_HOSTNAME|TAILSCALE_IP|HOST_AGENT_PORT|HF_TOKEN|PYTORCH_CUDA_ALLOC_CONF|VLLM_GPU_MEMORY_UTILIZATION|HF_CACHE_HOST|SEEDINFER_PUBLIC_KEY|SEEDINFER_PRIVATE_KEY|SEEDINFER_HW_FINGERPRINT|SEEDINFER_NODE_TOKEN|PROVIDER_ID|SEEDINFER_ENV_FILE|SEEDINFER_PAYOUT_WALLET)=" "$ENV_FILE" > "$ENV_FILE.tmp" 2>/dev/null || cp "$ENV_FILE" "$ENV_FILE.tmp"
+  grep -v -E "^(TAILSCALE_AUTHKEY|MODEL|VLLM_MODEL|SEEDINFER_GATEWAY_URL|TAILSCALE_LOGIN_SERVER|TAILSCALE_HOSTNAME|TAILSCALE_IP|HOST_VLLM_PORT|HOST_AGENT_PORT|VLLM_PORT|AGENT_PORT|HF_TOKEN|PYTORCH_CUDA_ALLOC_CONF|VLLM_GPU_MEMORY_UTILIZATION|HF_CACHE_HOST|SEEDINFER_PUBLIC_KEY|SEEDINFER_PRIVATE_KEY|SEEDINFER_HW_FINGERPRINT|SEEDINFER_NODE_TOKEN|PROVIDER_ID|SEEDINFER_ENV_FILE|SEEDINFER_PAYOUT_WALLET)=" "$ENV_FILE" > "$ENV_FILE.tmp" 2>/dev/null || cp "$ENV_FILE" "$ENV_FILE.tmp"
   # Drop the legacy payout-wallet key entirely (now an account setting in the portal).
   cat >> "$ENV_FILE.tmp" <<EOF
 TAILSCALE_AUTHKEY=$AUTHKEY
@@ -1167,7 +1185,8 @@ SEEDINFER_ENV_FILE=$SEEDINFER_ENV_FILE
 TAILSCALE_LOGIN_SERVER=$LOGIN_SERVER
 TAILSCALE_HOSTNAME=$HOSTNAME
 TAILSCALE_IP=${_detected_ts_ip}
-HOST_AGENT_PORT=${AGENT_PORT:-47901}
+HOST_VLLM_PORT=${HOST_VLLM_PORT:-47900}
+HOST_AGENT_PORT=${HOST_AGENT_PORT:-47901}
 PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 VLLM_GPU_MEMORY_UTILIZATION=0.94
 HF_CACHE_HOST=/mnt/d/hf_cache
@@ -1186,13 +1205,13 @@ EOF
   echo "-- NVFP4 plug-and-play: VLLM_MODEL=$VLLM_MODEL — vLLM pobierze wagi automatycznie przy pierwszym starcie (~30GB do \$(dirname \$(dirname ${ENV_FILE}))/models/cache) --"
 fi
 
-# --- sprawdzenie portów hosta (47900/47901 wolne, można nadpisać env VLLM_PORT/AGENT_PORT) ---
-echo "-- sprawdzam porty hosta $VLLM_PORT (vLLM) i $AGENT_PORT (agent) --"
-for PORT in "$VLLM_PORT" "$AGENT_PORT"; do
+# --- sprawdzenie portów hosta (47900/47901 wolne, można nadpisać env HOST_VLLM_PORT/HOST_AGENT_PORT; legacy VLLM_PORT/AGENT_PORT też działa) ---
+echo "-- sprawdzam porty hosta $HOST_VLLM_PORT (vLLM) i $HOST_AGENT_PORT (agent) --"
+for PORT in "$HOST_VLLM_PORT" "$HOST_AGENT_PORT"; do
   if ss -tlnp 2>/dev/null | grep -q ":$PORT\b"; then
-    echo "WARN: port $PORT zajęty (ss -tlnp | grep :$PORT) — sugerowane: VLLM_PORT=47900 AGENT_PORT=47901 lub inny wolny z zakresu 479xx/41000. Można nadpisać: VLLM_PORT=41000 AGENT_PORT=41001 $0 --authkey ..." >&2
+    echo "WARN: port $PORT zajęty (ss -tlnp | grep :$PORT) — sugerowane: HOST_VLLM_PORT=47900 HOST_AGENT_PORT=47901 lub inny wolny z zakresu 479xx/41000. Można nadpisać: HOST_VLLM_PORT=41000 HOST_AGENT_PORT=41001 $0 --authkey ... (legacy VLLM_PORT/AGENT_PORT też działa)" >&2
     ss -tlnp 2>/dev/null | grep ":$PORT" || true
-    echo "WARN: Jeśli kolizja — zatrzymaj proces lub ustaw inny port: export VLLM_PORT=41000 AGENT_PORT=41001; $0 --authkey ..." >&2
+    echo "WARN: Jeśli kolizja — zatrzymaj proces lub ustaw inny port: export HOST_VLLM_PORT=41000 HOST_AGENT_PORT=41001; $0 --authkey ..." >&2
   else
     echo "Port $PORT wolny OK"
   fi
@@ -1373,15 +1392,15 @@ if [[ -n "$COMPOSE_FILE" && -f "$COMPOSE_FILE" ]]; then
   $DOCKER compose -f "$COMPOSE_FILE" ps
   echo ""
   echo "Logi: $DOCKER compose -f $COMPOSE_FILE logs -f"
-  echo "Health: curl -fsS http://127.0.0.1:${AGENT_PORT}/health | jq"
-  echo "vLLM:   curl -fsS http://127.0.0.1:${VLLM_PORT}/v1/models | jq"
-  echo "Chat:   curl http://127.0.0.1:${AGENT_PORT}/v1/chat/completions -H 'Content-Type: application/json' -d '{\"model\":\"$MODEL\",\"messages\":[{\"role\":\"user\",\"content\":\"Hello\"}]}'"
+  echo "Health: curl -fsS http://127.0.0.1:${HOST_AGENT_PORT}/health | jq"
+  echo "vLLM:   curl -fsS http://127.0.0.1:${HOST_VLLM_PORT}/v1/models | jq"
+  echo "Chat:   curl http://127.0.0.1:${HOST_AGENT_PORT}/v1/chat/completions -H 'Content-Type: application/json' -d '{\"model\":\"$MODEL\",\"messages\":[{\"role\":\"user\",\"content\":\"Hello\"}]}'"
   # wait health — vLLM 30GB model download on first run can take 5-15 minutes
   echo "-- czekam na agenta i inicjalizację vLLM (max 15 min / 900s przy pierwszym starcie) --"
   _agent_ready=false
   for i in $(seq 1 60); do
-    if curl -fsS "http://127.0.0.1:${AGENT_PORT}/health" >/dev/null 2>&1; then
-      echo "Agent OK: http://127.0.0.1:${AGENT_PORT}/health odpowiada 200 OK"
+    if curl -fsS "http://127.0.0.1:${HOST_AGENT_PORT}/health" >/dev/null 2>&1; then
+      echo "Agent OK: http://127.0.0.1:${HOST_AGENT_PORT}/health odpowiada 200 OK"
       _agent_ready=true
       break
     fi
@@ -1391,7 +1410,7 @@ if [[ -n "$COMPOSE_FILE" && -f "$COMPOSE_FILE" ]]; then
     sleep 15
   done
   if [[ "$_agent_ready" == "true" ]]; then
-    curl -fsS "http://127.0.0.1:${AGENT_PORT}/health" 2>/dev/null | head -c 800 || true
+    curl -fsS "http://127.0.0.1:${HOST_AGENT_PORT}/health" 2>/dev/null | head -c 800 || true
     echo ""
   else
     echo "INFO: Agent jeszcze startuje w tle (vLLM pobiera model/alokuje GPU VRAM)."
@@ -1448,11 +1467,11 @@ echo ""
 echo "== SeedInfer Provider — final URLs =="
 echo "Dashboard:       https://seedinfer.com/providers"
 echo "Provider Portal: https://seedinfer.com/provider/portal (Configure Base Chain Wallet for Payouts)"
-echo "Agent health:    curl -fsS http://127.0.0.1:${AGENT_PORT}/health | jq   # host ${AGENT_PORT} -> container 3001"
-echo "VLLM:            curl -fsS http://127.0.0.1:${VLLM_PORT}/v1/models | jq  # host ${VLLM_PORT} -> container 8000"
-echo "Chat:            curl http://127.0.0.1:${AGENT_PORT}/v1/chat/completions -H 'Content-Type: application/json' -d '{\"model\":\"$MODEL\",\"messages\":[{\"role\":\"user\",\"content\":\"Hello\"}]}'"
+echo "Agent health:    curl -fsS http://127.0.0.1:${HOST_AGENT_PORT}/health | jq   # host ${HOST_AGENT_PORT} -> container 3001"
+echo "VLLM:            curl -fsS http://127.0.0.1:${HOST_VLLM_PORT}/v1/models | jq  # host ${HOST_VLLM_PORT} -> container 8000"
+echo "Chat:            curl http://127.0.0.1:${HOST_AGENT_PORT}/v1/chat/completions -H 'Content-Type: application/json' -d '{\"model\":\"$MODEL\",\"messages\":[{\"role\":\"user\",\"content\":\"Hello\"}]}'"
 echo "One-liner:       curl -fsSL https://seedinfer.com/install.sh | bash"
 echo "With token:      curl -fsSL https://seedinfer.com/install.sh | SEEDINFER_NODE_TOKEN=sipn_… bash"
 echo "Prebuild:        $PREBUILD_IMAGE (ghcr) || $PREBUILD_URL (Pi tar) || local build"
-echo "Ports:           VLLM_PORT=${VLLM_PORT} AGENT_PORT=${AGENT_PORT}"
+echo "Ports:           HOST_VLLM_PORT=${HOST_VLLM_PORT} HOST_AGENT_PORT=${HOST_AGENT_PORT} (legacy VLLM_PORT/AGENT_PORT fallback)"
 echo "Payout wallet:   set your USDC (Base) payout wallet at https://seedinfer.com/provider/portal"

@@ -40,7 +40,30 @@ function findTar(): string | null {
 }
 
 export async function HEAD() {
-  return GET({} as any)
+  const tarPath = findTar()
+  if (!tarPath) {
+    return NextResponse.json(
+      { error: "provider-image.tar.gz not available" },
+      { status: 404, headers: CORS_HEADERS }
+    )
+  }
+  try {
+    const stat = statSync(tarPath)
+    return new NextResponse(null, {
+      status: 200,
+      headers: {
+        "Content-Type": "application/gzip",
+        "Content-Length": String(stat.size),
+        "Content-Disposition": 'attachment; filename="provider-image.tar.gz"',
+        "Accept-Ranges": "bytes",
+        "X-SeedInfer-Source": tarPath.replace(process.cwd(), ""),
+        "X-SeedInfer-Size": String(stat.size),
+        ...CORS_HEADERS,
+      },
+    })
+  } catch {
+    return NextResponse.json({ error: "failed to stat tar" }, { status: 500, headers: CORS_HEADERS })
+  }
 }
 
 export async function GET(req: NextRequest) {
