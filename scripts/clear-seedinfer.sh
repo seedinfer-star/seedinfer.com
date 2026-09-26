@@ -1,25 +1,33 @@
 #!/usr/bin/env bash
 # scripts/clear-seedinfer.sh — wyczyść SeedInfer do 0 przed rygorystycznymi testami
 # Woła POST /api/v1/providers/clear (or /api/admin/reset) + verify GET /api/v1/providers i GET /api/stats
+# UWAGA: operacja destrukcyjna na wskazanym gateway (czyści providerów i telemetrię, ustawia forceZero) —
+#   wymaga potwierdzenia ('yes') albo flagi --yes.
+# Token admina (nagłówek X-Admin-Token): --token, env ADMIN_TOKEN / SEEDINFER_ADMIN_TOKEN, a na serwerze
+#   automatycznie ADMIN_TOKEN z /opt/seedinfer/.env (inna ścieżka: SEEDINFER_ENV_FILE=...).
+#   Serwer bez ADMIN_TOKEN w swoim .env odpowiada 503 (admin API wyłączone), zły token -> 401.
 # Użycie:
-#   ADMIN_TOKEN=xxx ./scripts/clear-seedinfer.sh
-#   ./scripts/clear-seedinfer.sh --gateway https://seedinfer.com
-#   ./scripts/clear-seedinfer.sh --gateway http://localhost:3002 --token xxx
-#   ./scripts/clear-seedinfer.sh --gateway http://100.107.9.52:3002   # Orange Pi direct
+#   sudo ./scripts/clear-seedinfer.sh --gateway http://127.0.0.1:3002   # na Pi (token z /opt/seedinfer/.env)
+#   ADMIN_TOKEN=xxx ./scripts/clear-seedinfer.sh --gateway https://seedinfer.com
+#   ./scripts/clear-seedinfer.sh --gateway http://localhost:3002 --token xxx --yes
 set -euo pipefail
 
 GATEWAY="https://seedinfer.com"
 TOKEN="${ADMIN_TOKEN:-${SEEDINFER_ADMIN_TOKEN:-}}"
+TOKEN_SOURCE="${TOKEN:+env}"
+ENV_FILE="${SEEDINFER_ENV_FILE:-/opt/seedinfer/.env}"
+ASSUME_YES=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --gateway) GATEWAY="$2"; shift 2 ;;
-    --token) TOKEN="$2"; shift 2 ;;
+    --token) TOKEN="$2"; TOKEN_SOURCE="--token"; shift 2 ;;
+    --yes|-y) ASSUME_YES=1; shift ;;
     --help|-h)
-      echo "Usage: $0 [--gateway URL] [--token TOKEN]"
-      echo "  Env: ADMIN_TOKEN or SEEDINFER_ADMIN_TOKEN"
-      echo "  Default gateway: https://seedinfer.com"
-      echo "  Pi direct: --gateway http://100.107.9.52:3002"
+      echo "Usage: $0 [--gateway URL] [--token TOKEN] [--yes]"
+      echo "  Token: --token, env ADMIN_TOKEN / SEEDINFER_ADMIN_TOKEN, or ADMIN_TOKEN read from $ENV_FILE (on the server)"
+      echo "  Default gateway: https://seedinfer.com   (on the Pi: --gateway http://127.0.0.1:3002)"
+      echo "  --yes  skip the confirmation prompt (required when not running in a terminal)"
       exit 0
       ;;
     *) echo "Unknown arg: $1" >&2; exit 1 ;;
@@ -27,8 +35,24 @@ while [[ $# -gt 0 ]]; do
 done
 
 GATEWAY="${GATEWAY%/}"
+# On the server: read only the admin token line from the app env file (the file is never sourced)
+if [[ -z "$TOKEN" && -r "$ENV_FILE" ]]; then
+  TOKEN=$({ grep -E '^(ADMIN_TOKEN|SEEDINFER_ADMIN_TOKEN)=' "$ENV_FILE" || true; } | head -n1 | cut -d= -f2- | tr -d "\"'")
+  [[ -n "$TOKEN" ]] && TOKEN_SOURCE="$ENV_FILE"
+fi
 if [[ -z "$TOKEN" ]]; then
-  echo "WARN: no ADMIN_TOKEN set — will try without token (allowed in dev, may 401 in prod)" >&2
+  echo "ERROR: no admin token — use --token, set ADMIN_TOKEN, or run on the server as root/orangepi (reads $ENV_FILE)." >&2
+  exit 2
+fi
+
+if [[ "$ASSUME_YES" != 1 ]]; then
+  if [[ -t 0 ]]; then
+    read -r -p "This CLEARS providers and telemetry on $GATEWAY. Type 'yes' to continue: " answer
+    [[ "$answer" == "yes" ]] || { echo "Aborted."; exit 1; }
+  else
+    echo "ERROR: not running in a terminal — pass --yes to confirm clearing $GATEWAY." >&2
+    exit 2
+  fi
 fi
 
 # helper curl with token
@@ -39,7 +63,7 @@ fi
 
 echo "=== SeedInfer clear ==="
 echo "Gateway: $GATEWAY"
-echo "Token: ${TOKEN:+***set*** (len ${#TOKEN})}"
+echo "Token: ***set*** (len ${#TOKEN}, source: ${TOKEN_SOURCE:-env})"
 echo ""
 
 # 1) Try primary endpoint
@@ -60,8 +84,11 @@ else
   echo "HTTP $HTTP_CODE"
   echo "$BODY" | jq . 2>/dev/null || echo "$BODY" | head -c 1000
   echo ""
+  if [[ "$HTTP_CODE" == "503" ]]; then
+    echo "Admin API is disabled on the server: ADMIN_TOKEN is not configured in its .env." >&2
+  fi
   if [[ "$HTTP_CODE" == "401" || "$HTTP_CODE" == "403" ]]; then
-    echo "Auth failed — set ADMIN_TOKEN env or --token" >&2
+    echo "Auth failed — wrong admin token (compare with ADMIN_TOKEN in the server .env)" >&2
     # try fallback endpoint
     echo "Trying fallback POST $GATEWAY/api/admin/reset ..."
     RESP2=$(curl -sS -X POST "$GATEWAY/api/admin/reset" -H "Content-Type: application/json" "${auth_header[@]}" -w "\n%{http_code}" || true)
