@@ -29,11 +29,12 @@ prefixes:
   v6: fd7a:115c:a1e0::/48
   allocation: sequential
 
-# DERP — OFF w Fazie 0 (direct connection only, bez relay)
-# urls: [] — puste celowo, inaczej claim "direct only" jest fałszywy (klient
-# pobrałby derpmap z controlplane.tailscale.com i mógł relayować przez obce DERP).
-# Aby włączyć relay: dodaj `- https://controlplane.tailscale.com/derpmap/default`
-# do urls poniżej, lub ustaw derp.server.enabled: true dla embedded DERP (region 999).
+# DERP — relay przez publiczną mapę Tailscale (fallback, gdy brak direct UDP).
+# UWAGA (deploy #5, 2026-09-26): `urls: []` crashuje Headscale v0.25.1
+# (fatal "initial DERPMap is empty") — pusta lista NIE jest wspierana w tej
+# wersji. Faza 0 używa direct WireGuard, ale klienci dostają derpmap jako
+# fallback relay. Własny embedded DERP (region 999) do włączenia później
+# przez derp.server.enabled: true — po testach na stagingu.
 derp:
   server:
     enabled: false
@@ -42,8 +43,8 @@ derp:
     region_name: SeedInfer DERP (disabled Faza 0)
     stun_listen_addr: 0.0.0.0:3478
     private_key_path: /etc/headscale/derp_server_private.key
-  urls: []
-  # - https://controlplane.tailscale.com/derpmap/default
+  urls:
+    - https://controlplane.tailscale.com/derpmap/default
   paths: []
   auto_update_enabled: true
   update_frequency: 24h
