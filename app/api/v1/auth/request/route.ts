@@ -61,7 +61,7 @@ function successResponse(key: string) {
       login_server: "https://tailnet.seedinfer.com",
       gateway: "https://seedinfer.com",
       mode: "headscale",
-      hint: `Preauth key via Headscale (tag:tag:provider). Use: tailscale up --login-server https://tailnet.seedinfer.com --authkey ${key} --advertise-tags tag:provider`,
+        hint: `Preauth key via Headscale (tag:provider). Use: tailscale up --login-server https://tailnet.seedinfer.com --authkey ${key} --advertise-tags tag:provider`,
       dashboard: "https://dashboard.seedinfer.com",
       created_at: now.toISOString(),
       ephemeral: false,
@@ -102,8 +102,11 @@ function gate(req: Request, rawTag: string | null): Gate {
   const ip = getClientIp(req)
   const byToken = checkRateLimit(`authkey:token:${verified.tokenId}`, 5, 60 * 60_000)
   if (!byToken.ok) return { ok: false, response: rateLimited(byToken.retryAfterSec) }
-  const byIp = checkRateLimit(`authkey:ip:${ip}`, 10, 60 * 60_000)
-  if (!byIp.ok) return { ok: false, response: rateLimited(byIp.retryAfterSec) }
+  // Wariant 7A throttle per IP (fixed-window, shared lib/rate-limit): 5/min + 20/hour.
+  const byIpMin = checkRateLimit(`authkey:ip-min:${ip}`, 5, 60_000)
+  if (!byIpMin.ok) return { ok: false, response: rateLimited(byIpMin.retryAfterSec) }
+  const byIpHour = checkRateLimit(`authkey:ip-hour:${ip}`, 20, 60 * 60_000)
+  if (!byIpHour.ok) return { ok: false, response: rateLimited(byIpHour.retryAfterSec) }
 
   const t = String(rawTag || "tag:provider").trim()
   if (t !== "provider" && t !== "tag:provider") {
@@ -128,6 +131,11 @@ async function issue(req: Request, rawTag: string | null) {
   if (!key) {
     return errorResponse("Failed to generate Headscale preauth key — control plane unavailable")
   }
+
+  // Server-side issuance log (created_at/IP/tag, no PII beyond IP — key itself never logged).
+  console.log(
+    `[auth/request] issued key expires=${KEY_EXPIRY} reusable=false ip=${getClientIp(req)} tag=tag:provider created_at=${new Date().toISOString()}`
+  )
 
   recordAccountEvent(g.userId, "tailnet_key_issued", {
     // Prefix = first 12 chars of the secret (same value stored as provider_tokens.prefix).

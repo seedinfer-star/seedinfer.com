@@ -11,8 +11,13 @@
 #   i dodaj w docker-compose.yml caddy: extra_hosts: ["host.docker.internal:host-gateway"]
 # - Dla bare-metal Caddy: zostaw 127.0.0.1:8080
 
+# NOTE: mirror of the root Caddyfile tailnet block — root Caddyfile is canonical/live. Keep in sync.
 tailnet.seedinfer.com {
-	encode zstd gzip
+	# Encode everything EXCEPT /machine/* (Tailscale Noise binary handshake — never compress).
+	@notMachine {
+		not path /machine/*
+	}
+	encode @notMachine zstd gzip
 
 	# Security headers (łagodniejsze niż dla seedinfer.com — Headscale ma własne API)
 	header {
@@ -23,11 +28,39 @@ tailnet.seedinfer.com {
 		# Headscale API wymaga CORS dla Tailscale clients — nie wymuszamy CSP tutaj
 	}
 
-	# Healthcheck — odpowiada Caddy bez proxy (szybki check czy Caddy żyje)
-	# Prawdziwy health Headscale to GET /health proxied poniżej; ten jest dla Caddy liveness
-	@health path /health /healthz
-	handle @health {
+	# Caddy liveness (Tunnel/systemd) — distinct from Headscale Go /health below.
+	@caddyLive path /caddy-healthz
+	handle @caddyLive {
 		respond "ok" 200
+	}
+
+	# /health + /healthz fall through to Headscale (real Go health) — no Caddy self-check.
+	# /machine/* explicit handle: no encode (scoped above), same upstream.
+	# Machine Noise handshake is chatty — site log stays INFO (not DEBUG) to avoid flooding Pi.
+	handle /machine/* {
+		reverse_proxy 127.0.0.1:8080 {
+			# Docker alternatywa (w jednym docker network: headscale:8080):
+			# to headscale:8080
+			# Bare-metal alternatywa już ustawiona: 127.0.0.1:8080
+
+			header_up Host {host}
+			header_up X-Real-IP {remote}
+			header_up X-Forwarded-For {remote}
+			header_up X-Forwarded-Proto {scheme}
+			header_up X-Forwarded-Host {host}
+			header_up Upgrade {http.request.header.Upgrade}
+			header_up Connection {http.request.header.Connection}
+
+			# Timeouts — Headscale jest lekki, ale za Cloudflare może być latency
+			transport http {
+				dial_timeout 5s
+				response_header_timeout 30s
+				keepalive_interval 30s
+			}
+
+			# Passive health only (single upstream, lighter for Pi — no active checks).
+			fail_duration 30s
+		}
 	}
 
 	# Headscale — reverse proxy do Go (127.0.0.1:8080)
@@ -54,10 +87,8 @@ tailnet.seedinfer.com {
 				keepalive_interval 30s
 			}
 
-			# Health check upstream (Caddy active health)
-			health_uri /health
-			health_interval 30s
-			health_timeout 5s
+			# Passive health only (single upstream, lighter for Pi — no active checks).
+			fail_duration 30s
 		}
 	}
 
