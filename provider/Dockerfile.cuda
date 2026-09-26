@@ -1,7 +1,11 @@
 # SeedInfer Provider — CUDA (rtx5090 / NVFP4 production)
 # Base: Official vllm-openai nightly image (includes pre-compiled CUDA/C++ FlashInfer & TRT-LLM binaries)
-FROM vllm/vllm-openai:nightly
+# Pinned 2026-09-26 — refresh with:
+#   docker buildx imagetools inspect vllm/vllm-openai:nightly | grep -i digest
+FROM vllm/vllm-openai:nightly@sha256:1b88c3afc77c73a3858730254d6eaf73fd7ff6e226ced60f069d9277fd8d6b2b
 
+# NOTE: VLLM_USE_V1=0 below is the working default for the Gemma4 NVFP4 path
+# (modelopt quant + gemma4 tool parser on the v0 engine); v1 is untested here — do not flip without validation.
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
@@ -17,14 +21,22 @@ ENV DEBIAN_FRONTEND=noninteractive \
 
 WORKDIR /app
 
-# Install lightweight agent dependencies onto the pre-baked vLLM environment
-RUN pip install --break-system-packages --no-cache-dir fastapi uvicorn requests psutil pydantic pydantic-settings websockets httpx sentencepiece tiktoken protobuf 2>/dev/null || true
+# Install lightweight agent dependencies onto the pre-baked vLLM environment.
+# CRITICAL line: no `|| true` masking — build must fail loudly on pip errors.
+# compressed-tensors==0.17.0 pinned to match the runtime install in entrypoint.sh (:195).
+# Deliberately NO --no-build-isolation (unsafe against nightly's pinned torch/CUDA pins)
+# and no cache mount (PIP_NO_CACHE_DIR=1 above keeps layers thin).
+# x86_64 CUDA-only image (Pi never builds it), so no ARM-agnostic constraints apply.
+RUN pip install --break-system-packages --no-cache-dir "compressed-tensors==0.17.0" fastapi uvicorn requests psutil pydantic pydantic-settings websockets httpx sentencepiece tiktoken protobuf
 
 # Copy agent code and assets
 COPY provider/agent /app/agent
 RUN chmod +x /app/agent/entrypoint.sh 2>/dev/null || true
 
-# Assets
+# Assets — gemma4 template must exist at /qwen_setup/ because it is the
+# VLLM_CHAT_TEMPLATE default in both provider/docker-compose.yml (:81) and
+# provider/agent/entrypoint.sh (:75); the lookup loop (:172) tries it first.
+COPY provider/assets/gemma4_chat_template.jinja /qwen_setup/gemma4_chat_template.jinja
 COPY provider/assets/nemotron_lightning_chat_template_nothink2.jinja /qwen_setup/nemotron_lightning_chat_template_nothink2.jinja
 COPY provider/assets/nemotron3_tool_parser_plugin.py /qwen_setup/nemotron3_tool_parser_plugin.py
 

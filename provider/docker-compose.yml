@@ -139,7 +139,7 @@ services:
         required: false
 
   tailscale:
-    image: tailscale/tailscale:latest
+    image: tailscale/tailscale:v1.82.0
     container_name: tailscale-seedinfer
     hostname: ${TAILSCALE_HOSTNAME:-provider-5090}
     restart: unless-stopped

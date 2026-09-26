@@ -30,7 +30,10 @@ prefixes:
   allocation: sequential
 
 # DERP — OFF w Fazie 0 (direct connection only, bez relay)
-# Jeśli potrzebujesz relay za NAT, włącz embedded DERP lub użyj oficjalnych DERP.
+# urls: [] — puste celowo, inaczej claim "direct only" jest fałszywy (klient
+# pobrałby derpmap z controlplane.tailscale.com i mógł relayować przez obce DERP).
+# Aby włączyć relay: dodaj `- https://controlplane.tailscale.com/derpmap/default`
+# do urls poniżej, lub ustaw derp.server.enabled: true dla embedded DERP (region 999).
 derp:
   server:
     enabled: false
@@ -39,8 +42,8 @@ derp:
     region_name: SeedInfer DERP (disabled Faza 0)
     stun_listen_addr: 0.0.0.0:3478
     private_key_path: /etc/headscale/derp_server_private.key
-  urls:
-    - https://controlplane.tailscale.com/derpmap/default
+  urls: []
+  # - https://controlplane.tailscale.com/derpmap/default
   paths: []
   auto_update_enabled: true
   update_frequency: 24h

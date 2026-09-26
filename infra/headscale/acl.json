@@ -30,11 +30,12 @@
       "src": ["tag:gateway"],
       "dst": ["*:*"]
     },
-    // Provider -> Gateway — TYLKO porty Faza 0 (zgodnie z zadaniem)
+    // Provider -> Gateway — porty Faza 0 + 80/443/8080 na diagnostykę
+    // z kontenera (docs/tailnet.md: health via Caddy/Headscale API)
     {
       "action": "accept",
       "src": ["tag:provider"],
-      "dst": ["tag:gateway:3000,5432,6379,8000"]
+      "dst": ["tag:gateway:80,443,3000,5432,6379,8000,8080"]
     },
     // Seeder -> Gateway — węższy zestaw (tylko HTTP/API, bez DB)
     // Jeśli seeder ma dostać DB, rozszerz o 5432,6379 — na start blokujemy.
