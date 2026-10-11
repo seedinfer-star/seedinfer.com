@@ -1,23 +1,40 @@
 /**
- * lib/routing/selector.ts — inteligentny selector WRR+EWMA dla SeedInfer
+ * lib/routing/selector.ts — selector over a shared candidate filter.
  *
- * Algorytm:
- * - Per-provider EWMA TTFT (alpha 0.2) + EWMA total latency + concurrent + successRate
- * - Waga = (BASE_TTFT / EWMA_TTFT) * (1 / (1 + concurrent*0.5)) * successRate
- *   Inverse TTFT → niższy TTFT = wyższa waga, load penalty → mniej conn = wyższa waga.
- *   SuccessRate 0..1 (floor 0.1) karze failing nodes bez głodzenia.
- * - OpenRouter traffic (header x-openrouter-* / referer openrouter.ai) → deterministycznie najniższy TTFT (ignor load)
- * - Smooth WRR (Nginx) → currentWeight += weight, pick max, selected.currentWeight -= totalWeight. Eliminuje thundering herd vs pure random.
- * - Fallback: jeśli wszystkie circuit open → najszybszy verified (sort EWMA TTFT asc)
- * - Cold start: brak EWMA → weight neutral (ttftFactor=1, 400ms baseline) + success 1.0, aby nowe węzły dostały ruch i zbudowały EWMA.
- * - Jitter: przy równych wagach, sort stabilny + heartbeat recency jako tie-breaker.
+ * Architecture (phase 1 split):
+ * - lib/routing/lease.ts is the source of truth for capacity (inFlight / activeKv).
+ * - lib/routing/node-health.ts owns provider outcomes (circuit breaker, pauses,
+ *   half-open trials, EWMA TTFT/latency, success counters).
+ * - This module owns *selection only*: candidate filtering (verification, heartbeat
+ *   freshness, vLLM health, node-health canAttempt, lease capacity) plus the
+ *   P2C (default) / smooth-WRR (ROUTING_ALGORITHM==='wrr') pick.
  *
- * Prior art: vllm-project/router (least-loaded + prefix-aware), vllm-project/semantic-router, thushan/olla (weighted least conn),
- * Finagle EWMA, Nginx smooth WRR. Dla LLM TTFT krytyczny jest prefill (KV cache) → TTFT najlepszy sygnał zdrowia.
+ * Trial-claim contract (important):
+ * - filterRoutable NEVER claims a half-open trial. It only marks candidates with
+ *   trial=true when node-health canAttempt() reports { ok: true, trial: true }.
+ * - selectNodeDetailed claims exactly once per attempt, at selection time, via
+ *   claimTrial(id) on the chosen candidate. If the claim loses a race, the next
+ *   ordered candidate is tried.
+ * - The caller MUST record the attempt outcome via node-health recordNodeOutcome(),
+ *   which releases (ok / neutral kinds) or re-opens (failure kinds) the trial.
+ *
+ * Removed vs the old selector (intentional, do not re-add):
+ * - opts.openRouter "ignore load" branch (option accepted but ignored).
+ * - opts.isSubscription sub-penalty (option accepted but ignored).
+ * - fallback-state require() forwarding inside recordLatency.
+ * - WRR load factor (load is handled by the capacity filter, not the weight).
+ *
+ * Weight (WRR path + observability): weight = ttftFactor * successRate * 100,
+ *   ttftFactor = BASE_TTFT_MS / clamp(ewmaTtft), null TTFT -> 1 (cold start neutral),
+ *   successRate from node-health (0 requests -> 1, floored at SUCCESS_FLOOR).
  */
 
 import { EWMA } from "./ewma"
+import { canAttempt, claimTrial, getNodeSnapshot } from "./node-health"
+import { getLeaseCounters } from "./lease"
 import type { StoredProvider } from "@/lib/providers-store"
+
+type ProviderLike = StoredProvider | import("@/lib/types").Provider
 
 // ---------------------------------------------------------------------------
 // Config
@@ -27,7 +44,7 @@ export const BASE_TTFT_MS = 400 // ideal RTX 5090 NVFP4 prefill
 export const MIN_TTFT_MS = 50
 export const MAX_TTFT_MS = 30_000
 export const TTFT_THRESHOLD_MS = Number(process.env.ROUTING_TTFT_THRESHOLD_MS || 5000)
-export const CONCURRENT_PENALTY = 0.5 // 1/(1+conc*0.5) → 2 conc = 0.5 weight
+export const CONCURRENT_PENALTY = 0.5 // kept for compat; load is now enforced by the capacity filter, not the weight
 export const SUCCESS_FLOOR = 0.1
 
 // ---------------------------------------------------------------------------
@@ -46,6 +63,11 @@ export type ProviderRoutingStat = {
   currentWeight: number
   circuitOpen: boolean
   lastUpdate: string | null
+  circuitState?: string
+  pausedUntil?: number
+  inFlight?: number
+  activeKvTokens?: number
+  lastError?: string | null
 }
 
 type InternalStat = {
@@ -96,31 +118,401 @@ export function ensureStat(id: string): InternalStat {
 }
 
 // ---------------------------------------------------------------------------
-// Weight computation
+// Env helpers (read at call time)
 // ---------------------------------------------------------------------------
-function computeWeight(stat: InternalStat, opts?: { ignoreLoad?: boolean; isSubscription?: boolean }): number {
-  const ttft = stat.ewmaTtft.get()
-  const ttftFactor = ttft === null ? 1 : BASE_TTFT_MS / Math.max(Math.min(ttft, MAX_TTFT_MS), MIN_TTFT_MS)
-  const baseLoadFactor = opts?.ignoreLoad ? 1 : 1 / (1 + stat.concurrentRequests * CONCURRENT_PENALTY)
-  // Subscription traffic gets background priority (lower load weight) to protect Pay-As-You-Go SLAs
-  const subPenalty = opts?.isSubscription ? 0.3 : 1.0
-  const loadFactor = baseLoadFactor * subPenalty
-  const successRate = stat.totalRequests === 0 ? 1 : Math.max(SUCCESS_FLOOR, stat.successCount / stat.totalRequests)
-  // scale to readable 0..100
-  const w = ttftFactor * loadFactor * successRate * 100
+function numEnv(key: string, def: number): number {
+  const raw = process.env[key]
+  if (raw === undefined || raw === null || String(raw).trim() === "") return def
+  const n = Number(String(raw).trim())
+  if (!Number.isFinite(n) || n <= 0) return def
+  return Math.floor(n)
+}
+
+// ---------------------------------------------------------------------------
+// Weight computation (no load factor, no subscription penalty)
+// ---------------------------------------------------------------------------
+function successRateOf(totalRequests: number, successCount: number): number {
+  if (totalRequests <= 0) return 1
+  return Math.max(SUCCESS_FLOOR, successCount / totalRequests)
+}
+
+function ttftFactorOf(ttft: number | null): number {
+  if (ttft === null || !Number.isFinite(ttft)) return 1
+  return BASE_TTFT_MS / Math.max(Math.min(ttft, MAX_TTFT_MS), MIN_TTFT_MS)
+}
+
+function computeWeight(ttft: number | null, successRate: number): number {
+  const w = ttftFactorOf(ttft) * successRate * 100
   return Math.max(1, Math.round(w * 10) / 10) // min 1 to avoid starvation, 1 decimal
 }
 
-function syncWeight(stat: InternalStat, ignoreLoad?: boolean, isSubscription?: boolean): void {
-  stat.weight = computeWeight(stat, { ignoreLoad, isSubscription })
+// ---------------------------------------------------------------------------
+// Candidate filter (shared by selection, sorting and saturation checks)
+// ---------------------------------------------------------------------------
+export type RoutableCandidate = {
+  provider: ProviderLike
+  stat: InternalStat
+  inFlight: number
+  activeKv: number
+  safeMax: number
+  safeKv: number
+  ttft: number | null
+  successRate: number
+  trial: boolean
+}
+
+export type FilterRoutableOpts = {
+  incomingTokens?: number
+  exclude?: Set<string>
+  /** Bound expensive per-node work on big fleets. undefined = no cap. */
+  maxCandidates?: number
+}
+
+type Assessment = {
+  verdict: "routable" | "unhealthy" | "saturated"
+  trial: boolean
+  inFlight: number
+  activeKv: number
+  ttft: number | null
+  successRate: number
+}
+
+function isHeartbeatFresh(p: any, maxAgeMs: number, now: number): boolean {
+  const hb = p?.last_heartbeat
+  const hasVerification = !!p?.verification
+  if (hb === undefined || hb === null || hb === "") {
+    // Skip the check for legacy objects (no verification field, no heartbeat).
+    // Verified objects without a heartbeat fail closed — never route blind.
+    return !hasVerification
+  }
+  const t = Date.parse(String(hb))
+  if (!Number.isFinite(t)) return !hasVerification
+  return now - t <= maxAgeMs
+}
+
+/** Single-node assessment. Never throws (callers still guard). */
+function assessProvider(p: any, incomingTokens: number, maxAgeMs: number, now: number): Assessment {
+  const unhealthy = (): Assessment => ({
+    verdict: "unhealthy",
+    trial: false,
+    inFlight: 0,
+    activeKv: 0,
+    ttft: null,
+    successRate: 1,
+  })
+  const id = String(p?.id ?? "")
+  if (!id) return unhealthy()
+
+  // verification.status === 'verified' OR legacy objects without a verification field
+  const v = p?.verification
+  if (v && v.status !== "verified") return unhealthy()
+
+  // boot-hydrated nodes have no live connection — never routable
+  if (p?.awaiting_heartbeat) return unhealthy()
+
+  if (!isHeartbeatFresh(p, maxAgeMs, now)) return unhealthy()
+
+  // vllm_health absent OR explicitly ok; any explicit non-ok excludes
+  const vh = p?.vllm_health
+  if (vh !== undefined && vh !== null && (vh as any).status !== "ok") return unhealthy()
+
+  // node-health gate (circuit / pause / trial-in-flight). Note: canAttempt may
+  // transition an expired-open circuit to half-open; the trial itself is claimed
+  // later, once, at selection time — never here.
+  let trial = false
+  try {
+    const att = canAttempt(id)
+    if (!att.ok) return unhealthy()
+    trial = att.trial === true
+  } catch {
+    return unhealthy()
+  }
+
+  // capacity from lease.ts (source of truth — NOT selector-local counters)
+  let inFlight = 0
+  let activeKv = 0
+  try {
+    const c = getLeaseCounters(id)
+    inFlight = c.inFlight
+    activeKv = c.activeKv
+  } catch {
+    inFlight = 0
+    activeKv = 0
+  }
+  const safeMax = getSafeMaxConcurrency(p)
+  const safeKv = getSafeMaxKvTokens(p)
+  if (inFlight >= safeMax || activeKv + incomingTokens >= safeKv) {
+    return { verdict: "saturated", trial: false, inFlight, activeKv, ttft: null, successRate: 1 }
+  }
+
+  // TTFT + success rate from node-health snapshot (null TTFT -> BASE baseline at use sites)
+  let ttft: number | null = null
+  let successRate = 1
+  try {
+    const snap = getNodeSnapshot(id)
+    ttft = snap.ewmaTtft.get()
+    successRate = successRateOf(snap.totalRequests, snap.successCount)
+  } catch {
+    ttft = null
+    successRate = 1
+  }
+  return { verdict: "routable", trial, inFlight, activeKv, ttft, successRate }
+}
+
+/** Hydrate selector EWMA from StoredProvider mirror fields (compat; EWMA only). */
+function hydrateFromProvider(p: StoredProvider): void {
+  const s = ensureStat(p.id)
+  if ((p as any).ewmaTtft !== undefined && (p as any).ewmaTtft !== null && s.ewmaTtft.get() === null) {
+    s.ewmaTtft.set((p as any).ewmaTtft)
+  }
+  if ((p as any).ewmaLatency !== undefined && (p as any).ewmaLatency !== null && s.ewmaLatency.get() === null) {
+    s.ewmaLatency.set((p as any).ewmaLatency)
+  }
+}
+
+export function filterRoutable(
+  providers: (StoredProvider | import("@/lib/types").Provider)[],
+  opts?: FilterRoutableOpts
+): RoutableCandidate[] {
+  const list = Array.isArray(providers) ? providers : []
+  const incomingTokens = opts?.incomingTokens ?? 1000
+  const exclude = opts?.exclude
+  const maxCandidates = opts?.maxCandidates
+  const maxAgeMs = numEnv("ROUTING_HEARTBEAT_MAX_AGE_MS", 90000)
+  const now = Date.now()
+  const out: RoutableCandidate[] = []
+  for (const p of list) {
+    if (!p) continue
+    try {
+      const id = String((p as any)?.id ?? "")
+      if (exclude && exclude.has(id)) continue
+      const a = assessProvider(p as any, incomingTokens, maxAgeMs, now)
+      if (a.verdict !== "routable") continue
+      try {
+        hydrateFromProvider(p as StoredProvider)
+      } catch {}
+      const stat = ensureStat(id)
+      stat.weight = computeWeight(a.ttft, a.successRate)
+      out.push({
+        provider: p,
+        stat,
+        inFlight: a.inFlight,
+        activeKv: a.activeKv,
+        safeMax: getSafeMaxConcurrency(p as any),
+        safeKv: getSafeMaxKvTokens(p as any),
+        ttft: a.ttft,
+        successRate: a.successRate,
+        trial: a.trial,
+      })
+      if (maxCandidates !== undefined && out.length >= maxCandidates) break
+    } catch {
+      continue
+    }
+  }
+  return out
+}
+
+// ---------------------------------------------------------------------------
+// Detailed selection
+// ---------------------------------------------------------------------------
+export type SelectNodeDetailedOpts = {
+  incomingTokens?: number
+  exclude?: Set<string>
+  rng?: () => number
+}
+
+export type SelectNodeDetailedResult =
+  | { node: StoredProvider | import("@/lib/types").Provider }
+  | { none: true; reason: "no_nodes" | "all_saturated" | "all_unhealthy"; retryAfterMs?: number }
+
+function classifyFailure(
+  considered: (StoredProvider | import("@/lib/types").Provider)[],
+  incomingTokens: number
+): "all_saturated" | "all_unhealthy" {
+  const maxAgeMs = numEnv("ROUTING_HEARTBEAT_MAX_AGE_MS", 90000)
+  const now = Date.now()
+  let saturated = 0
+  for (const p of considered) {
+    try {
+      const a = assessProvider(p as any, incomingTokens, maxAgeMs, now)
+      if (a.verdict === "saturated") saturated += 1
+    } catch {}
+  }
+  // Any healthy-but-full node means capacity may free soon -> saturated.
+  // Otherwise everything failed a health gate -> unhealthy.
+  return saturated > 0 ? "all_saturated" : "all_unhealthy"
+}
+
+/** Earliest node-health hint (pause / circuit / trial), clamped to 1000..30000. */
+function computeRetryAfterMs(considered: (StoredProvider | import("@/lib/types").Provider)[]): number {
+  const now = Date.now()
+  let best: number | null = null
+  const take = (ms: number): void => {
+    if (!Number.isFinite(ms) || ms <= 0) return
+    best = best === null ? ms : Math.min(best, ms)
+  }
+  for (const p of considered) {
+    try {
+      const id = String((p as any)?.id ?? "")
+      if (!id) continue
+      const att = canAttempt(id)
+      if (!att.ok && Number.isFinite(att.retryAfterMs)) take(att.retryAfterMs)
+      const snap = getNodeSnapshot(id)
+      if (snap.pausedUntil > now) take(snap.pausedUntil - now)
+    } catch {}
+  }
+  const ms = best ?? 1000
+  return Math.min(30000, Math.max(1000, Math.floor(ms)))
+}
+
+function randIndex(n: number, rng: () => number): number {
+  let r: number
+  try {
+    r = rng()
+  } catch {
+    r = Math.random()
+  }
+  if (!Number.isFinite(r) || r < 0) r = 0
+  if (r >= 1) r = 0.999999999
+  return Math.min(n - 1, Math.floor(r * n))
+}
+
+/** P2C: 2 distinct random indices; lower inFlight/safeMax wins, then lower TTFT, then random. */
+function pickP2C(cands: RoutableCandidate[], rng: () => number): RoutableCandidate[] {
+  if (cands.length === 1) return [cands[0]]
+  const n = cands.length
+  const i1 = randIndex(n, rng)
+  let i2 = randIndex(n, rng)
+  if (i2 === i1) i2 = (i1 + 1) % n
+  const a = cands[i1]
+  const b = cands[i2]
+  const ra = a.inFlight / Math.max(1, a.safeMax)
+  const rb = b.inFlight / Math.max(1, b.safeMax)
+  if (ra < rb) return [a, b]
+  if (rb < ra) return [b, a]
+  const ta = a.ttft ?? BASE_TTFT_MS
+  const tb = b.ttft ?? BASE_TTFT_MS
+  if (ta < tb) return [a, b]
+  if (tb < ta) return [b, a]
+  let coin = 0.5
+  try {
+    coin = rng()
+  } catch {
+    coin = Math.random()
+  }
+  if (!Number.isFinite(coin)) coin = 0.5
+  return coin < 0.5 ? [a, b] : [b, a]
+}
+
+function mirrorPool(cands: RoutableCandidate[]): void {
+  try {
+    const g2 = globalThis as unknown as { __seedinferProviders?: { providers: Map<string, any> } }
+    const m = g2.__seedinferProviders?.providers
+    if (!m) return
+    for (const c of cands) {
+      const p = m.get(String((c.provider as any).id))
+      if (p) {
+        p._routingWeight = c.stat.weight
+        p._routingCurrentWeight = c.stat.currentWeight
+        p.ewmaTtft = c.stat.ewmaTtft.get()
+        p.ewmaLatency = c.stat.ewmaLatency.get()
+      }
+    }
+  } catch {}
+}
+
+/** Smooth weighted round-robin (Nginx style) over the filtered pool. */
+function pickWRR(cands: RoutableCandidate[]): RoutableCandidate {
+  let total = 0
+  for (const c of cands) {
+    const w = computeWeight(c.ttft, c.successRate)
+    c.stat.weight = w
+    total += w
+  }
+  if (!(total > 0)) {
+    let best = cands[0]
+    for (const c of cands) {
+      const ct = c.ttft ?? Number.POSITIVE_INFINITY
+      const bt = best.ttft ?? Number.POSITIVE_INFINITY
+      if (ct < bt) best = c
+    }
+    mirrorPool(cands)
+    return best
+  }
+  let best: RoutableCandidate | null = null
+  let bestCur = -Infinity
+  for (const c of cands) {
+    c.stat.currentWeight += c.stat.weight
+    if (c.stat.currentWeight > bestCur) {
+      bestCur = c.stat.currentWeight
+      best = c
+    }
+  }
+  const winner = best ?? cands[0]
+  winner.stat.currentWeight -= total
+  mirrorPool(cands)
+  return winner
+}
+
+function pickOrdered(cands: RoutableCandidate[], rng: () => number): RoutableCandidate[] {
+  if (cands.length === 1) return [cands[0]]
+  if (process.env.ROUTING_ALGORITHM === "wrr") return [pickWRR(cands)]
+  return pickP2C(cands, rng)
+}
+
+export function selectNodeDetailed(
+  providers: (StoredProvider | import("@/lib/types").Provider)[],
+  opts?: SelectNodeDetailedOpts
+): SelectNodeDetailedResult {
+  if (!providers || providers.length === 0) return { none: true, reason: "no_nodes" }
+  const incomingTokens = opts?.incomingTokens ?? 1000
+  const rng = typeof opts?.rng === "function" ? opts.rng : Math.random
+  const exclude = opts?.exclude
+  let considered = providers
+  if (exclude && exclude.size > 0) {
+    considered = providers.filter((pp) => {
+      try {
+        return !exclude.has(String((pp as any)?.id))
+      } catch {
+        return false
+      }
+    })
+    if (considered.length === 0) return { none: true, reason: "no_nodes" }
+  }
+  // Bound per-node work on big fleets.
+  const cap = numEnv("ROUTING_MAX_CANDIDATES", 32)
+  const candidates = filterRoutable(considered, { incomingTokens, exclude, maxCandidates: cap })
+  if (candidates.length === 0) {
+    return {
+      none: true,
+      reason: classifyFailure(considered, incomingTokens),
+      retryAfterMs: computeRetryAfterMs(considered),
+    }
+  }
+  const ordered = pickOrdered(candidates, rng)
+  for (const cand of ordered) {
+    const id = String((cand.provider as any).id)
+    if (cand.trial) {
+      let claimed = false
+      try {
+        claimed = claimTrial(id)
+      } catch {
+        claimed = false
+      }
+      if (!claimed) continue
+    }
+    return { node: cand.provider }
+  }
+  return { none: true, reason: "all_unhealthy", retryAfterMs: 1000 }
 }
 
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
-/** Zarejestruj latency dla providera (TTFT + total). Wywoływane po każdym request + po verify probe */
+/** Selector EWMA update + providers-store mirror. Outcome recording is node-health's job. */
 export function recordLatency(providerId: string, ttftMs: number | null, totalMs: number | null, success: boolean): void {
+  void success
   const s = ensureStat(providerId)
   const now = new Date().toISOString()
   if (ttftMs !== null && Number.isFinite(ttftMs) && ttftMs > 0) {
@@ -129,10 +521,14 @@ export function recordLatency(providerId: string, ttftMs: number | null, totalMs
   if (totalMs !== null && Number.isFinite(totalMs) && totalMs > 0) {
     s.ewmaLatency.update(totalMs)
   }
-  s.totalRequests += 1
-  if (success) s.successCount += 1
   s.lastUpdate = now
-  syncWeight(s, false)
+
+  // refresh weight from merged TTFT + node-health success rate (observability)
+  try {
+    const snap = getNodeSnapshot(providerId)
+    const ttft = s.ewmaTtft.get() ?? snap.ewmaTtft.get()
+    s.weight = computeWeight(ttft, successRateOf(snap.totalRequests, snap.successCount))
+  } catch {}
 
   // mirror to providers-store StoredProvider for persistence / observability (best effort, avoid circular via globalThis)
   try {
@@ -141,22 +537,8 @@ export function recordLatency(providerId: string, ttftMs: number | null, totalMs
     if (p) {
       p.ewmaTtft = s.ewmaTtft.get()
       p.ewmaLatency = s.ewmaLatency.get()
-      p.concurrentRequests = s.concurrentRequests
-      p.totalRequests = s.totalRequests
-      p.successCount = s.successCount
-      // also sync weight for listProviders sorting without importing selector (denormalized)
       p._routingWeight = s.weight
       p._routingCurrentWeight = s.currentWeight
-    }
-  } catch {}
-
-  // also feed fallback-state per-provider latency for TTFT degrade circuit
-  try {
-    // dynamic to avoid circular at import time; fallback-state will be imported lazily if available
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const fb = require("@/lib/fallback-state") as typeof import("@/lib/fallback-state")
-    if (fb && typeof (fb as any).recordProviderLatency === "function") {
-      ;(fb as any).recordProviderLatency(providerId, ttftMs, success)
     }
   } catch {}
 }
@@ -164,7 +546,6 @@ export function recordLatency(providerId: string, ttftMs: number | null, totalMs
 export function incrementConcurrent(providerId: string): void {
   const s = ensureStat(providerId)
   s.concurrentRequests += 1
-  syncWeight(s, false)
   try {
     const g2 = globalThis as unknown as { __seedinferProviders?: { providers: Map<string, any> } }
     const p = g2.__seedinferProviders?.providers.get(providerId)
@@ -175,7 +556,6 @@ export function incrementConcurrent(providerId: string): void {
 export function decrementConcurrent(providerId: string): void {
   const s = ensureStat(providerId)
   s.concurrentRequests = Math.max(0, s.concurrentRequests - 1)
-  syncWeight(s, false)
   try {
     const g2 = globalThis as unknown as { __seedinferProviders?: { providers: Map<string, any> } }
     const p = g2.__seedinferProviders?.providers.get(providerId)
@@ -195,42 +575,51 @@ export function removeActiveTokens(providerId: string, tokens: number): void {
   s.activeTokens = Math.max(0, s.activeTokens - tokens)
 }
 
-/** Zwróć routing stats per provider (dla /api/v1/routing/stats) */
+/** Routing stats: selector EWMA merged with the node-health snapshot; capacity from lease counters. */
 export function getStats(): Record<string, ProviderRoutingStat> {
   const store = getStore()
   const out: Record<string, ProviderRoutingStat> = {}
-  // lazy import isCircuitOpen per provider
-  let isProviderCircuitOpen: ((id: string) => boolean) | null = null
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const fb = require("@/lib/fallback-state") as typeof import("@/lib/fallback-state")
-    isProviderCircuitOpen = (fb as any).isProviderCircuitOpen || (fb as any).isCircuitOpen || null
-  } catch {}
   for (const [id, s] of store.stats.entries()) {
-    syncWeight(s, false)
-    let circuitOpen = false
+    let snap: ReturnType<typeof getNodeSnapshot> | null = null
     try {
-      if (isProviderCircuitOpen) circuitOpen = isProviderCircuitOpen(id)
-      if (!circuitOpen) {
-        const fb = require("@/lib/fallback-state") as typeof import("@/lib/fallback-state")
-        if ((fb as any).isCircuitOpen) {
-        }
-      }
+      snap = getNodeSnapshot(id)
+    } catch {
+      snap = null
+    }
+    const ewmaTtft = s.ewmaTtft.get() ?? snap?.ewmaTtft.get() ?? null
+    const ewmaLatency = s.ewmaLatency.get() ?? snap?.ewmaLatency.get() ?? null
+    const totalRequests = snap?.totalRequests ?? s.totalRequests ?? 0
+    const successCount = snap?.successCount ?? s.successCount ?? 0
+    const rawRate = totalRequests === 0 ? 1 : successCount / totalRequests
+    const successRate = Math.round(rawRate * 1000) / 1000
+    const weight = computeWeight(ewmaTtft, successRateOf(totalRequests, successCount))
+    s.weight = weight
+    let inFlight = s.concurrentRequests
+    let activeKv = s.activeTokens
+    try {
+      const c = getLeaseCounters(id)
+      inFlight = c.inFlight
+      activeKv = c.activeKv
     } catch {}
-    const successRate = s.totalRequests === 0 ? 1 : s.successCount / s.totalRequests
+    const circuitOpen = snap?.circuitOpen ?? false
     out[id] = {
       providerId: id,
-      ewmaTtft: s.ewmaTtft.get(),
-      ewmaLatency: s.ewmaLatency.get(),
-      concurrentRequests: s.concurrentRequests,
-      activeTokens: s.activeTokens,
-      totalRequests: s.totalRequests,
-      successCount: s.successCount,
-      successRate: Math.round(successRate * 1000) / 1000,
-      weight: s.weight,
+      ewmaTtft,
+      ewmaLatency,
+      concurrentRequests: inFlight,
+      activeTokens: activeKv,
+      totalRequests,
+      successCount,
+      successRate,
+      weight,
       currentWeight: Math.round(s.currentWeight * 10) / 10,
       circuitOpen,
       lastUpdate: s.lastUpdate,
+      circuitState: snap?.circuit,
+      pausedUntil: snap?.pausedUntil ?? 0,
+      inFlight,
+      activeKvTokens: activeKv,
+      lastError: snap?.lastError ?? null,
     }
   }
   return out
@@ -239,39 +628,6 @@ export function getStats(): Record<string, ProviderRoutingStat> {
 export function getProviderStat(providerId: string): ProviderRoutingStat | null {
   const all = getStats()
   return all[providerId] || null
-}
-
-function isCircuitOpenSafe(providerId: string): boolean {
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const fb = require("@/lib/fallback-state") as typeof import("@/lib/fallback-state")
-    if (typeof (fb as any).isProviderCircuitOpen === "function") {
-      if ((fb as any).isProviderCircuitOpen(providerId)) return true
-    }
-    if (typeof (fb as any).isCircuitOpen === "function") {
-      try {
-        if ((fb as any).isCircuitOpen(providerId)) return true
-      } catch {}
-    }
-    return false
-  } catch {
-    return false
-  }
-}
-
-/** Hydrate selector stats from StoredProvider fields (po restarcie lub gdy provider ma już EWMA w store) */
-function hydrateFromProvider(p: StoredProvider): void {
-  const s = ensureStat(p.id)
-  if ((p as any).ewmaTtft !== undefined && (p as any).ewmaTtft !== null && s.ewmaTtft.get() === null) {
-    s.ewmaTtft.set((p as any).ewmaTtft)
-  }
-  if ((p as any).ewmaLatency !== undefined && (p as any).ewmaLatency !== null && s.ewmaLatency.get() === null) {
-    s.ewmaLatency.set((p as any).ewmaLatency)
-  }
-  if (typeof (p as any).concurrentRequests === "number") s.concurrentRequests = (p as any).concurrentRequests
-  if (typeof (p as any).totalRequests === "number") s.totalRequests = (p as any).totalRequests
-  if (typeof (p as any).successCount === "number") s.successCount = (p as any).successCount
-  syncWeight(s, false)
 }
 
 /** Dynamic per-node max concurrency limit based on GPU profile, vLLM max_num_seqs & model specs */
@@ -334,234 +690,77 @@ export function getSafeMaxKvTokens(p: any): number {
   return Math.max(100_000, Math.floor(max * 0.90))
 }
 
-/** Sprawdź czy cała sieć zweryfikowanych dostawców osiągnęła bufor bezpieczeństwa 90% (sloty lub KV cache tokeny) */
+/** True when every health-eligible provider is at the 90% safety buffer (slots or KV tokens, from lease counters). */
 export function isNetworkSaturated(
   providers: (StoredProvider | import("@/lib/types").Provider)[],
   incomingTokens: number = 1000
 ): boolean {
   if (!providers || providers.length === 0) return false
-  // Boot-hydrated nodes have no live connection — they contribute no capacity.
-  const verified = (providers as any).filter(
-    (p: any) => !p.awaiting_heartbeat && (p.verification?.status === "verified" || !p.verification)
-  )
-  if (verified.length === 0) return false
-  return verified.every((p: any) => {
-    const s = ensureStat(p.id)
-    const slotSaturated = s.concurrentRequests >= getSafeMaxConcurrency(p)
-    const kvSaturated = (s.activeTokens + incomingTokens) >= getSafeMaxKvTokens(p)
+  const maxAgeMs = numEnv("ROUTING_HEARTBEAT_MAX_AGE_MS", 90000)
+  const now = Date.now()
+  const eligible: any[] = []
+  for (const p of providers as any[]) {
+    try {
+      if (!p) continue
+      const v = (p as any).verification
+      if (v && v.status !== "verified") continue
+      if ((p as any).awaiting_heartbeat) continue
+      if (!isHeartbeatFresh(p as any, maxAgeMs, now)) continue
+      const vh = (p as any).vllm_health
+      if (vh !== undefined && vh !== null && vh.status !== "ok") continue
+      const att = canAttempt(String((p as any).id))
+      if (!att.ok) continue
+      eligible.push(p)
+    } catch {
+      continue
+    }
+  }
+  if (eligible.length === 0) return false
+  return eligible.every((p: any) => {
+    let inFlight = 0
+    let activeKv = 0
+    try {
+      const c = getLeaseCounters(String(p.id))
+      inFlight = c.inFlight
+      activeKv = c.activeKv
+    } catch {}
+    const slotSaturated = inFlight >= getSafeMaxConcurrency(p)
+    const kvSaturated = activeKv + incomingTokens >= getSafeMaxKvTokens(p)
     return slotSaturated || kvSaturated
   })
 }
 
-/** Główny selector: wybiera best provider via WRR ważony odwrotnie do TTFT i load
- * Akceptuje Provider[] (spec) lub StoredProvider[] — jeśli brak verification field, traktuje wszystkich jako selectable (cold start test)
- */
+/** Main selector. opts.openRouter / opts.isSubscription are accepted but ignored (compat). */
 export function selectProvider(
   providers: (StoredProvider | import("@/lib/types").Provider)[],
-  opts?: { openRouter?: boolean; isSubscription?: boolean; incomingTokens?: number }
+  opts?: { openRouter?: boolean; isSubscription?: boolean; incomingTokens?: number; rng?: () => number }
 ): (StoredProvider | import("@/lib/types").Provider) | null {
-  if (!providers || providers.length === 0) return null
-
-  const incomingTokens = opts?.incomingTokens ?? 1000
-
-  // hydrate for StoredProvider paths
-  for (const p of providers as StoredProvider[]) {
-    try { hydrateFromProvider(p as StoredProvider) } catch {}
-  }
-
-  // awaiting_heartbeat nodes are boot-hydrated without a live connection — never routable.
-  let candidates = (providers as any).filter((p: any) => p.verification?.status === "verified" && !p.awaiting_heartbeat)
-  if (candidates.length === 0) {
-    candidates = (providers as any).filter((p: any) => p.verification?.status === "verifying" && !p.awaiting_heartbeat)
-    if (candidates.length === 0) {
-      const anyVerifiable = (providers as any).some((p: any) => p.verification)
-      if (!anyVerifiable && providers.length > 0) {
-        // Legacy objects without `verification` (cold-start/test): still never route to boot-hydrated nodes.
-        candidates = (providers as any).filter((p: any) => !p.awaiting_heartbeat)
-        if (candidates.length === 0) return null
-      } else {
-        return null
-      }
-    }
-  }
-
-  const isOpenRouter = !!opts?.openRouter
-  const isSubscription = !!opts?.isSubscription
-
-  // Oblicz wagi i filtruj circuit open oraz twarde nasycenie 90% (sloty + KV cache)
-  type Cand = { provider: StoredProvider; stat: InternalStat }
-  const cands: Cand[] = []
-  const circuitFiltered: Cand[] = []
-
-  for (const p of candidates) {
-    const stat = ensureStat(p.id)
-    syncWeight(stat, isOpenRouter, isSubscription)
-    const open = isCircuitOpenSafe(p.id)
-
-    // Hard 90% Saturation Guard: Check slot capacity AND incoming KV cache token headroom
-    const slotSaturated = stat.concurrentRequests >= getSafeMaxConcurrency(p)
-    const kvSaturated = (stat.activeTokens + incomingTokens) >= getSafeMaxKvTokens(p)
-    if (slotSaturated || kvSaturated) {
-      continue // Odrzuć nasycony węzeł przed jakimkolwiek losowaniem
-    }
-
-    const entry: Cand = { provider: p, stat }
-    cands.push(entry)
-    if (!open) circuitFiltered.push(entry)
-  }
-
-  // Jeśli wszyscy w pętli zostali odrzuceni (brak węzłów <90%), zwróć null -> Router wyemituje HTTP 429
-  const pool = circuitFiltered.length > 0 ? circuitFiltered : cands.length > 0 ? cands : []
-
-  if (pool.length === 0) return null
-  if (pool.length === 1) return pool[0].provider
-
-  // OpenRouter: deterministycznie najniższy TTFT (ignor load)
-  if (isOpenRouter) {
-    // sort by EWMA TTFT asc, nulls last (cold start → środek)
-    const sorted = [...pool].sort((a, b) => {
-      const aTtft = a.stat.ewmaTtft.get()
-      const bTtft = b.stat.ewmaTtft.get()
-      if (aTtft === null && bTtft === null) return 0
-      if (aTtft === null) return 1
-      if (bTtft === null) return -1
-      if (aTtft !== bTtft) return aTtft - bTtft
-      // tie: success rate desc
-      const aSucc = a.stat.totalRequests ? a.stat.successCount / a.stat.totalRequests : 1
-      const bSucc = b.stat.totalRequests ? b.stat.successCount / b.stat.totalRequests : 1
-      if (aSucc !== bSucc) return bSucc - aSucc
-      return new Date(b.provider.last_heartbeat).getTime() - new Date(a.provider.last_heartbeat).getTime()
-    })
-    return sorted[0].provider
-  }
-
-  // Power of Two Random Choices (P2C) + Least Outstanding Requests (LOR)
-  // Eliminates thundering herd behavior & avoids active polling overhead at 1000s of nodes
-  const useP2C = process.env.ROUTING_ALGORITHM !== "wrr"
-  if (useP2C) {
-    for (let retry = 0; retry < 3; retry++) {
-      const idx1 = Math.floor(Math.random() * pool.length)
-      let idx2 = Math.floor(Math.random() * pool.length)
-      if (pool.length > 1 && idx1 === idx2) {
-        idx2 = (idx1 + 1) % pool.length
-      }
-      const candA = pool[idx1]
-      const candB = pool[idx2]
-
-    // 1. Compare in-memory concurrent active requests (Least Outstanding Requests)
-    let winner = candA
-    if (candA.stat.concurrentRequests > candB.stat.concurrentRequests) {
-      winner = candB
-    } else if (candA.stat.concurrentRequests === candB.stat.concurrentRequests) {
-      const ttftA = candA.stat.ewmaTtft.get() ?? 9999
-      const ttftB = candB.stat.ewmaTtft.get() ?? 9999
-      if (ttftB < ttftA) winner = candB
-    }
-
-    const winSlotSat = winner.stat.concurrentRequests >= getSafeMaxConcurrency(winner.provider)
-    const winKvSat = (winner.stat.activeTokens + incomingTokens) >= getSafeMaxKvTokens(winner.provider)
-    if (!winSlotSat && !winKvSat) {
-      return winner.provider
-    }
-  }
+  const res = selectNodeDetailed(providers, { incomingTokens: opts?.incomingTokens, rng: opts?.rng })
+  if ("node" in res) return res.node
   return null
-}
-
-  // Standard WRR: smooth weighted round robin (Nginx)
-  let totalWeight = 0
-  for (const c of pool) totalWeight += c.stat.weight
-
-  if (totalWeight <= 0) {
-    const sorted = [...pool].sort((a, b) => {
-      const av = a.stat.ewmaTtft.get() ?? 9999
-      const bv = b.stat.ewmaTtft.get() ?? 9999
-      return av - bv
-    })
-    return sorted[0].provider
-  }
-
-  let best: Cand | null = null
-  for (const c of pool) {
-    c.stat.currentWeight += c.stat.weight
-    if (!best || c.stat.currentWeight > best.stat.currentWeight) best = c
-  }
-  if (best) {
-    best.stat.currentWeight -= totalWeight
-    try {
-      const g2 = globalThis as unknown as { __seedinferProviders?: { providers: Map<string, any> } }
-      for (const c of pool) {
-        const p = g2.__seedinferProviders?.providers.get(c.provider.id)
-        if (p) {
-          p._routingWeight = c.stat.weight
-          p._routingCurrentWeight = c.stat.currentWeight
-          p.ewmaTtft = c.stat.ewmaTtft.get()
-          p.ewmaLatency = c.stat.ewmaLatency.get()
-        }
-      }
-    } catch {}
-    return best.provider
-  }
-
-  return pool[0].provider
 }
 
 /** P2C (Power of Two Random Choices) + Least Outstanding Requests explicit export */
 export function selectProviderP2C(
   providers: (StoredProvider | import("@/lib/types").Provider)[],
-  opts?: { openRouter?: boolean; isSubscription?: boolean }
+  opts?: { openRouter?: boolean; isSubscription?: boolean; incomingTokens?: number; rng?: () => number }
 ): (StoredProvider | import("@/lib/types").Provider) | null {
   return selectProvider(providers, opts)
 }
 
-/** Zwróć posortowaną listę providerów wg wagi (dla sekwencyjnego fallback prób) */
+/** Sorted candidates from the shared filter: inFlight asc, then TTFT asc. */
 export function getSortedProviders(
   providers: (StoredProvider | import("@/lib/types").Provider)[],
-  opts?: { openRouter?: boolean; isSubscription?: boolean }
+  opts?: { openRouter?: boolean; isSubscription?: boolean; incomingTokens?: number; exclude?: Set<string> }
 ): (StoredProvider | import("@/lib/types").Provider)[] {
   if (!providers || providers.length === 0) return []
-  for (const p of providers as StoredProvider[]) { try { hydrateFromProvider(p as StoredProvider) } catch {} }
-  let cands = (providers as any).filter((p: any) => p.verification?.status === "verified" && !p.awaiting_heartbeat)
-  if (cands.length === 0) {
-    cands = (providers as any).filter((p: any) => p.verification?.status === "verifying" && !p.awaiting_heartbeat)
-    if (cands.length === 0) {
-      const anyVerifiable = (providers as any).some((p: any) => p.verification)
-      // Legacy objects without `verification`: still never advertise boot-hydrated nodes.
-      if (!anyVerifiable && providers.length > 0) cands = (providers as any).filter((p: any) => !p.awaiting_heartbeat)
-    }
-  }
-  const isOpenRouter = !!opts?.openRouter
-  const isSubscription = !!opts?.isSubscription
-  for (const p of cands) syncWeight(ensureStat(p.id), isOpenRouter, isSubscription)
-
-  const filtered = cands.filter((p: any) => !isCircuitOpenSafe((p as any).id))
-  const pool = filtered.length > 0 ? filtered : cands
-
-  // Prefer unsaturated nodes with 10% safety buffer guard (90% max concurrency cap)
-  const unsaturatedPool = pool.filter((p: any) => {
-    const s = ensureStat(p.id)
-    return s.concurrentRequests < getSafeMaxConcurrency(p)
-  })
-  const effectivePool = unsaturatedPool.length > 0 ? unsaturatedPool : pool
-
-  if (isOpenRouter) {
-    return [...effectivePool].sort((a: any, b: any) => {
-      const sa = ensureStat(a.id)
-      const sb = ensureStat(b.id)
-      const aTtft = sa.ewmaTtft.get() ?? 9999
-      const bTtft = sb.ewmaTtft.get() ?? 9999
-      if (aTtft !== bTtft) return aTtft - bTtft
-      return sb.weight - sa.weight
+  const cands = filterRoutable(providers, { incomingTokens: opts?.incomingTokens ?? 1000, exclude: opts?.exclude })
+  return [...cands]
+    .sort((a, b) => {
+      if (a.inFlight !== b.inFlight) return a.inFlight - b.inFlight
+      return (a.ttft ?? BASE_TTFT_MS) - (b.ttft ?? BASE_TTFT_MS)
     })
-  }
-  // sort by weight desc, then TTFT asc
-  return [...effectivePool].sort((a: any, b: any) => {
-    const sa = ensureStat(a.id)
-    const sb = ensureStat(b.id)
-    if (sa.weight !== sb.weight) return sb.weight - sa.weight
-    const aTtft = sa.ewmaTtft.get() ?? 9999
-    const bTtft = sb.ewmaTtft.get() ?? 9999
-    return aTtft - bTtft
-  })
+    .map((c) => c.provider)
 }
 
 export function resetRouting(providerId?: string): void {
