@@ -308,32 +308,51 @@ export function upsertProvider(
 // --- Verification execution ---
 
 function candidateAgentUrls(p: StoredProvider): string[] {
-  // Host 47901:3001 primary, fallback 3001 for legacy (can be overridden via env)
+  // Tailnet-only allowlist: keep only URLs whose host is tailnet IPv4
+  // (100.64.0.0/10) or *.seedinfer.ts.net with port 47901/3001.
+  // Drops: last_heartbeat_ip, host.hostname, and 127.0.0.1 fallbacks
+  // (unless ROUTING_ALLOW_LOOPBACK=1).
 
   const urls: string[] = []
   const seen = new Set<string>()
-  const add = (u?: string | null) => {
+  const allowLoopback = process.env.ROUTING_ALLOW_LOOPBACK === "1"
+  const ALLOWED_PORTS = new Set(["47901", "3001"])
+
+  const keepTailnetOnly = (u?: string | null): void => {
     if (!u) return
-    // normalize
     let url = u.trim()
+    if (!url) return
     if (!url.startsWith("http")) url = `http://${url}`
-    // remove trailing slash
     url = url.replace(/\/$/, "")
+    let parsed: URL
+    try {
+      parsed = new URL(url)
+    } catch {
+      return
+    }
+    const host = parsed.hostname.toLowerCase()
+    if (host === "127.0.0.1" || host === "localhost") {
+      if (!allowLoopback) return
+    } else {
+      // Lazy import to avoid a hard cycle with lib/routing/*
+      const { isTailnetIpv4 } = require("@/lib/routing/node-targets") as typeof import("@/lib/routing/node-targets")
+      const isTail = isTailnetIpv4(host)
+      const isTsNet = host === "seedinfer.ts.net" || host.endsWith(".seedinfer.ts.net")
+      if (!isTail && !isTsNet) return
+      const port = parsed.port || "47901"
+      if (!ALLOWED_PORTS.has(port)) return
+    }
     if (!seen.has(url)) {
       seen.add(url)
       urls.push(url)
     }
   }
-  add(p.agent_url)
-  if (p.tailscale_ip) add(`http://${p.tailscale_ip}:47901`)
+
+  keepTailnetOnly(p.agent_url)
+  if (p.tailscale_ip) keepTailnetOnly(`http://${p.tailscale_ip}:47901`)
   // MagicDNS hostname
   const hn = (p as any).tailscale_hostname || p.host?.tailscale_hostname
-  if (hn) add(`http://${hn}.seedinfer.ts.net:47901`)
-  // hostname from host
-  if (p.host?.hostname) add(`http://${p.host.hostname}:47901`)
-  // last heartbeat ip (public fallback — rarely reachable but try)
-  if (p.last_heartbeat_ip) add(`http://${p.last_heartbeat_ip}:47901`)
-  // Also try agent_url without port change? Already includes
+  if (hn) keepTailnetOnly(`http://${hn}.seedinfer.ts.net:47901`)
   return urls
 }
 
@@ -364,8 +383,36 @@ export async function verifyProvider(
   }
   // Filter duplicates
   candidates = [...new Set(candidates)]
+  const allowLoopback = process.env.ROUTING_ALLOW_LOOPBACK === "1"
   if (candidates.length === 0) {
-    candidates = [`http://127.0.0.1:47901`, `http://127.0.0.1:3001`] // host 47901:3001 primary, fallback 3001 // fallback for local dev
+    if (allowLoopback) {
+      candidates = [`http://127.0.0.1:47901`, `http://127.0.0.1:3001`] // local dev only
+    } else {
+      // No tailnet candidates: fail closed instead of probing loopback/public IPs.
+      const failedChecks: VerificationCheck[] = [
+        { name: "health /health status ok", passed: false, error: "no tailnet candidate URLs (non-tailnet agent_url rejected)" },
+        { name: "vllm_health ok", passed: false, error: "no health probe — no tailnet candidate" },
+        { name: "GPU count >0", passed: false, error: "no health probe — no tailnet candidate" },
+        { name: "test inference returns choices", passed: false, error: "no tailnet candidate" },
+        { name: "model id matches", passed: false, error: "no tailnet candidate" },
+        { name: "latency <10s", passed: false, error: "no tailnet candidate" },
+      ]
+      const cur0 = store.providers.get(id)
+      if (cur0) {
+        cur0.verification = {
+          status: "failed",
+          checks: failedChecks,
+          last_check: new Date().toISOString(),
+          last_heartbeat: cur0.last_heartbeat,
+          heartbeat_count: cur0.heartbeat_count,
+          failure_reason: failedChecks.map((c) => `${c.name}: ${c.error}`).join("; "),
+        }
+        cur0.status = "offline" as any
+        store.providers.set(id, cur0)
+        return { provider: cur0, passed: false, checks: failedChecks }
+      }
+      throw new Error(`provider ${id} disappeared after verify`)
+    }
   }
 
   let healthOk = false
@@ -552,9 +599,9 @@ export async function verifyProvider(
     }
   }
 
-  // Fallback for isolated cloud deployments (e.g. Vercel) where network probes fail/timeout over private CGNAT IPs,
-  // but provider sends valid telemetry with vllm_health.status === "ok" and gpu.count > 0:
-  if (!healthOk && p.vllm_health?.status === "ok" && (p.gpu?.count ?? 0) > 0) {
+  // Telemetry fallback is opt-in only (ROUTING_TELEMETRY_VERIFY=1).
+  // Default OFF: valid heartbeat telemetry alone must NOT verify a node.
+  if (!healthOk && process.env.ROUTING_TELEMETRY_VERIFY === "1" && p.vllm_health?.status === "ok" && (p.gpu?.count ?? 0) > 0) {
     console.log(`[verify ${id}] network probes failed but heartbeat telemetry is valid (vllm_health=ok, gpu.count=${p.gpu?.count}). Marking verified via heartbeat telemetry.`)
     checks.length = 0
     checks.push({ name: "health /health status ok", passed: true, latencyMs: 0, detail: `verified via heartbeat telemetry` })
@@ -640,11 +687,12 @@ export async function verifyProvider(
       // failed keeps previous but ensure not counted as active in stats? For now set offline? Keep draining to indicate not serving
       updated.status = "offline" as any
     }
-    // --- routing EWMA update (TTFT probe) ---
+    // --- routing signal: single write via node-health (parallel agent owns EWMA truth) ---
     const effectiveTtft = ttftProbeMs ?? inferenceLatency ?? healthLatency ?? null
     const effectiveTotal = inferenceLatency ?? healthLatency ?? null
     if (effectiveTtft !== null || effectiveTotal !== null) {
-      // inline EWMA alpha 0.2 (avoid selector import cycle)
+      const successProbe = finalStatus === "verified"
+      // denormalized mirror kept minimal for listProviders sorting
       const alpha = 0.2
       const ewmaUpdate = (prev: number | null | undefined, sample: number | null): number | null => {
         if (sample === null || sample === undefined || !Number.isFinite(sample) || sample <= 0) return prev ?? null
@@ -652,29 +700,13 @@ export async function verifyProvider(
         if (prev === null || prev === undefined) return clamped
         return alpha * clamped + (1 - alpha) * prev
       }
-      const successProbe = finalStatus === "verified"
-      // update denormalized fields for listProviders sorting
       updated.ewmaTtft = ewmaUpdate(updated.ewmaTtft, effectiveTtft)
       updated.ewmaLatency = ewmaUpdate(updated.ewmaLatency, effectiveTotal)
-      updated.totalRequests = (updated.totalRequests ?? 0) + 1
-      if (successProbe) updated.successCount = (updated.successCount ?? 0) + 1
-      if (updated.concurrentRequests === undefined) updated.concurrentRequests = 0
-      // weight placeholder (przeliczone przez selector przy next select)
-      // jeśli TTFT >5s degrade circuit via fallback-state (fire-and-forget)
       try {
-        const fb = require("@/lib/fallback-state") as typeof import("@/lib/fallback-state")
-        if (typeof (fb as any).recordProviderLatency === "function") {
-          ;(fb as any).recordProviderLatency(id, effectiveTtft, successProbe)
-        }
+        const { recordNodeOutcome } = require("@/lib/routing/node-health") as typeof import("@/lib/routing/node-health")
+        recordNodeOutcome(id, { kind: successProbe ? "probe_ok" : "probe_connect", ttftMs: effectiveTtft, totalMs: effectiveTotal })
       } catch {}
-      // również sync do selector (jeśli dostępny)
-      try {
-        const sel = require("@/lib/routing/selector") as typeof import("@/lib/routing/selector")
-        if (typeof (sel as any).recordLatency === "function") {
-          ;(sel as any).recordLatency(id, effectiveTtft, effectiveTotal, successProbe)
-        }
-      } catch {}
-      console.log(`[verify ${id}] routing EWMA update ttft=${effectiveTtft} total=${effectiveTotal} -> ewmaTtft=${updated.ewmaTtft} ewmaLatency=${updated.ewmaLatency}`)
+      console.log(`[verify ${id}] routing signal ttft=${effectiveTtft} total=${effectiveTotal} -> ewmaTtft=${updated.ewmaTtft} ewmaLatency=${updated.ewmaLatency}`)
     }
     store.providers.set(id, updated)
     console.log(`[verify ${id}] result: ${finalStatus} (${checks.filter(c=>c.passed).length}/${checks.length} checks passed) ${failureReason ? " reason: "+failureReason.slice(0,300) : ""}`)

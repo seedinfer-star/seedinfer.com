@@ -14,6 +14,8 @@ import { checkRateLimit, getClientIp, getClientIpFromHeaders } from "@/lib/rate-
 import { normalizeCountryCode } from "@/lib/geo-centroids";
 import { getProviderStat } from "@/lib/routing/selector";
 import { getProviderCircuitState } from "@/lib/fallback-state";
+import { LIVE_MODEL } from "@/lib/catalog";
+import { recordNodeOutcome } from "@/lib/routing/node-health";
 
 export const HEARTBEAT_MAX_BYTES = 64 * 1024;
 export const NODE_ID_PATTERN = NODE_ID_RE;
@@ -168,7 +170,7 @@ export async function handleHeartbeat(req: Request): Promise<Response> {
           const uniq = [...new Set(urls)];
           if (uniq.length === 0) return;
           const probeUrl = uniq[0];
-          const modelId = "seedinfer/nemotron-lightning-1m";
+          const modelId = LIVE_MODEL.id;
           const start = Date.now();
           const ctrl = new AbortController();
           const t = setTimeout(() => ctrl.abort(), 6000);
@@ -177,14 +179,16 @@ export async function handleHeartbeat(req: Request): Promise<Response> {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ model: modelId, messages: [{ role: "user", content: "ping" }], max_tokens: 5, temperature: 0, stream: true }),
             signal: ctrl.signal as any,
-          }).catch(() => null as any);
+          }).catch((e: any) => ({ __connectFail: true, __error: String(e?.message || e) }) as any);
           clearTimeout(t);
-          if (!res || !res.ok || !res.body) {
+          if (!res || (res as any).__connectFail) {
             const lat = Date.now() - start;
-            const { recordLatency } = await import("@/lib/routing/selector");
-            const { recordProviderLatency } = await import("@/lib/fallback-state");
-            recordLatency(pid, lat, lat, false);
-            recordProviderLatency(pid, lat, false);
+            recordNodeOutcome(pid, { kind: "probe_connect", ttftMs: lat, totalMs: lat, error: (res as any)?.__error || "probe connect failed" });
+            return;
+          }
+          if (!res.ok || !res.body) {
+            const lat = Date.now() - start;
+            recordNodeOutcome(pid, { kind: "probe_other", ttftMs: lat, totalMs: lat, error: `probe http ${res.status}` });
             return;
           }
           const reader = (res.body as ReadableStream<Uint8Array>).getReader();
@@ -199,14 +203,7 @@ export async function handleHeartbeat(req: Request): Promise<Response> {
           try {
             await reader.cancel();
           } catch {}
-          const { recordLatency } = await import("@/lib/routing/selector");
-          const { recordProviderLatency } = await import("@/lib/fallback-state");
-          recordLatency(pid, ttft, ttft, true);
-          recordProviderLatency(pid, ttft, true);
-          try {
-            const { updateProviderRoutingStats } = await import("@/lib/providers-store");
-            updateProviderRoutingStats(pid, ttft, ttft, true);
-          } catch {}
+          recordNodeOutcome(pid, { kind: "probe_ok", ttftMs: ttft, totalMs: ttft });
         } catch (e: any) {
           console.warn(`[heartbeat-probe] ${pid} probe error: ${e?.message}`);
         }

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { sanitizePublic, publicStatus, isStale } from "@/lib/public-sanitize"
 import { getUpstreamConfigs, getUpstreamForStatus, getModalWarmupStatus } from "@/lib/fallback-clients"
 import { getAllStatuses, getStats, resetCircuit } from "@/lib/fallback-state"
+import { checkAdmin } from "@/lib/admin-auth"
 import { listProviders } from "@/lib/providers-store"
 
 export const dynamic = "force-dynamic"
@@ -21,7 +22,8 @@ export async function GET(req: Request) {
   const url = new URL(req.url)
   const reset = url.searchParams.get("reset") // ?reset=nim or ?reset=all
   if (reset) {
-    // simple auth via header? For now allow reset if query present — lean
+    const admin = checkAdmin(req)
+    if (!admin.ok) return admin.response
     if (reset === "all") resetCircuit()
     else if (["local", "nim", "opencode", "openrouter", "modal"].includes(reset)) {
       resetCircuit(reset as any)
@@ -124,6 +126,8 @@ export async function POST(req: Request) {
   } catch {}
   const target = body.reset || new URL(req.url).searchParams.get("reset")
   if (target) {
+    const admin = checkAdmin(req)
+    if (!admin.ok) return admin.response
     if (target === "all") resetCircuit()
     else if (["local", "nim", "opencode", "openrouter", "modal"].includes(target)) resetCircuit(target as any)
     return NextResponse.json({ ok: true, reset: target }, { headers: CORS_HEADERS })

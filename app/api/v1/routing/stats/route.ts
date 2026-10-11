@@ -2,6 +2,8 @@ import { NextResponse } from "next/server"
 import { sanitizePublic, publicStatus } from "@/lib/public-sanitize"
 import { listProviders } from "@/lib/providers-store"
 import { getAllRoutingStats } from "@/lib/routing/selector"
+import { getNodeSnapshot } from "@/lib/routing/node-health"
+import { getLeaseCounters } from "@/lib/routing/lease"
 import { getAllStatuses, getAllProviderStatuses, getStats as getFallbackStats } from "@/lib/fallback-state"
 
 export const dynamic = "force-dynamic"
@@ -36,6 +38,8 @@ export async function GET(req: Request) {
   const perProvider = providers.map((p) => {
     const rs = routingStats[p.id] || null
     const pc = providerCircuits[p.id] || circuits[p.id] || null
+    const snap = getNodeSnapshot(p.id)
+    const lease = getLeaseCounters(p.id)
     // also from provider denormalized fields fallback
     const ewmaTtft = rs?.ewmaTtft ?? (p as any).ewmaTtft ?? null
     const ewmaLatency = rs?.ewmaLatency ?? (p as any).ewmaLatency ?? null
@@ -61,6 +65,11 @@ export async function GET(req: Request) {
       currentWeight,
       circuit: pc ? { open: pc.open, cooldownRemainingMs: (pc as any).cooldownRemainingMs ?? 0, fails: pc.fails, consecutiveFails: pc.consecutiveFails, lastError: pc.lastError } : null,
       circuitOpen: pc?.open ?? false,
+      circuitState: snap.circuit,
+      pausedUntil: snap.pausedUntil,
+      lastError: snap.lastError,
+      inFlight: lease.inFlight,
+      activeKvTokens: lease.activeKv,
       lastUpdate: rs?.lastUpdate ?? null,
     }
   })
