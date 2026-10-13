@@ -125,6 +125,22 @@ CREATE TABLE IF NOT EXISTS provider_nodes (
 );
 CREATE INDEX IF NOT EXISTS idx_provider_nodes_user ON provider_nodes(user_id);
 
+-- inference API keys (sha256(key) in key_hash; plaintext returned once at creation)
+CREATE TABLE IF NOT EXISTS api_keys (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  key_hash TEXT NOT NULL UNIQUE,
+  prefix TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  last_used_at TEXT,
+  revoked_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_api_keys_user ON api_keys(user_id);
+
+-- credits delta: balance_micro INTEGER NOT NULL DEFAULT -1 (canonical micro-USD; -1 = migrate from cents)
+-- usage delta: cost_usd_micro INTEGER, api_key_id TEXT — ALTER handled in lib/db.ts ADDED_COLUMNS
+
 -- account audit trail (payout_wallet_changed | node_token_created | node_token_revoked | node_bound)
 CREATE TABLE IF NOT EXISTS account_events (
   id INTEGER PRIMARY KEY AUTOINCREMENT,

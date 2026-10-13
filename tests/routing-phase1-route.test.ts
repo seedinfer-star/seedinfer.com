@@ -4,6 +4,16 @@
  */
 import { describe, it, before, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { randomUUID } from "node:crypto";
+
+const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "seedinfer-phase1-route-"));
+process.env.DATABASE_URL = `file:${path.join(tmpDir, "test.db")}`;
+process.env.DB_BACKUPS = "off";
+process.env.AUTH_SECRET = "test-only-auth-secret-0123456789abcdef";
+
 import { POST } from "@/app/api/v1/chat/completions/route";
 import { upsertProvider, getProvider, clearAll } from "@/lib/providers-store";
 import { resetRouting, getStats as getSelectorStats } from "@/lib/routing/selector";
@@ -16,6 +26,9 @@ import { resetAffinity } from "@/lib/routing/affinity";
 import { resetLeases, leaseCount, getLeaseCounters } from "@/lib/routing/lease";
 import { __setAllowLoopbackForTests } from "@/lib/routing/node-targets";
 import { clearAllRateLimits } from "@/lib/rate-limit";
+import { getDb, closeDb } from "@/lib/db";
+import { createApiKey } from "@/lib/api-keys";
+import { creditBalanceMicro } from "@/lib/billing";
 import { startMockNode, type MockNode } from "./helpers/mock-node.js";
 
 const ENV_KEYS = [
@@ -30,6 +43,7 @@ const ENV_KEYS = [
   "LOCAL_VLLM_URL",
   "SEEDINFER_VLLM_URL",
   "AFFINITY_MIN_TOKENS",
+  "SEEDINFER_API_AUTH_REQUIRED",
 ] as const;
 
 function snapshotEnv(): Record<string, string | undefined> {
@@ -69,10 +83,12 @@ function seedFaster(first: string): void {
   recordNodeOutcome(first, { kind: "ok", ttftMs: 50, totalMs: 100 });
 }
 
+let AUTH = "";
+
 function chatReq(body: any, headers: Record<string, string> = {}): Request {
   return new Request("http://localhost/api/v1/chat/completions", {
     method: "POST",
-    headers: { "content-type": "application/json", ...headers },
+    headers: { "content-type": "application/json", authorization: `Bearer ${AUTH}`, ...headers },
     body: JSON.stringify(body),
   });
 }
@@ -96,6 +112,16 @@ before(async () => {
   delete process.env.LOCAL_VLLM_URL;
   delete process.env.SEEDINFER_VLLM_URL;
   delete process.env.AFFINITY_MIN_TOKENS;
+  delete process.env.SEEDINFER_API_AUTH_REQUIRED;
+  // authed principal for requests (route requires an API key by default)
+  const uid = randomUUID();
+  getDb()
+    .prepare("INSERT INTO users (id, email, password_hash, created_at) VALUES (?, ?, ?, ?)")
+    .run(uid, `${uid}@test.local`, "x", new Date().toISOString());
+  creditBalanceMicro(uid, 1_000_000_000); // $1000 headroom
+  const k = createApiKey(uid, "route-tests");
+  if ("error" in k) throw new Error("createApiKey failed");
+  AUTH = k.secret;
 });
 
 after(async () => {
@@ -259,7 +285,7 @@ describe("chat route: forwarding hygiene", () => {
     );
     assert.equal(res.status, 200);
     const lastBody = nodeA.received.bodies[nodeA.received.bodies.length - 1];
-    assert.ok(!("priority" in lastBody), "priority must be stripped");
+    assert.equal((lastBody as any).priority, 100, "client priority replaced by gateway default");
     assert.ok(!("kv_transfer_params" in lastBody), "kv_transfer_params must be stripped");
     assert.ok(!("vllm_xargs" in lastBody), "vllm_xargs must be stripped");
     assert.equal(lastBody.model, "mock-model");
@@ -269,9 +295,7 @@ describe("chat route: forwarding hygiene", () => {
     nodeA.setBehavior("ok-json");
     addNode("n1", nodeA.url);
 
-    const res = await POST(
-      chatReq({ ...BASE_BODY }, { authorization: "Bearer sk_live_test123" }),
-    );
+    const res = await POST(chatReq({ ...BASE_BODY }));
     assert.equal(res.status, 200);
     const lastHeaders = nodeA.received.headers[nodeA.received.headers.length - 1];
     assert.equal(lastHeaders.get("authorization"), null);
@@ -286,19 +310,80 @@ describe("chat route: affinity", () => {
     addNode("node2", nodeB.url);
 
     const big = { ...BASE_BODY, messages: [{ role: "user", content: "x".repeat(30000) }] };
-    const headers = { authorization: "Bearer affinity-test-key" };
-
-    const r1 = await POST(chatReq(big, headers));
+    const r1 = await POST(chatReq(big));
     assert.equal(r1.status, 200);
     await r1.json();
     const up1 = r1.headers.get("x-seedinfer-upstream");
     assert.ok(up1 === "node1" || up1 === "node2");
 
-    const r2 = await POST(chatReq(big, headers));
+    const r2 = await POST(chatReq(big));
     assert.equal(r2.status, 200);
     await r2.json();
     const up2 = r2.headers.get("x-seedinfer-upstream");
     assert.equal(up2, up1);
     assert.equal(r2.headers.get("x-seedinfer-affinity"), "hit");
+  });
+});
+
+describe("chat route: phase2 auth + billing", () => {
+  it("401 without an API key", async () => {
+    addNode("n1", nodeA.url);
+    const res = await POST(chatReq({ ...BASE_BODY }, { authorization: "" }));
+    assert.equal(res.status, 401);
+    const j = await res.json();
+    assert.equal(j.error.code, "invalid_api_key");
+  });
+
+  it("401 with an unknown key", async () => {
+    addNode("n1", nodeA.url);
+    const res = await POST(chatReq({ ...BASE_BODY }, { authorization: `Bearer sk_live_${"z".repeat(43)}` }));
+    assert.equal(res.status, 401);
+  });
+
+  it("402 when balance cannot cover the estimate", async () => {
+    addNode("n1", nodeA.url);
+    const uid = randomUUID();
+    getDb()
+      .prepare("INSERT INTO users (id, email, password_hash, created_at) VALUES (?, ?, ?, ?)")
+      .run(uid, `${uid}@test.local`, "x", new Date().toISOString());
+    const k = createApiKey(uid, "broke");
+    if ("error" in k) throw new Error("createApiKey failed");
+    const res = await POST(chatReq({ ...BASE_BODY }, { authorization: `Bearer ${k.secret}` }));
+    assert.equal(res.status, 402);
+    const j = await res.json();
+    assert.equal(j.error.code, "insufficient_funds");
+  });
+
+  it("429 after 40 requests per minute per key", async () => {
+    nodeA.setBehavior("ok-json");
+    addNode("n1", nodeA.url);
+    let last: Response | null = null;
+    for (let i = 0; i < 41; i++) last = await POST(chatReq({ ...BASE_BODY }));
+    assert.equal(last!.status, 429);
+    assert.ok(last!.headers.get("retry-after"));
+  });
+
+  it("successful request settles usage into the ledger", async () => {
+    nodeA.setBehavior("ok-json");
+    addNode("n1", nodeA.url);
+    const before = getDb().prepare("SELECT count(*) AS c FROM usage").get() as any;
+    const res = await POST(chatReq({ ...BASE_BODY }));
+    assert.equal(res.status, 200);
+    const after = getDb().prepare("SELECT count(*) AS c FROM usage").get() as any;
+    assert.equal(after.c, before.c + 1);
+    const row = getDb().prepare("SELECT * FROM usage ORDER BY id DESC LIMIT 1").get() as any;
+    assert.ok(row.cost_usd_micro >= 0);
+    assert.ok(row.api_key_id);
+  });
+
+  it("gateway-owned priority: client int stripped, enum header mapped", async () => {
+    nodeA.setBehavior("ok-json");
+    addNode("n1", nodeA.url);
+    await POST(chatReq({ ...BASE_BODY, priority: -100 }));
+    let body: any = nodeA.received.bodies[nodeA.received.bodies.length - 1];
+    assert.equal(body.priority, 100); // standard default, client -100 ignored
+    await POST(chatReq({ ...BASE_BODY }, { "x-seedinfer-priority": "background" }));
+    body = nodeA.received.bodies[nodeA.received.bodies.length - 1];
+    assert.equal(body.priority, 1000);
   });
 });

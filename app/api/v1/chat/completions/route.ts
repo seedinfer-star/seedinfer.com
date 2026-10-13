@@ -23,8 +23,10 @@ import {
 } from "@/lib/routing/affinity"
 import { postToNode } from "@/lib/routing/upstream-http"
 import { scanUsageFromText } from "@/lib/routing/sse"
-import { getClientIp } from "@/lib/rate-limit"
+import { getClientIp, checkRateLimit } from "@/lib/rate-limit"
 import { scrubString } from "@/lib/public-sanitize"
+import { verifyApiKey } from "@/lib/api-keys"
+import { estimateRequestCostMicro, preauthCheck, settleUsage } from "@/lib/billing"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
@@ -260,14 +262,46 @@ export async function POST(req: Request) {
   const incomingAuth = req.headers.get("authorization") || ""
   const rawToken = incomingAuth.replace(/^Bearer\s+/i, "").trim()
 
-  // ---- sanitize forward body ----
+  // ---- auth (API key; SEEDINFER_API_AUTH_REQUIRED=0 disables for dev) ----
+  const authRequired = process.env.SEEDINFER_API_AUTH_REQUIRED !== "0"
+  let apiKey: { id: string; userId: string } | null = null
+  if (rawToken) {
+    try { apiKey = verifyApiKey(rawToken) } catch { apiKey = null }
+  }
+  if (authRequired && !apiKey) {
+    return openAIError("Invalid or missing API key — create one in Settings → API keys.", "authentication_error", "invalid_api_key", 401)
+  }
+
+  // ---- per-key (or per-IP when auth disabled) rate limit: 40 rpm ----
+  const rlKey = apiKey ? `ak:${apiKey.id}` : `ip:${getClientIp(req)}`
+  const rl = checkRateLimit(rlKey, 40, 60_000)
+  if (!rl.ok) {
+    return openAIError("Rate limit exceeded (40 requests/min).", "rate_limit_error", "rate_limited", 429, {}, {
+      "Retry-After": String(rl.retryAfterSec),
+    })
+  }
+
+  // ---- sanitize forward body (priority is gateway-owned) ----
   const forwardBody: any = { ...body }
   delete forwardBody.priority
   delete forwardBody.kv_transfer_params
   delete forwardBody.vllm_xargs
+  forwardBody.priority = req.headers.get("x-seedinfer-priority") === "background" ? 1000 : 100
   const forwardText = JSON.stringify(forwardBody)
 
   const est = estimatePromptTokens(body)
+
+  // ---- billing preauth (worst-case estimate; settle happens on success) ----
+  if (apiKey) {
+    const maxOut = Math.min(Math.max(0, Number(body.max_tokens) || 1024), 32768)
+    const estCost = estimateRequestCostMicro(String(body.model), est, maxOut)
+    const pre = preauthCheck(apiKey.userId, estCost)
+    if (!pre.ok) {
+      return openAIError("Insufficient balance — top up in Settings → Billing.", "billing_error", "insufficient_funds", 402, {
+        balance_micro: pre.balanceMicro,
+      })
+    }
+  }
 
   // ---- affinity ----
   let principal: string
@@ -583,6 +617,9 @@ export async function POST(req: Request) {
         const compToks = usage?.completion_tokens ?? 0
         try { lease.release() } catch {}
         try { recordNodeOutcome(pid, { kind: "ok", ttftMs, totalMs, promptTokens: promptToks, completionTokens: compToks }) } catch {}
+        if (apiKey) {
+          try { settleUsage({ userId: apiKey.userId, apiKeyId: apiKey.id, model: String(body.model), promptTokens: promptToks, completionTokens: compToks }) } catch {}
+        }
         let processedAfter = 0
         try { processedAfter = getNodeSnapshot(pid).totalProcessedTokens || 0 } catch {}
         try { recordAffinity(affinityKey, pid, processedAfter, promptToks + compToks) } catch {}
@@ -724,6 +761,9 @@ export async function POST(req: Request) {
     const compToks = Number(usage?.completion_tokens) || 0
     try { lease.release() } catch {}
     try { recordNodeOutcome(pid, { kind: "ok", totalMs, promptTokens: promptToks, completionTokens: compToks }) } catch {}
+    if (apiKey) {
+      try { settleUsage({ userId: apiKey.userId, apiKeyId: apiKey.id, model: String(body.model), promptTokens: promptToks, completionTokens: compToks }) } catch {}
+    }
     let processedAfter = 0
     try { processedAfter = getNodeSnapshot(pid).totalProcessedTokens || 0 } catch {}
     try { recordAffinity(affinityKey, pid, processedAfter, promptToks + compToks) } catch {}

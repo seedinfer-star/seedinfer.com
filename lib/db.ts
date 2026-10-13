@@ -339,6 +339,17 @@ CREATE TABLE IF NOT EXISTS provider_nodes (
   last_seen_at TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_provider_nodes_user ON provider_nodes(user_id);
+CREATE TABLE IF NOT EXISTS api_keys (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  key_hash TEXT NOT NULL UNIQUE,
+  prefix TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  last_used_at TEXT,
+  revoked_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_api_keys_user ON api_keys(user_id);
 CREATE TABLE IF NOT EXISTS account_events (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -365,6 +376,9 @@ const ADDED_COLUMNS: Array<[table: string, column: string, decl: string]> = [
   ["oauth_accounts", "last_login_at", "TEXT"],
   ["users", "payout_wallet", "TEXT"],
   ["users", "payout_wallet_updated_at", "TEXT"],
+  ["credits", "balance_micro", "INTEGER NOT NULL DEFAULT -1"],
+  ["usage", "cost_usd_micro", "INTEGER"],
+  ["usage", "api_key_id", "TEXT"],
 ];
 
 function ensureColumn(db: any, table: string, column: string, decl: string): void {
@@ -379,6 +393,12 @@ function ensureColumn(db: any, table: string, column: string, decl: string): voi
 function createSchema(db: any): void {
   db.exec(SCHEMA_SQL);
   for (const [t, c, d] of ADDED_COLUMNS) ensureColumn(db, t, c, d);
+  // One-time migration: cents -> micro-USD canonical balance (-1 = not migrated).
+  try {
+    db.exec(`UPDATE credits SET balance_micro = balance_usd_cents * 10000 WHERE balance_micro = -1`);
+  } catch (e: any) {
+    console.warn("[db] credits micro migration failed:", e?.message || e);
+  }
 }
 
 // ---------------------------------------------------------------------------

@@ -232,6 +232,12 @@ export function exportUserData(userId: string): Record<string, unknown> | null {
   let node_tokens: unknown[] = [];
   let nodes: unknown[] = [];
   let account_events: unknown[] = [];
+  let api_keys: unknown[] = [];
+  try {
+    api_keys = q(
+      "SELECT id, name, prefix, created_at, last_used_at, revoked_at FROM api_keys WHERE user_id = ?"
+    );
+  } catch {}
   try {
     node_tokens = q(
       "SELECT id, name, prefix, created_at, last_used_at, revoked_at FROM provider_tokens WHERE user_id = ?"
@@ -252,11 +258,13 @@ export function exportUserData(userId: string): Record<string, unknown> | null {
     sessions: q("SELECT method, user_agent, created_at, expires_at FROM sessions WHERE user_id = ?"),
     credits: q("SELECT balance_usd_cents, updated_at FROM credits WHERE user_id = ?"),
     invoices: q("SELECT id, chain, chain_id, token, token_address, amount, amount_usd_cents, address_to, tx_hash, status, created_at, confirmed_at, expires_at, block_number, block_hash FROM invoices WHERE user_id = ?"),
-    usage: q("SELECT id, invoice_id, model, prompt_tokens, completion_tokens, cost_usd_cents, created_at FROM usage WHERE user_id = ?"),
+    usage: q("SELECT id, invoice_id, api_key_id, model, prompt_tokens, completion_tokens, cost_usd_cents, cost_usd_micro, created_at FROM usage WHERE user_id = ?"),
     // Node auth + account audit (token metadata only — never token_hash).
     node_tokens,
     nodes,
     account_events,
+    // Inference API keys (metadata only — never key_hash).
+    api_keys,
   };
 }
 
